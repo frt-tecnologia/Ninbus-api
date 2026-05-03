@@ -184,7 +184,7 @@ export async function generateAndUploadArtifact(
 ): Promise<ArtifactUploadResult> {
 	// Validate raw file
 	validateGenerateExtension(rawFile.name);
-	validateFileSize(rawFile.size || 0, GENERATE_MAX_SIZE, 'GENERATE_FILE_TOO_LARGE');
+	validateFileSize(rawFile.size || 0, GENERATE_MAX_SIZE, 'FILE_TOO_LARGE');
 
 	appLogger.info(
 		`[ARTIFACT-GEN] Generating .mender: name=${artifactName}, type=${artifactType}, file=${rawFile.name} (${Math.round(rawFile.size / 1024)} KB)`,

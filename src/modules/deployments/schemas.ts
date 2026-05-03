@@ -86,17 +86,6 @@ export const abortDeploymentSchema = t.Object(
 	},
 );
 
-export const DeploymentSchema = t.Object({
-	id: t.String(),
-	name: t.String(),
-	artifact_name: t.String(),
-	created: t.String(),
-	finished: t.Optional(t.String()),
-	status: t.String(),
-	device_count: t.Optional(t.Number()),
-	phases: t.Optional(t.Array(t.Any())),
-});
-
 export const DeploymentStatisticsSchema = t.Object({
 	success: t.Number(),
 	pending: t.Number(),
@@ -105,28 +94,46 @@ export const DeploymentStatisticsSchema = t.Object({
 	installing: t.Number(),
 	rebooting: t.Number(),
 	noartifact: t.Number(),
-	alreadyinst: t.Number(),
+	'already-installed': t.Number(),
 	aborted: t.Number(),
+	decommissioned: t.Number(),
+	pause_before_installing: t.Number(),
+	pause_before_committing: t.Number(),
+	pause_before_rebooting: t.Number(),
+});
+
+export const DeploymentSchema = t.Object({
+	id: t.String(),
+	name: t.String(),
+	artifact_name: t.String(),
+	type: t.Optional(t.String()),
+	created: t.String(),
+	finished: t.Optional(t.String()),
+	status: t.String(),
+	device_count: t.Optional(t.Number()),
+	max_devices: t.Optional(t.Number()),
+	artifacts: t.Optional(t.Array(t.String())),
+	statistics: t.Optional(t.Object({
+		status: DeploymentStatisticsSchema,
+		total_size: t.Number(),
+	})),
+	filter: t.Optional(t.Any()),
 });
 
 export const DeviceDeploymentSchema = t.Object({
 	id: t.String(),
 	device_id: t.String(),
-	deployment_id: t.String(),
+	deployment_id: t.Optional(t.String()),
 	status: t.String(),
-	created: t.String(),
+	created: t.Optional(t.String()),
 	finished: t.Optional(t.String()),
 	log: t.Optional(t.Boolean()),
+	substate: t.Optional(t.String()),
+	image: t.Optional(t.Any()),
 });
 
 export const DeviceDeploymentLogSchema = t.Object({
-	messages: t.Array(
-		t.Object({
-			time: t.String(),
-			level: t.String(),
-			message: t.String(),
-		}),
-	),
+	data: t.String(),
 });
 
 export const DeploymentResponseSchema = t.Object({
@@ -143,6 +150,16 @@ export const DeploymentCreateResponseSchema = t.Object({
 	data: DeploymentSchema,
 });
 
+export const DeviceHistoryEntrySchema = t.Object({
+	id: t.String(),
+	deployment: DeploymentSchema,
+	device: DeviceDeploymentSchema,
+});
+
+export const DeviceDeploymentLogResponseSchema = t.Object({
+	data: t.String(),
+});
+
 export const DeploymentStatisticsResponseSchema = t.Object({
 	data: DeploymentStatisticsSchema,
 });
@@ -152,8 +169,8 @@ export const DeviceDeploymentListResponseSchema = t.Object({
 	total: t.Optional(t.Number()),
 });
 
-export const DeviceDeploymentLogResponseSchema = t.Object({
-	data: DeviceDeploymentLogSchema,
+export const DeviceHistoryResponseSchema = t.Object({
+	data: t.Array(DeviceHistoryEntrySchema),
 });
 
 // Shared generic schemas

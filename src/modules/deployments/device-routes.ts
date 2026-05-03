@@ -1,6 +1,10 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import { checkMembership } from '@common/middleware/company-check';
 import {
+	DeploymentStatisticsResponseSchema,
+	DeviceDeploymentListResponseSchema,
+	DeviceDeploymentLogResponseSchema,
+	DeviceHistoryResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
 	abortDeploymentSchema,
@@ -116,10 +120,10 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get deployment statistics',
-				description: 'Real-time progress: success, pending, failure, downloading, installing, etc.',
+				description: 'Real-time progress: success, pending, failure, downloading, installing, rebooting, aborted, decommissioned, pause_before_installing, pause_before_committing, pause_before_rebooting, noartifact, already-installed.',
 			},
 			response: {
-				200: GenericActionResponseSchema,
+				200: DeploymentStatisticsResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
@@ -151,7 +155,7 @@ export const deploymentDeviceRoutes = withAuth(
 				perPage: t.Optional(t.Number({ description: 'Items per page', maximum: 500 })),
 			}),
 			detail: { tags: ['Deployments'], summary: 'List devices in deployment' },
-			response: { 200: GenericActionResponseSchema, 403: ErrorResponseSchema },
+			response: { 200: DeviceDeploymentListResponseSchema, 403: ErrorResponseSchema },
 		},
 	)
 
@@ -180,7 +184,7 @@ export const deploymentDeviceRoutes = withAuth(
 			params: deploymentDeviceLogParams,
 			detail: { tags: ['Deployments'], summary: 'Get device deployment log' },
 			response: {
-				200: GenericActionResponseSchema,
+				200: DeviceDeploymentLogResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
@@ -219,7 +223,7 @@ export const deploymentDeviceRoutes = withAuth(
 			}),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment history' },
 			response: {
-				200: GenericActionResponseSchema,
+				200: DeviceHistoryResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},

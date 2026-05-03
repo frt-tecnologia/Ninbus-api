@@ -71,20 +71,33 @@ export interface MenderDeployment {
 	id: string;
 	name: string;
 	artifact_name: string;
+	/** "software" | "configuration" */
+	type?: string;
 	status: 'inprogress' | 'finished' | 'aborted' | 'pending';
 	device_count?: number;
+	max_devices?: number;
 	created: string;
 	finished?: string;
-	artifact?: {
-		id: string;
-		name: string;
-		artifact_name: string;
-		source?: { uri: string; expire: string };
-		device_types_compatible?: string[];
+	/** Array of artifact IDs targeted by this deployment */
+	artifacts?: string[];
+	statistics?: {
+		status: MenderDeploymentStatistics;
+		total_size: number;
 	};
-	filter?: { id: string; use_group?: boolean; group?: string } | null;
+	filter?: {
+		id: string;
+		name?: string;
+		use_group?: boolean;
+		group?: string;
+		terms?: Array<{ scope: string; attribute: string; type: string; value: string | string[] }>;
+	} | null;
 }
 
+/**
+ * Mender deployment statistics — flat map of status → count.
+ * Matches Mender server: Stats map[string]int (model/device_deployment.go).
+ * All 13 possible device deployment statuses are present in the response.
+ */
 export interface MenderDeploymentStatistics {
 	success: number;
 	pending: number;
@@ -95,26 +108,36 @@ export interface MenderDeploymentStatistics {
 	noartifact: number;
 	'already-installed': number;
 	aborted: number;
+	decommissioned: number;
+	pause_before_installing: number;
+	pause_before_committing: number;
+	pause_before_rebooting: number;
 }
 
+/**
+ * Device status within a deployment.
+ * Returned by GET /deployments/:id/devices/list and GET /deployments/:id/devices.
+ */
 export interface MenderDeploymentDevice {
 	id: string;
 	status: string;
-	image?: { name: string; artifact_name: string };
 	created?: string;
 	finished?: string;
+	image?: MenderArtifact;
+	/** Whether a deployment log is available */
+	log?: boolean;
+	substate?: string;
 }
 
+/**
+ * Device deployment history entry.
+ * Returned by GET /deployments/devices/:deviceId (ListDeviceDeployments).
+ * The Mender server returns {id, deployment: {...MenderDeployment}, device: {...MenderDeploymentDevice}}.
+ */
 export interface MenderDeviceDeployment {
 	id: string;
-	artifact?: {
-		artifact_name: string;
-		source?: { uri: string; expire: string };
-		device_types_compatible?: string[];
-	};
-	status: string;
-	started?: string;
-	finished?: string;
+	deployment: MenderDeployment;
+	device: MenderDeploymentDevice;
 }
 
 export interface MenderConnectionState {

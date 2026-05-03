@@ -1,7 +1,16 @@
 import { env } from '@common/config/env';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
+import { artifactsModule } from '@modules/artifacts';
+import { artifactManageRoutes } from '@modules/artifacts/manage-routes';
 import { authModule } from '@modules/auth';
+import { categoriesModule } from '@modules/categories';
+import { companiesModule } from '@modules/companies';
+import { companyMemberRoutes } from '@modules/companies/member-routes';
+import { deploymentsModule } from '@modules/deployments';
+import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
+import { devicesModule } from '@modules/devices';
+import { deviceMenderRoutes } from '@modules/devices/mender-routes';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
 import { Elysia } from 'elysia';
@@ -26,16 +35,17 @@ export const createApp = () => {
 				credentials: true,
 			}),
 		)
-		// ---  API Documentation (open at /docs) ---
+		// ---  API Documentation (open at /docs) --->
 		.use(
 			swagger({
 				path: '/docs',
 				documentation: {
 					info: {
-						title: 'Elysia Production API',
+						title: 'Ninbus API',
 						version: '1.0.0',
 						description:
-							'Production-ready Elysia.js backend with auth, database, and best practices.\n\n' +
+							'Ninbus IoT Platform — Device management, OTA deployments and fleet orchestration.\n\n' +
+							'Powered by Elysia.js + Mender Gateway.\n\n' +
 							'Full Better Auth documentation: https://better-auth.com',
 					},
 					tags: [
@@ -48,21 +58,69 @@ export const createApp = () => {
 							name: 'Posts',
 							description: 'Posts CRUD endpoints (reference implementation)',
 						},
+						{
+							name: 'Companies',
+							description: 'Multi-tenancy company management',
+						},
+						{
+							name: 'Categories',
+							description: 'Device grouping categories (bus lines, garages, yards, regions)',
+						},
+						{
+							name: 'Devices',
+							description: 'Ninbus device registry with Mender Gateway integration',
+						},
+						{
+							name: 'Deployments',
+							description: 'OTA deployment creation, monitoring and management',
+						},
+						{
+							name: 'Artifacts',
+							description: 'Firmware artifact management (upload, download, releases)',
+						},
 					],
 				},
 				scalarConfig: {
-					theme: 'purple',
+					// @ts-ignore - fastify might not be in the local elysia scalar types yet
+					theme: 'fastify',
+					defaultOpenAllTags: false,
+					hideModels: true,
+					hideClientButton: false,
+					showSidebar: true,
+					showDeveloperTools: 'localhost',
+					showToolbar: 'localhost',
+					operationTitleSource: 'summary',
+					persistAuth: false,
+					telemetry: true,
+					externalUrls: {
+						dashboardUrl: 'https://dashboard.scalar.com',
+						registryUrl: 'https://registry.scalar.com',
+						proxyUrl: 'https://proxy.scalar.com',
+						apiBaseUrl: 'https://api.scalar.com',
+					},
+					layout: 'modern',
+					isEditable: false,
+					isLoading: false,
+					documentDownloadType: 'both',
+					hideTestRequestButton: false,
+					hideSearch: false,
+					showOperationId: false,
+					hideDarkModeToggle: false,
+					withDefaultFonts: true,
+					defaultOpenFirstTag: true,
+					expandAllModelSections: false,
+					expandAllResponses: false,
+					orderSchemaPropertiesBy: 'alpha',
+					orderRequiredPropertiesFirst: true,
+					_integration: 'elysiajs',
+					default: false,
+					slug: 'ninbus-api',
+					title: 'Ninbus API',
 				},
 			}),
 		)
 		.onError(({ code, error, set }) => {
 			const errorMessage = error instanceof Error ? error.message : String(error);
-
-			appLogger.error({
-				code,
-				error: errorMessage,
-				stack: env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined,
-			});
 
 			if (code === 'NOT_FOUND') {
 				set.status = 404;
@@ -79,11 +137,19 @@ export const createApp = () => {
 					}
 				} catch {}
 
+				appLogger.warn({ code, error: parsedMessage });
+
 				return {
 					error: 'Validation error',
 					message: parsedMessage,
 				};
 			}
+
+			appLogger.error({
+				code,
+				error: errorMessage,
+				stack: env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined,
+			});
 
 			set.status = 500;
 			return {
@@ -94,7 +160,7 @@ export const createApp = () => {
 
 		// Root endpoint - API info
 		.get('/', () => ({
-			name: 'Elysia Production API',
+			name: 'Ninbus API',
 			version: '1.0.0',
 			docs: '/docs',
 			health: '/health',
@@ -102,7 +168,16 @@ export const createApp = () => {
 
 		// Feature modules
 		.use(healthModule)
-		.use(postsModule);
+		.use(postsModule)
+		.use(companiesModule)
+		.use(companyMemberRoutes)
+		.use(categoriesModule)
+		.use(devicesModule)
+		.use(deviceMenderRoutes)
+		.use(deploymentsModule)
+		.use(deploymentDeviceRoutes)
+		.use(artifactsModule)
+		.use(artifactManageRoutes);
 
 	if (env.ENABLE_AUTH) {
 		app.use(authRateLimit);

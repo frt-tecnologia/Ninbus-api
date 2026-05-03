@@ -1,6 +1,15 @@
 import { withAuth } from '@common/middleware/auth-guard';
+import {
+	CreatePostBodySchema,
+	ErrorResponseSchema,
+	PostCreateResponseSchema,
+	PostDeleteResponseSchema,
+	PostListResponseSchema,
+	PostResponseSchema,
+	PostUpdateResponseSchema,
+	UpdatePostBodySchema,
+} from '@modules/posts/schemas';
 import { Elysia, t } from 'elysia';
-import { createPostSchema, updatePostSchema } from './schemas';
 import * as service from './service';
 
 /**
@@ -24,6 +33,9 @@ export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
 				tags: ['Posts'],
 				summary: 'Get all posts',
 				description: 'Public endpoint - returns all posts with author info',
+			},
+			response: {
+				200: PostListResponseSchema,
 			},
 		},
 	)
@@ -50,6 +62,10 @@ export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
 				summary: 'Get post by ID',
 				description: 'Public endpoint - returns a single post',
 			},
+			response: {
+				200: PostResponseSchema,
+				404: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -71,11 +87,15 @@ export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
 		},
 		{
 			auth: true, // 👈 Require login (any authenticated user)
-			body: t.Omit(createPostSchema, ['id', 'authorId', 'createdAt', 'updatedAt']),
+			body: CreatePostBodySchema,
 			detail: {
 				tags: ['Posts'],
 				summary: 'Create post',
 				description: 'Protected - creates a new post for authenticated user',
+			},
+			response: {
+				201: PostCreateResponseSchema,
+				401: ErrorResponseSchema,
 			},
 		},
 	)
@@ -112,11 +132,17 @@ export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
 			params: t.Object({
 				id: t.String({ format: 'uuid' }),
 			}),
-			body: t.Omit(updatePostSchema, ['id', 'authorId', 'createdAt', 'updatedAt']),
+			body: UpdatePostBodySchema,
 			detail: {
 				tags: ['Posts'],
 				summary: 'Update post',
 				description: 'Protected - updates a post (owner only)',
+			},
+			response: {
+				200: PostUpdateResponseSchema,
+				401: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
 			},
 		},
 	)
@@ -151,6 +177,11 @@ export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
 				tags: ['Posts'],
 				summary: 'Delete post',
 				description: 'Protected - deletes a post (owner only)',
+			},
+			response: {
+				200: PostDeleteResponseSchema,
+				401: ErrorResponseSchema,
+				403: ErrorResponseSchema,
 			},
 		},
 	);

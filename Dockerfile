@@ -19,6 +19,9 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./
 COPY --from=build /app/drizzle ./drizzle
 
+# Pre-run migrations at build time won't work (no DB)
+# Migrations run automatically at container startup via src/index.ts
+
 # Run as non-root user provided by the Bun image
 USER bun
 

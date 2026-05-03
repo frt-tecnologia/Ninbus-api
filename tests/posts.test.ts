@@ -9,7 +9,6 @@ describe('Posts Module', () => {
 
 	// Helper to sign up and get auth cookie
 	async function getAuthCookie(): Promise<string> {
-		// Sign up
 		await app.handle(
 			new Request('http://localhost/api/auth/sign-up/email', {
 				method: 'POST',
@@ -22,7 +21,6 @@ describe('Posts Module', () => {
 			}),
 		);
 
-		// Sign in
 		const signInResponse = await app.handle(
 			new Request('http://localhost/api/auth/sign-in/email', {
 				method: 'POST',
@@ -60,6 +58,18 @@ describe('Posts Module', () => {
 
 		it('GET /api/posts/:id returns 400 for invalid UUID', async () => {
 			const response = await app.handle(new Request('http://localhost/api/posts/invalid-uuid'));
+			expect(response.status).toBe(400);
+		});
+
+		it('GET /api/posts/:id returns 400 for numeric id', async () => {
+			const response = await app.handle(new Request('http://localhost/api/posts/12345'));
+			expect(response.status).toBe(400);
+		});
+
+		it('GET /api/posts/:id returns 400 for partially valid UUID', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/posts/11111111-1111-4111'),
+			);
 			expect(response.status).toBe(400);
 		});
 	});
@@ -170,6 +180,26 @@ describe('Posts Module', () => {
 			const body = await response.json();
 			expect(body.message).toBe('Post updated successfully');
 			expect(body.data.title).toBe('Updated Post Title');
+		});
+
+		it('PUT /api/posts/:id updates content only', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/posts/${createdPostId}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						content: 'Updated content only',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(200);
+
+			const body = await response.json();
+			expect(body.data.content).toBe('Updated content only');
 		});
 
 		it('DELETE /api/posts/:id deletes own post', async () => {
@@ -404,6 +434,187 @@ describe('Posts Module', () => {
 					body: JSON.stringify({
 						title: '',
 						content: 'Content',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/posts returns 400 for missing content', async () => {
+			const authCookie = await getAuthCookie();
+
+			const response = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'Title without content',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/posts returns 400 for empty content', async () => {
+			const authCookie = await getAuthCookie();
+
+			const response = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'Title',
+						content: '',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/posts returns 400 for title exceeding maxLength (255)', async () => {
+			const authCookie = await getAuthCookie();
+
+			const response = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'x'.repeat(256),
+						content: 'Content',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/posts returns 400 for empty body', async () => {
+			const authCookie = await getAuthCookie();
+
+			const response = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('PUT /api/posts/:id returns 400 for empty title', async () => {
+			const authCookie = await getAuthCookie();
+
+			// Create a post first
+			const createRes = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'Title',
+						content: 'Content',
+					}),
+				}),
+			);
+			const postId = (await createRes.json()).data.id;
+
+			const response = await app.handle(
+				new Request(`http://localhost/api/posts/${postId}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: '',
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('PUT /api/posts/:id returns 400 for title exceeding maxLength', async () => {
+			const authCookie = await getAuthCookie();
+
+			// Create a post first
+			const createRes = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'Title',
+						content: 'Content',
+					}),
+				}),
+			);
+			const postId = (await createRes.json()).data.id;
+
+			const response = await app.handle(
+				new Request(`http://localhost/api/posts/${postId}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'y'.repeat(256),
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it('PUT /api/posts/:id returns 400 for empty content', async () => {
+			const authCookie = await getAuthCookie();
+
+			// Create a post first
+			const createRes = await app.handle(
+				new Request('http://localhost/api/posts', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						title: 'Title',
+						content: 'Content',
+					}),
+				}),
+			);
+			const postId = (await createRes.json()).data.id;
+
+			const response = await app.handle(
+				new Request(`http://localhost/api/posts/${postId}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Cookie: authCookie,
+					},
+					body: JSON.stringify({
+						content: '',
 					}),
 				}),
 			);

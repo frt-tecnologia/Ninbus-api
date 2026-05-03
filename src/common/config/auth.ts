@@ -13,6 +13,7 @@ export const auth = betterAuth({
 	database: drizzleAdapter(db, {
 		provider: 'pg',
 	}),
+	trustedOrigins: env.CORS_ORIGIN,
 	emailAndPassword: {
 		enabled: true,
 		minPasswordLength: 8,

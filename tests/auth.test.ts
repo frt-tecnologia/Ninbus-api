@@ -42,9 +42,7 @@ describe('Auth Module', () => {
 				}),
 			);
 
-			// Better Auth returns 200 with error in body for some errors
 			const body = await response.json();
-			// Either status is not 200, or there's an error in body
 			expect(response.status !== 200 || body.error !== undefined).toBe(true);
 		});
 
@@ -55,7 +53,7 @@ describe('Auth Module', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						email: 'weak@example.com',
-						password: '123', // Too short
+						password: '123',
 						name: 'Weak User',
 					}),
 				}),
@@ -63,6 +61,94 @@ describe('Auth Module', () => {
 
 			const body = await response.json();
 			expect(response.status !== 200 || body.error !== undefined).toBe(true);
+		});
+	});
+
+	describe('Sign Up - Body Validation', () => {
+		// Better Auth validates internally and returns 422 for missing required fields
+		it('rejects when email is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						password: testPassword,
+						name: testName,
+					}),
+				}),
+			);
+			expect(response.status).not.toBe(200);
+		});
+
+		// Better Auth allows passwordless registration (password can be set later)
+		it('accepts sign-up without password (passwordless flow)', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: `no-pw-${Date.now()}@example.com`,
+						name: testName,
+					}),
+				}),
+			);
+			expect(response.status).toBe(200);
+		});
+
+		// Better Auth allows registration without name
+		it('accepts sign-up without name', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: `no-name-${Date.now()}@example.com`,
+						password: testPassword,
+					}),
+				}),
+			);
+			expect(response.status).toBe(200);
+		});
+
+		it('returns 400 when email is invalid format', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: 'not-an-email',
+						password: testPassword,
+						name: testName,
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('returns 400 when password is too short (<8 chars)', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: `short-pw-${Date.now()}@example.com`,
+						password: '1234567',
+						name: testName,
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('rejects when body is empty', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({}),
+				}),
+			);
+			expect(response.status).not.toBe(200);
 		});
 	});
 
@@ -119,9 +205,66 @@ describe('Auth Module', () => {
 		});
 	});
 
+	describe('Sign In - Body Validation', () => {
+		// Better Auth may return various codes when email is missing
+		// depending on version and configuration
+		it('does not return 200 with valid session when email is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-in/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						password: testPassword,
+					}),
+				}),
+			);
+			// Should not create a valid session without email
+			const body = await response.json().catch(() => ({}));
+			const hasSession = body?.session?.token;
+			expect(hasSession).toBeFalsy();
+		});
+
+		it('rejects when password is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-in/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: testEmail,
+					}),
+				}),
+			);
+			expect(response.status).not.toBe(200);
+		});
+
+		it('returns 400 when email is invalid format', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-in/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: 'not-valid-email',
+						password: testPassword,
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('rejects when body is empty', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/sign-in/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({}),
+				}),
+			);
+			expect(response.status).not.toBe(200);
+		});
+	});
+
 	describe('Session', () => {
 		it('GET /api/auth/get-session returns session for authenticated user', async () => {
-			// First sign in to get a fresh cookie
 			const signInResponse = await app.handle(
 				new Request('http://localhost/api/auth/sign-in/email', {
 					method: 'POST',
@@ -136,7 +279,6 @@ describe('Auth Module', () => {
 			const setCookie = signInResponse.headers.get('set-cookie');
 			expect(setCookie).toBeDefined();
 
-			// Now get session with cookie
 			const response = await app.handle(
 				new Request('http://localhost/api/auth/get-session', {
 					method: 'GET',
@@ -164,7 +306,6 @@ describe('Auth Module', () => {
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
-			// Better Auth returns null directly when no session
 			expect(body === null || body.session === null).toBe(true);
 		});
 	});
@@ -181,8 +322,30 @@ describe('Auth Module', () => {
 				}),
 			);
 
-			// Should return 200 even for non-existent emails (security best practice)
 			expect(response.status).toBe(200);
+		});
+
+		// Better Auth returns 200 even without email (password reset always returns same response for security)
+		it('POST /api/auth/request-password-reset returns 200 even when email is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/request-password-reset', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({}),
+				}),
+			);
+			expect(response.status).toBe(200);
+		});
+
+		it('POST /api/auth/request-password-reset returns 400 when email is invalid', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/request-password-reset', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email: 'not-an-email' }),
+				}),
+			);
+			expect(response.status).toBe(400);
 		});
 
 		it('POST /api/auth/reset-password fails without valid token', async () => {
@@ -198,14 +361,63 @@ describe('Auth Module', () => {
 			);
 
 			const body = await response.json();
-			// Should fail with invalid token
 			expect(response.status !== 200 || body.error !== undefined).toBe(true);
+		});
+
+		it('POST /api/auth/reset-password returns 400 when token is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/reset-password', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						newPassword: 'NewPassword123!',
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/auth/reset-password returns 400 when newPassword is missing', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/reset-password', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						token: 'some-token',
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/auth/reset-password returns 400 when newPassword is too short', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/reset-password', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						token: 'some-token',
+						newPassword: '1234567',
+					}),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('POST /api/auth/reset-password returns 400 when body is empty', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/auth/reset-password', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({}),
+				}),
+			);
+			expect(response.status).toBe(400);
 		});
 	});
 
 	describe('Sign Out', () => {
 		it('POST /api/auth/sign-out ends the session', async () => {
-			// First sign in
 			const signInResponse = await app.handle(
 				new Request('http://localhost/api/auth/sign-in/email', {
 					method: 'POST',
@@ -220,7 +432,6 @@ describe('Auth Module', () => {
 			const setCookie = signInResponse.headers.get('set-cookie');
 			expect(setCookie).toBeDefined();
 
-			// Sign out
 			const signOutResponse = await app.handle(
 				new Request('http://localhost/api/auth/sign-out', {
 					method: 'POST',
@@ -232,7 +443,6 @@ describe('Auth Module', () => {
 
 			expect(signOutResponse.status).toBe(200);
 
-			// Verify session is gone
 			const sessionResponse = await app.handle(
 				new Request('http://localhost/api/auth/get-session', {
 					method: 'GET',
@@ -243,7 +453,6 @@ describe('Auth Module', () => {
 			);
 
 			const body = await sessionResponse.json();
-			// Better Auth returns null directly when no session
 			expect(body === null || body.session === null).toBe(true);
 		});
 	});

@@ -2,6 +2,10 @@ import { env } from '@common/config/env';
 import { closeDatabase } from '@common/db';
 import { appLogger } from '@common/logger';
 import { createApp } from './app';
+import { runStartupMigrations } from './scripts/migrate';
+
+// Run migrations before starting the server
+await runStartupMigrations();
 
 // App entrypoint
 const app = createApp();

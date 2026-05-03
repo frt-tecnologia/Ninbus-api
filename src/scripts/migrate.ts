@@ -4,17 +4,21 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
 /**
- * Database Migration Script
+ * Database Migration
+ *
  * Runs all pending migrations from the ./drizzle folder.
- * * Usage: bun run db:migrate
+ * Called automatically at startup (src/index.ts) and via: bun run db:migrate
  */
 
-const DATABASE_URL = process.env['DATABASE_URL']!;
+export async function runStartupMigrations(databaseUrl?: string) {
+	const url = databaseUrl || process.env['DATABASE_URL']!;
+	if (!url) {
+		throw new Error('[MIGRATION] DATABASE_URL is not set');
+	}
 
-async function runMigrations() {
-	appLogger.info('[MIGRATION] Starting database migration...');
+	appLogger.info('[MIGRATION] Running database migrations...');
 
-	const migrationClient = postgres(DATABASE_URL, { max: 1 });
+	const migrationClient = postgres(url, { max: 1 });
 	const db = drizzle(migrationClient);
 
 	try {
@@ -28,13 +32,16 @@ async function runMigrations() {
 	}
 }
 
-runMigrations()
-	.then(() => {
-		appLogger.info('[MIGRATION] Migration script finished');
-		process.exit(0);
-	})
-	.catch((error) => {
-		console.error('[MIGRATION] Critical error:', error);
-		appLogger.error({ error }, '[MIGRATION] Migration script failed');
-		process.exit(1);
-	});
+// Allow standalone execution: bun run db:migrate
+const isDirectRun = import.meta.main || process.argv[1]?.endsWith('migrate.ts');
+if (isDirectRun) {
+	runStartupMigrations()
+		.then(() => {
+			appLogger.info('[MIGRATION] Migration script finished');
+			process.exit(0);
+		})
+		.catch((error) => {
+			console.error('[MIGRATION] Critical error:', error);
+			process.exit(1);
+		});
+}

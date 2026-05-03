@@ -1,475 +1,451 @@
-<h1 align="center">Elysia Production Boilerplate</h1>
-<h3 align="center">
-    A production-ready ElysiaJS starter for your projects, featuring<br>
-    <b>Clean Architecture</b>, <b>Better Auth</b>, <b>Drizzle ORM</b>, and <b>OpenAPI</b> documentation.
-</h3>
-<p align="center">
-    <img src=".github/assets/thumbnail.png" alt="Elysia Production Template Thumbnail" width="600">
-</p>
+# Ninbus API
 
-<p align="center">
-  <a href="https://elysiajs.com">
-    <img src="https://img.shields.io/badge/Elysia-8A2BE2?logo=elysia&logoColor=white&style=for-the-badge" alt="Elysia">
-  </a>
-  <a href="https://bun.sh">
-    <img src="https://img.shields.io/badge/Bun-000000?logo=bun&style=for-the-badge" alt="Bun">
-  </a>
-  <a href="https://www.typescriptlang.org">
-    <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white&style=for-the-badge" alt="TypeScript">
-  </a>
-  <a href="https://better-auth.com">
-    <img src="https://img.shields.io/badge/Better%20Auth-000000?style=for-the-badge" alt="Better Auth">
-  </a>
-  <a href="https://orm.drizzle.team">
-    <img src="https://img.shields.io/badge/Drizzle-0099FF?logo=drizzle&logoColor=white&style=for-the-badge" alt="Drizzle ORM">
-  </a>
-  <a href="https://www.postgresql.org">
-    <img src="https://img.shields.io/badge/PostgreSQL-316192?logo=postgresql&logoColor=white&style=for-the-badge" alt="PostgreSQL">
-  </a>
-  <a href="https://www.docker.com">
-    <img src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white&style=for-the-badge" alt="Docker">
-  </a>
-</p>
+Backend da plataforma IoT Ninbus — gerenciamento de dispositivos, deployments OTA e orquestração de frotas.
 
-<p align="center">
-  <a href="https://github.com/techfusionid/elysia-production-template/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/techfusionid/elysia-production-template/ci.yml?label=CI&logo=github&style=flat" alt="CI">
-  </a>
-  <img src="https://img.shields.io/badge/OpenAPI-documented-6BA539?logo=openapi&style=flat" alt="OpenAPI">
-    <a href="https://github.com/techfusionid/elysia-production-template/generate">
-  <img src="https://img.shields.io/badge/use%20this-template-2ea44f?style=flat-square" />
-</a>
-</p>
+Construído com **Bun** + **Elysia** + **Better Auth** + **Drizzle ORM** + **Mender Gateway**.
 
-## Features
+---
 
-### What you get:
+## Visão Geral
 
-- ⚡ High-performance, fully async APIs
-- 🔐 Built-in Auth & API Endpoint Protection (Better Auth)
-- ✅ Type-safe validation (TypeBox)
-- 🗄️ Database & Migrations (PostgreSQL + Drizzle ORM)
-- 📖 API Documentation via OpenAPI with Scalar UI
-- 🚦 Rate limiter for global & auth
-- 🧾 Structured logging using Pino
-- 🌐 Configurable CORS middleware for frontend integration
-- 📧 Email Infrastructure via Resend + React Email _(optional)_
-- 🐳 One-command Docker Compose
+```
+Frontend ──▶ Ninbus API ──▶ Mender Gateway (Traefik)
+   │             │                    │
+   │             │              ┌─────┴─────┐
+   │             │              │ Microserviços Mender
+   │             │              │ deviceauth, deployments,
+   │             │              │ inventory, deviceconnect
+   │             │              └───────────┘
+   │             │
+   │        PostgreSQL
+   │     (dispositivos, empresas,
+   │      categorias, sessões)
+   │
+   └── Dispositivos IoT (Ninbus WiFi v3)
+       firmware-ninbus | firmware-controller | configuration-nfx
+```
 
-## Why use this starter?
+O Ninbus API é a camada de negócio entre o frontend e o Mender. Ele gerencia:
 
-**Elysia.js is fast.** It's currently one of the fastest frameworks in the Bun ecosystem, with [benchmarks showing performance](https://elysiajs.com/at-glance.html#performance) that can match Golang and Rust frameworks (based on TechEmpower Benchmarks).
-
-**The problem?** Setting up Authentication, ORM, Docker, and logging from scratch for a production-ready app takes hours.
-
-This boilerplate provides a **simple, ready-to-use, production-grade foundation** so you can focus on building features immediately with Elysia, without redoing repetitive configuration and setup.
-
-### Perfect if you want to:
-
-- Build a production-ready API on Elysia.js without reinventing the same setup
-- Start developing immediately with sensible defaults and clear structure
-- Keep full control over configuration while avoiding boilerplate fatigue
-- Use modern, type-safe tooling without framework lock-in
+- **Multi-tenancy** — empresas, membros, roles (owner/admin/operator/viewer)
+- **Dispositivos** — registro, vinculação com Mender, categorização (linhas, garagens, pátios)
+- **Deployments OTA** — criação, monitoramento, abort por dispositivo
+- **Artefatos** — upload `.mender`, listagem, releases, metadados por tipo
+- **Sincronização** — auto-aceite de dispositivos pendentes via serial number
 
 ---
 
 ## Quick Start
 
-### 1. Use This Template (Recommended)
+### Pré-requisitos
 
-Click the green **"Use this template"** button at the top of this repo — or use the direct link:
+- [Bun](https://bun.sh) >= 1.1
+- [PostgreSQL](https://www.postgresql.org/) >= 16
+- [Docker](https://www.docker.com/) (opcional, para Mender Gateway)
 
-👉 [**Create from template**](https://github.com/techfusionid/elysia-production-template/generate)
-
-> Creates a clean repo without git history.
-
-### 2. Clone the repository (Alternative)
-
-If you prefer cloning manually:
+### Instalação
 
 ```bash
-git clone https://github.com/techfusionid/elysia-production-template.git
-cd elysia-production-template
+# Clone o repositório
+git clone https://github.com/ninbus/ninbus-api.git
+cd ninbus-api
+
+# Instale as dependências
+bun install
+
+# Configure as variáveis de ambiente
+cp .env.example .env
+# Edite o .env com seus valores (veja seção Configuração abaixo)
+
+# Rode as migrations
+bun run db:migrate
+
+# Inicie o servidor em modo desenvolvimento
+bun run dev
 ```
 
-**Setup environment:**
+O servidor inicia em `http://localhost:3000` (ou a porta configurada em `PORT`).
+
+### Usando Docker
+
+```bash
+# Build e suba os containers
+bun run docker:build
+bun run docker:up
+
+# Veja os logs
+bun run docker:logs
+```
+
+---
+
+## Documentação da API
+
+Após iniciar o servidor, acesse a documentação interativa:
+
+```
+http://localhost:3000/docs
+```
+
+A documentação é gerada automaticamente via **Scalar** + **OpenAPI 3.0**. Todas as rotas, body schemas, response schemas e exemplos estão documentados lá.
+
+### Health Check
+
+```bash
+curl http://localhost:3000/health
+```
+
+---
+
+## Configuração
+
+Todas as variáveis são validadas no startup via TypeBox. Copie `.env.example` para `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-> [!IMPORTANT]
-> Open `.env` and update `BETTER_AUTH_SECRET` and `DATABASE_URL` before running.
+### Variáveis Obrigatórias
 
-**Install & run:**
+| Variável | Descrição | Exemplo |
+|----------|-----------|---------|
+| `DATABASE_URL` | Connection string PostgreSQL | `postgresql://postgres:postgres@localhost:5432/ninbus_db` |
+| `BETTER_AUTH_SECRET` | Secret para sessões (mín 32 chars) | `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | URL base da API (para redirects) | `http://localhost:3000` |
+| `REQUIRE_EMAIL_VERIFICATION` | Exigir verificação de email | `false` |
+| `RESEND_API_KEY` | API key do Resend (opcional) | — |
+| `EMAIL_FROM` | Email sender address | `noreply@example.com` |
 
-```bash
-bun install
-bun run dev
-```
+### Variáveis Opcionais
 
-**Or with Docker:**
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `PORT` | `3000` | Porta do servidor |
+| `HOST` | `0.0.0.0` | Bind address |
+| `NODE_ENV` | `development` | `development` / `production` / `test` |
+| `LOG_LEVEL` | `info` | `fatal` / `error` / `warn` / `info` / `debug` / `trace` |
+| `CORS_ORIGIN` | — | Origins separados por vírgula |
+| `ENABLE_AUTH` | `true` | Desabilita autenticação |
+| `ENABLE_RATE_LIMITER` | `true` | Rate limiting global |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Janela de tempo (ms) rate limit global |
+| `RATE_LIMIT_MAX` | `100` | Max requisições global por IP |
+| `AUTH_RATE_LIMIT_WINDOW_MS` | `60000` | Janela de tempo (ms) rate limit auth |
+| `AUTH_RATE_LIMIT_MAX` | `10` | Max requisições auth por IP |
 
-```bash
-docker compose up
-```
+### Mender Gateway
 
-Your app is now running:
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `MENDER_ENABLED` | `false` | Habilita integração com Mender |
+| `MENDER_GATEWAY_URL` | — | URL do Traefik Gateway do Mender |
+| `MENDER_PAT` | — | Personal Access Token do Mender |
+| `MENDER_TIMEOUT_MS` | `30000` | Timeout das requisições |
+| `MENDER_HOST_OVERRIDE` | — | Override do header Host (para Docker) |
+| `MENDER_SKIP_TLS` | `false` | Ignora certificado TLS (dev) |
+| `MENDER_TENANT_TOKEN` | — | Token para Mender multi-tenant |
 
-- **API:** http://localhost:3000
-- **Docs:** http://localhost:3000/docs
-- **Health:** http://localhost:3000/health
+> **Nota**: O PAT é obtido via `POST /api/management/v1/useradm/settings/tokens` no Mender.
 
-## Project Structure
+---
+
+## Estrutura do Projeto
 
 ```
 src/
+├── index.ts                      # Entrypoint — migrations + server + graceful shutdown
+├── app.ts                        # Composition root — middleware + módulos
+│
 ├── common/
-│   ├── config/       # Environment, auth, email settings
-│   ├── db/           # Database connection & schema
-│   ├── logger/       # Pino logger
-│   └── middleware/   # Auth guard, rate limiter, request logger
+│   ├── config/
+│   │   ├── env.ts                # Fonte única da verdade — 24 vars validadas por TypeBox
+│   │   ├── mender.ts             # Thin accessor tipado sobre env (zero process.env)
+│   │   ├── auth.ts               # Better Auth config (session, email, cookies)
+│   │   ├── auth-client.ts        # Better Auth client (email OTP plugin)
+│   │   └── email.ts              # Resend email helper
+│   ├── db/
+│   │   ├── index.ts              # Drizzle client (pool max 10)
+│   │   └── schema/               # Drizzle table definitions
+│   │       ├── auth.ts           # Better Auth tables (user, session, account, verification)
+│   │       ├── companies.ts      # companies + company_members
+│   │       ├── categories.ts     # categories (bus_line, garage, yard, region, custom)
+│   │       ├── devices.ts        # devices + device_category_assignments
+│   │       ├── posts.ts          # Posts (reference)
+│   │       └── index.ts          # Barrel exports
+│   ├── mender/
+│   │   ├── artifact-generator.ts # Pure TS .mender v3 generator (tar+gzip)
+│   │   ├── client.ts             # API functions (deviceauth, deployments, inventory, connect)
+│   │   ├── http.ts               # HTTP client — PAT injection, Host override, TLS skip
+│   │   └── types.ts              # Mender DTO interfaces
+│   ├── middleware/
+│   │   ├── auth-guard.ts         # withAuth() — deriva user/session + macro auth
+│   │   ├── company-check.ts      # checkMembership() — shared authorization helper
+│   │   ├── company-guard.ts      # hasCompanyRole() — role-based middleware
+│   │   ├── rate-limiter.ts       # Rate limiting global + auth
+│   │   └── request-logger.ts     # Structured request logging
+│   ├── logger/
+│   │   └── index.ts              # Pino logger (silent em testes)
+│   └── schemas/
+│       └── index.ts              # ErrorResponseSchema + GenericActionResponseSchema
+│
 ├── modules/
-│   ├── auth/         # Better Auth integration
-│   ├── health/       # Health check endpoint
-│   └── posts/        # Example CRUD module
-├── app.ts            # App composition & middleware
-└── index.ts          # Entry point
+│   ├── artifacts/                # Upload, generate, list, delete, releases
+│   │   ├── schemas.ts            # Body + response schemas + constants
+│   │   ├── service.ts            # Validation, Mender proxy, artifact generation
+│   │   ├── index.ts              # POST /upload + POST /generate + GET /types
+│   │   └── manage-routes.ts      # GET / list, get, delete, download, releases
+│   ├── auth/                     # Better Auth routes
+│   │   ├── schemas.ts            # Auth body + response schemas
+│   │   └── index.ts              # sign-up, sign-in, sign-out, session, password reset
+│   ├── categories/               # Device grouping (bus_line, garage, yard, region)
+│   │   ├── schemas.ts            # Category schemas
+│   │   ├── service.ts            # Category CRUD logic
+│   │   └── index.ts              # Category routes
+│   ├── companies/                # Multi-tenancy CRUD + members
+│   │   ├── schemas.ts            # Company + member schemas
+│   │   ├── service.ts            # Company + member CRUD logic
+│   │   ├── index.ts              # Company CRUD routes
+│   │   └── member-routes.ts      # Member management routes
+│   ├── deployments/              # OTA deployment creation + monitoring
+│   │   ├── schemas.ts            # Schemas + param schemas
+│   │   ├── service.ts            # Mender deployment logic
+│   │   ├── index.ts              # POST create + GET artifact-types + GET deployment
+│   │   └── device-routes.ts      # Abort, statistics, device list, logs, history
+│   ├── devices/                  # Ninbus device registry
+│   │   ├── schemas.ts            # Body + response schemas
+│   │   ├── service.ts            # CRUD + Mender integration + sync trigger
+│   │   ├── sync.ts               # Mender ↔ Ninbus sync engine
+│   │   ├── auth.ts               # checkMembership + loadDevice + requireMenderLink
+│   │   ├── index.ts              # CRUD routes
+│   │   └── mender-routes.ts      # Approve, reject, decommission, check-update, inventory, connection
+│   ├── health/                   # GET /health
+│   └── posts/                    # Reference CRUD module
+│       ├── schemas.ts
+│       ├── service.ts
+│       └── index.ts
+│
+└── scripts/
+    ├── migrate.ts                # Drizzle migrations runner
+    └── seed.ts                   # Database seeder
 
-tests/                # Integration tests
+tests/                            # 184 testes Bun
+├── auth.test.ts
+├── artifacts.test.ts
+├── categories.test.ts
+├── companies.test.ts
+├── deployments.test.ts
+├── devices.test.ts
+├── health.test.ts
+└── posts.test.ts
 ```
 
-> 📌 **Note**
-> The `posts` module and its API endpoints are provided as example CRUD implementations.
-> You can safely modify or remove them if not needed.
+### Padrão por Módulo
 
-## Configuration
+Cada módulo segue a mesma estrutura:
 
-Key environment variables (see `.env.example` for full list):
+```
+module/
+├── schemas.ts     ← Body schemas, response schemas, param schemas
+├── service.ts     ← Lógica de negócio (DB + Mender calls)
+├── index.ts       ← Rotas CRUD principais (importa schemas)
+└── *-routes.ts    ← Rotas extras (split por operação quando > 200 linhas)
+```
 
-| Variable                     | Description                                                   | Required                                                    |
-| ---------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- |
-| `NODE_ENV`                   | Runtime environment (`development`, `production`, `test`)     | No (default: `development`)                                 |
-| `HOST`                       | Server bind address                                           | No (default: `0.0.0.0`)                                     |
-| `PORT`                       | Server port                                                   | No (default: `3000`)                                        |
-| `DATABASE_URL`               | PostgreSQL connection string                                  | Yes                                                         |
-| `BETTER_AUTH_SECRET`         | Auth secret key (generate: `openssl rand -base64 32`)         | Yes                                                         |
-| `BETTER_AUTH_URL`            | Base URL for auth callbacks                                   | Yes                                                         |
-| `ENABLE_AUTH`                | Enable/disable auth module                                    | No (default: `true`)                                        |
-| `REQUIRE_EMAIL_VERIFICATION` | Require email verification before login                       | No (default: `false`)                                       |
-| `ENABLE_RATE_LIMITER`        | Enable/disable rate limiting                                  | No (default: `true`)                                        |
-| `LOG_LEVEL`                  | Log level: `fatal`, `error`, `warn`, `info`, `debug`, `trace` | No (default: `info`)                                        |
-| `CORS_ORIGIN`                | Allowed origins (comma-separated)                             | No (default: `http://localhost:3000,http://localhost:5173`) |
+**Regra**: Arquivos de rota NUNCA definem response schemas inline — sempre importam do `schemas.ts`.
 
-> `NODE_ENV` is used to adjust logging visual, testing, and runtime behavior.
+---
 
-## Logging
+## Rotas da API
 
-Logging behavior is automatically adjusted based on `NODE_ENV`:
+### Autenticação (`/api/auth/*`)
 
-- `NODE_ENV=development`: human-readable logs for easier debugging
-- `NODE_ENV=production`: structured JSON logs, optimized for log aggregation and monitoring
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/api/auth/sign-up/email` | Registrar com email + senha + nome |
+| POST | `/api/auth/sign-in/email` | Login com email + senha |
+| POST | `/api/auth/sign-out` | Encerrar sessão |
+| GET | `/api/auth/get-session` | Sessão atual |
+| POST | `/api/auth/request-password-reset` | Solicitar reset de senha |
+| POST | `/api/auth/reset-password` | Resetar senha com token |
 
-Log verbosity can be controlled using the `LOG_LEVEL` environment variable.
+> Body schemas documentados nas route descriptions (Better Auth lê body internamente).
 
-## Commands
+### Empresas (`/api/companies/*`)
 
-**Development:**
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| GET | `/api/companies` | ✅ | Listar empresas do usuário |
+| POST | `/api/companies` | ✅ | Criar empresa |
+| GET | `/api/companies/:companyId` | ✅ Membro | Detalhes da empresa |
+| PUT | `/api/companies/:companyId` | ✅ Membro | Atualizar empresa |
+| DELETE | `/api/companies/:companyId` | ✅ Membro | Remover empresa |
+| GET | `/api/companies/:companyId/members` | ✅ Membro | Listar membros |
+| POST | `/api/companies/:companyId/members` | ✅ Membro | Adicionar membro |
+
+### Dispositivos (`/api/companies/:companyId/devices/*`)
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/` | Listar dispositivos da empresa |
+| POST | `/` | Registrar dispositivo |
+| GET | `/:deviceId` | Detalhes (com sync Mender) |
+| PUT | `/:deviceId` | Atualizar dispositivo |
+| DELETE | `/:deviceId` | Remover dispositivo |
+| GET | `/:deviceId/categories` | Categorias do dispositivo |
+| PUT | `/:deviceId/categories` | Atribuir categorias |
+| POST | `/:deviceId/approve` | Aprovar no Mender |
+| POST | `/:deviceId/reject` | Rejeitar no Mender |
+| POST | `/:deviceId/decommission` | Descommissionar do Mender |
+| POST | `/:deviceId/check-update` | Forçar verificação de update |
+| GET | `/:deviceId/inventory` | Inventory do Mender |
+| GET | `/:deviceId/connection` | Estado de conexão |
+
+### Deployments (`/api/companies/:companyId/deployments/*`)
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/artifact-types` | Tipos de artefato Ninbus |
+| POST | `/` | Criar deployment OTA |
+| GET | `/:deploymentId` | Detalhes do deployment |
+| PUT | `/:deploymentId/status` | Abortar deployment |
+| GET | `/:deploymentId/statistics` | Estatísticas de progresso |
+| GET | `/:deploymentId/devices` | Lista de dispositivos no deployment |
+| GET | `/:deploymentId/devices/:menderDeviceId/log` | Log de instalação do dispositivo |
+| DELETE | `/devices/:menderDeviceId/deployments` | Abortar todos deployments do dispositivo |
+| GET | `/devices/:deviceId/history` | Histórico de deployments |
+
+### Artefatos (`/api/companies/:companyId/artifacts/*`)
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/` | Upload de artefato `.mender` |
+| POST | `/generate` | Gerar `.mender` a partir de firmware raw (.fir/.frz/.bin) |
+| GET | `/types` | Tipos de artefato Ninbus |
+| GET | `/` | Listar artefatos |
+| GET | `/:artifactId` | Detalhes do artefato |
+| GET | `/:artifactId/download` | Link de download |
+| DELETE | `/:artifactId` | Remover artefato |
+| PUT | `/:artifactId` | Atualizar descrição |
+| GET | `/releases` | Listar releases |
+
+---
+
+## Tipos de Artefato Ninbus
+
+O sistema suporta 3 tipos de artefato para dispositivos Ninbus WiFi v3:
+
+| Tipo | Destino | Risco | Reboot |
+|------|---------|-------|--------|
+| `firmware-ninbus` | NAND → Bootloader → STM32F407 | 🔴 HIGH | ✅ Sim |
+| `firmware-controller` | CAN Bus → LightDot | 🟡 MEDIUM | ❌ Não |
+| `configuration-nfx` | NAND NFX → CAN → LightDot | 🟢 LOW | ❌ Não |
+
+---
+
+## Testes
 
 ```bash
-bun run dev          # Start dev server with hot reload
+# Suba o PostgreSQL
+docker run -d --name ninbus-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=ninbus_db \
+  -p 5432:5432 \
+  postgres:16-alpine
+
+# Rode as migrations no banco de teste
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ninbus_db bun run db:migrate
+
+# Rode os testes
+bun test
+
+# Ou em modo watch
+bun run test:watch
+```
+
+**184 testes** cobrindo: auth, CRUD de empresas/dispositivos/categorias, deployments, artefatos, health, validação, autorização.
+
+---
+
+## Scripts Disponíveis
+
+| Script | Comando | Descrição |
+|--------|---------|-----------|
+| `dev` | `bun run dev` | Servidor com hot reload |
+| `build` | `bun run build` | Build de produção |
+| `start` | `bun run start` | Iniciar build de produção |
+| `test` | `bun test` | Rodar testes |
+| `lint` | `bun run lint` | Lint com Biome |
+| `lint:fix` | `bun run lint:fix` | Lint + auto-fix |
+| `format` | `bun run format` | Format com Biome |
+| `db:generate` | `bun run db:generate` | Gerar migration |
+| `db:migrate` | `bun run db:migrate` | Rodar migrations |
+| `db:push` | `bun run db:push` | Push schema direto (dev) |
+| `db:seed` | `bun run db:seed` | Popular banco |
+| `db:studio` | `bun run db:studio` | Drizzle Studio |
+| `docker:build` | `bun run docker:build` | Build Docker image |
+| `docker:up` | `bun run docker:up` | Subir containers |
+| `docker:down` | `bun run docker:down` | Derrubar containers |
+| `docker:logs` | `bun run docker:logs` | Ver logs dos containers |
+
+---
+
+## Stack
+
+| Tecnologia | Versão | Uso |
+|------------|--------|-----|
+| [Bun](https://bun.sh) | >= 1.1 | Runtime + bundler + test runner |
+| [Elysia](https://elysiajs.com) | latest | Web framework (plugins, macros, OpenAPI) |
+| [Better Auth](https://better-auth.com) | latest | Autenticação (email/password, sessões, cookies) |
+| [Drizzle ORM](https://orm.drizzle.team) | latest | ORM PostgreSQL com TypeBox schemas |
+| [TypeBox](https://github.com/sinclairtypebox/typebox) | latest | Runtime type validation |
+| [Biome](https://biomejs.dev) | latest | Linter + formatter |
+| [Scalar](https://scalar.com) | — | Documentação OpenAPI interativa |
+| Mender Gateway | — | OTA deployment server (externo) |
+
+---
+
+## Arquitetura
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Ninbus API                         │
+│                                                      │
+│  Route (handler)  →  Service (logic)  →  Adapter     │
+│  schemas.ts            service.ts        mender/     │
+│  index.ts              (Drizzle DB)      client.ts   │
+│  *-routes.ts                            http.ts      │
+│                                                      │
+│  ┌────────────┐  ┌────────────┐  ┌───────────────┐   │
+│  │  Better     │  │  Drizzle   │  │  Mender HTTP   │  │
+│  │  Auth       │  │  ORM       │  │  Client        │  │
+│  │  (sessions) │  │  (Postgres)│  │  (PAT + Host)  │  │
+│  └────────────┘  └────────────┘  └───────────────┘   │
+│                                                      │
+│  env.ts → Single source of truth (24 vars validadas) │
+└──────────────────────────────────────────────────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   Mender Gateway    │
+              │   (Traefik v3.6)    │
+              │                     │
+              │  deviceauth         │
+              │  deployments        │
+              │  inventory          │
+              │  deviceconnect      │
+              └─────────────────────┘
+```
+
+### Fluxo de Autorização
+
+```
+Request → auth-guard (withAuth) → company-check (checkMembership) → loadDevice → requireMenderLink → handler
+                │                        │                              │              │
+          deriva user/session       verifica membro              busca dispositivo   verifica vínculo Mender
+          rejeita 401 se não auth  rejeita 403 se não membro     rejeita 404 se não   rejeita 400 se não linkado
 ```
 
 ---
 
-**🐳 Local Development with Docker PostgreSQL**
+## Licença
 
-For local development, it's recommended to run PostgreSQL via Docker
-while keeping the API running locally with Bun.
-
-```bash
-docker compose up -d postgres
-```
-
-**Production:**
-
-```bash
-bun run build        # Build for production
-bun run start        # Start production server
-```
-
----
-
-**Docker Compose**
-
-Run API + PostgreSQL fully inside Docker:
-
-```bash
-docker compose up
-docker compose up --build
-docker compose down
-```
-
-View compose logs:
-
-```bash
-docker compose logs -f
-docker compose logs -f api
-docker compose logs -f postgres
-```
-
-**Database & Migration (Drizzle):**
-
-```bash
-bun run db:generate  # Generate Drizzle migrations
-bun run db:migrate   # Run migrations
-bun run db:studio    # Open Drizzle Studio (visual database browser)
-```
-
----
-
-**Testing:**
-
-```bash
-bun run test         # Run integration tests
-```
-
-> [!NOTE]
-> Tests run against your local database. Make sure PostgreSQL is running before testing.
-
-**Linting:**
-
-```bash
-bun run lint         # Run Biome linter
-bun run format       # Format code
-```
-
----
-
-## API Endpoints
-
-Below are the main routes exposed by the template. See `/docs` for full request/response schemas.
-
-**Auth routes** (via Better Auth):
-
-| Method | Endpoint                           | Description            |
-| ------ | ---------------------------------- | ---------------------- |
-| POST   | `/api/auth/sign-up/email`          | Register               |
-| POST   | `/api/auth/sign-in/email`          | Login                  |
-| POST   | `/api/auth/sign-out`               | Logout                 |
-| GET    | `/api/auth/get-session`            | Get current session    |
-| POST   | `/api/auth/request-password-reset` | Request password reset |
-| POST   | `/api/auth/reset-password`         | Reset password         |
-
-**Posts routes** (example CRUD – safe to remove):
-
-| Method | Endpoint         | Description     | Auth  |
-| ------ | ---------------- | --------------- | ----- |
-| GET    | `/api/posts`     | List all posts  | No    |
-| GET    | `/api/posts/:id` | Get single post | No    |
-| POST   | `/api/posts`     | Create post     | Yes   |
-| PUT    | `/api/posts/:id` | Update post     | Owner |
-| DELETE | `/api/posts/:id` | Delete post     | Owner |
-
-**Health:**
-
-| Method | Endpoint  | Description                 |
-| ------ | --------- | --------------------------- |
-| GET    | `/health` | Health check with DB status |
-
-> Full API documentation available at `/docs` when running.
-
----
-
-### Adding New Modules
-
-The `posts` module is included as a reference CRUD implementation. Feel free to remove or replace it with your own modules.
-
-To add a new module:
-
-1. Create folder: `src/modules/your-module/`
-2. Add `index.ts` (routes), `service.ts` (business logic), and optionally `schema.ts`
-3. Register in `src/app.ts`:
-
-```typescript
-import { yourModule } from "@modules/your-module";
-app.use(yourModule);
-```
-
----
-
-## Customization
-
-This template is designed to be configurable without hiding behavior. Below are common customization points.
-
-### Disabling Authentication
-
-To disable authentication, set `ENABLE_AUTH=false` in `.env`.
-All auth routes and middleware will be automatically excluded.
-
-If you want to **completely remove built-in auth** from your codebase:
-
-1. Delete the `src/modules/auth/` folder
-2. Remove the `src/common/config/auth.ts` file
-3. (Optional) Clean up any route guards that use `auth: true` (e.g., in `posts` module)
-
-> 💡 For most use cases, just setting `ENABLE_AUTH=false` is sufficient and safe.
-
-### Email Verification
-
-By default, email verification is disabled. To enable, set in `.env`:
-
-```bash
-REQUIRE_EMAIL_VERIFICATION=true
-```
-
-When enabled, users must verify their email before they can log in.
-
-> [!TIP]
-> In development, emails are logged to console (no provider needed). To test with real emails, configure Resend (see below).
-
-### Email Setup (Resend)
-
-To send real emails for verification and password reset:
-
-1. Create an account at [resend.com](https://resend.com)
-2. Get your API key from the dashboard
-3. Add to `.env`:
-   ```bash
-   RESEND_API_KEY=re_xxxxxxxxxxxxx
-   EMAIL_FROM=onboarding@resend.dev
-   ```
-
-> [!NOTE]
-> **Sandbox mode:** `onboarding@resend.dev` can only send to your Resend account email. For production, verify your domain. See [Resend documentation](https://resend.com/docs) for details.
-
-### Password Reset
-
-Password reset works out of the box. Reset links are logged to console in development, or sent via email when Resend is configured.
-
-### Rate Limiting
-
-Rate limiting is enabled by default. To disable (e.g., for testing):
-
-```bash
-ENABLE_RATE_LIMITER=false
-```
-
-Adjust rate limits via environment variables:
-
-```bash
-# Global rate limit
-RATE_LIMIT_WINDOW_MS=60000    # 60 seconds
-RATE_LIMIT_MAX=100            # 100 requests per window
-
-# Auth-specific rate limit (stricter)
-AUTH_RATE_LIMIT_WINDOW_MS=60000
-AUTH_RATE_LIMIT_MAX=10
-```
-
-### Protected vs Public Routes
-
-Use the `auth` route option to mark endpoints as protected:
-
-```typescript
-// Public route - anyone can access
-.get("/", async () => { ... })
-
-// Protected route - requires login
-.post("/", async ({ user }) => { ... }, { auth: true })
-```
-
-### Validation & Schemas
-
-Uses **drizzle-typebox** to generate validation schemas from Drizzle ORM:
-
-```typescript
-// Auto-generated from Drizzle + override validation
-export const createPostSchema = createInsertSchema(posts, {
-  title: t.String({ minLength: 5, maxLength: 50 }),
-  content: t.String({ minLength: 10 }),
-});
-
-// Use in routes (omit auto-generated fields)
-body: t.Omit(createPostSchema, ['id', 'authorId', 'createdAt', 'updatedAt'])
-```
-
-When you add fields in Drizzle, they auto-include in validation. Only validation rules need manual override.
-
-[Docs](https://elysiajs.com/integrations/drizzle)
-
----
-
-### Custom Authorization
-
-For additional checks beyond login (e.g., ownership, roles, permissions), add logic in the route handler. The `posts` module shows an ownership check example:
-
-```typescript
-.put("/:id", async ({ params, user, set }) => {
-  const isOwner = await service.isPostOwner(params.id, user.id);
-
-  if (!isOwner) {
-    set.status = 403;
-    return { error: "Forbidden", message: "Not allowed" };
-  }
-
-  // proceed...
-}, { auth: true })
-```
-
----
-
-## Deployment
-
-This template is container-ready and works well with most Docker-based platforms.
-
-## Contributing
-
-Thanks for your interest in contributing to **Elysia Production Template**!
-Contributions of all kinds are welcome: bug fixes, improvements, documentation, and examples.
-
-This project aims to stay **simple, production-focused, and easy to extend**, so we appreciate well-scoped and thoughtful contributions.
-
----
-
-### How to contribute
-
-1. Fork this repository
-2. Create a new branch from `main`
-3. Make your changes
-4. Run linting and tests using `bun test`
-5. Open a pull request with clear PR description of the changes
-
-```bash
-git checkout -b my-feature
-```
-
-## FAQ
-
-<details>
-<summary><strong>Why Elysia.js?</strong></summary>
-
-Elysia is currently the fastest Bun framework with excellent TypeScript support, end-to-end type safety, and a clean plugin architecture. Perfect for building production APIs without sacrificing developer experience.
-
-</details>
-
-<details>
-<summary><strong>Can I use a different database?</strong></summary>
-
-The template uses PostgreSQL with Drizzle ORM. Drizzle also supports MySQL and SQLite. Update the connection config and adjust schema types as needed.
-
-</details>
-
-<details>
-<summary><strong>Is this production-ready?</strong></summary>
-
-Yes. Includes rate limiting, structured logging, error handling, health checks, and Docker support. For production, ensure you:
-
-- Use strong secrets
-- Set up database backups
-- Ensure HTTPS is handled by a reverse proxy or your hosting platform (nginx, Caddy, or managed TLS)
-</details>
-
-## License
-
-[MIT](LICENSE)
+Projeto proprietário — Ninbus Tecnologia.

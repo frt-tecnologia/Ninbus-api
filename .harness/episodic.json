@@ -62,6 +62,13 @@
       "type": "evaluation",
       "summary": "Iteration 13: 8/8 criteria passed. Complete migration from Mender Gateway to Eclipse hawkBit update server. Branch: feat/hawkbit-api. All files under 250 lines, clean build, clean lint. hawkBit API verified against live server at localhost:8080. DB migration included for column renames.",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-14-1777990621453",
+      "timestamp": 1777990621453,
+      "type": "evaluation",
+      "summary": "Iteration 14: 8/8 criteria passed. Iteration 14 complete. Three user questions answered with code changes: (1) Basic Auth is efficient for backend-to-backend (stateless, no refresh). hawkBit also supports Bearer JWT if needed later. (2) Compressed .nfx files verified working with hawkBit upload. (3) Routes simplified — removed 4 Mender-only endpoints, renamed for hawkBit conventions, hawkbit-routes.ts dropped 247→150 lines.",
+      "allTestsPassed": true
     }
   ]
 }

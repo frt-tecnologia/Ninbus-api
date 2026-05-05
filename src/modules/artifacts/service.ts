@@ -6,6 +6,7 @@ import {
 	hawkbitSoftwareModules,
 	resolveArtifactType,
 } from '@common/hawkbit/client';
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 
@@ -73,7 +74,12 @@ export function validateFileSize(
 export class ArtifactValidationError extends Error {
 	constructor(
 		message: string,
-		public readonly code: 'INVALID_EXTENSION' | 'FILE_TOO_LARGE' | 'EMPTY_FILE' | 'MISSING_FILE',
+		public readonly code:
+			| 'INVALID_EXTENSION'
+			| 'FILE_TOO_LARGE'
+			| 'EMPTY_FILE'
+			| 'MISSING_FILE'
+			| 'HAWKBIT_NOT_ENABLED',
 	) {
 		super(message);
 		this.name = 'ArtifactValidationError';
@@ -95,6 +101,15 @@ export async function uploadArtifact(
 ): Promise<ArtifactUploadResult> {
 	validateFileExtension(file.name);
 	validateFileSize(file.size);
+
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError(
+			'Service unavailable',
+			'HAWKBIT_NOT_ENABLED',
+			'Artifact uploads require hawkBit to be enabled',
+		);
+	}
+
 	appLogger.info(`[ARTIFACT] Uploading: ${file.name} (${Math.round(file.size / 1024)} KB)`);
 
 	// 1. Ensure the Software Module Type exists

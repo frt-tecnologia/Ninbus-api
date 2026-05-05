@@ -143,6 +143,30 @@
       "category": "architecture",
       "learnedAt": "2026-05-05T13:59:42.023Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-drizzle-date-validation",
+      "rule": "Drizzle ORM returns JavaScript Date objects for timestamp columns. Elysia response schemas using t.String({ format: 'date-time' }) will reject Date objects with validation errors. Use t.Date() instead — it accepts both Date objects and ISO strings, and serializes correctly for OpenAPI docs.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T17:42:24.603Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-s3-extension-rebuild",
+      "rule": "The hawkBit S3 extension (hawkbit-extension-artifact-repository-s3) version 0.5.0 on Maven Central is incompatible with hawkBit 1.0.3. The API was completely rewritten: ArtifactRepository → ArtifactStorage, AbstractDbArtifact → StoredArtifactInfo, DbArtifactHash → ArtifactHashes record. The extension must be rewritten from source against the 1.0.3 APIs. The compiled JAR + AWS SDK v1 JARs are added to BOOT-INF/lib/ in the standard Docker image.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T17:42:34.396Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-artifact-guard",
+      "rule": "Any code that calls hawkBit APIs (uploadArtifact, listArtifacts, etc.) MUST check hawkbitConfig.enabled first and throw a clear validation error (400) when disabled. Without this guard, connection refused errors (500) cascade to clients when hawkBit is unavailable. Tests run with HAWKBIT_ENABLED=false so this guard is essential for test reliability.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-05T17:42:45.950Z",
+      "reinforcementCount": 1
     }
   ]
 }

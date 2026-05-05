@@ -6,18 +6,23 @@
 #   Internet → [Ninbus API :8081] → [hawkBit :8080]
 #                    │                      │
 #                    │                      ├── Neon PostgreSQL (cloud)
-#                    │                      └── SeaweedFS :8333 (artifact binaries)
+#                    │                      └── MinIO :9000 (S3 artifact storage)
 #                    │
-#                    └── Neon PostgreSQL (cloud, same or different DB)
+#                    └── Neon PostgreSQL (cloud)
 #
-# Swap guide:
-#   Storage: SeaweedFS → Cloudflare R2   → change S3_ENDPOINT / S3_BUCKET
-#   DB:      Neon cloud   → local PG      → change DATABASE_URL
+# Swap guide (just change env vars in .env.docker):
+#   Storage: MinIO → Cloudflare R2
+#     → change S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION
+#   DB hawkBit: Neon → local PG
+#     → change HAWKBIT_DATABASE_URL, HAWKBIT_DB_USER, HAWKBIT_DB_PASS
+#   DB Ninbus:  Neon → local PG
+#     → change DATABASE_URL
 #
 # Usage:
 #   docker compose up -d                    # all services
-#   docker compose up -d api hawkbit        # without SeaweedFS
+#   docker compose up -d api hawkbit        # without S3 storage
 #   docker compose logs -f api              # follow logs
+#   docker compose build hawkbit            # rebuild custom hawkBit image
 # ═══════════════════════════════════════════════════════════════════════
 
 services:
@@ -66,15 +71,17 @@ services:
     mem_limit: ${API_MEM_LIMIT:-256m}
     cpus: ${API_CPUS:-0.5}
 
-  # ── Eclipse hawkBit Update Server ────────────────────────────────────
-  # Storage model:
-  #   Metadata (targets, DS, SM, actions) → PostgreSQL (Neon cloud)
-  #   Binary artifacts (firmware files)   → SeaweedFS (S3-compatible)
-  #   NOTE: Standard hawkBit image only supports filesystem storage.
-  #   We mount a Docker volume as intermediate step.
-  #   For S3/SeaweedFS, a custom build with hawkbit-artifact-cloud is needed.
+  # ── Eclipse hawkBit Update Server (custom build with S3) ────────────
+  # Built from: docker/hawkbit/Dockerfile
+  # Source: docker/hawkbit/s3-extension/
+  #
+  # Artifact storage backends (controlled by HAWKBIT_S3_ENABLED):
+  #   Filesystem (default): /app/artifactrepo/ → Docker volume
+  #   S3 (when enabled):    MinIO / Cloudflare R2 / AWS S3
   hawkbit:
-    image: hawkbit/hawkbit-update-server:latest
+    build:
+      context: .
+      dockerfile: docker/hawkbit/Dockerfile
     container_name: hawkbit
     restart: unless-stopped
     ports:
@@ -82,9 +89,9 @@ services:
     environment:
       # ── Database: Neon PostgreSQL ──
       PROFILES: postgresql
-      SPRING_DATASOURCE_URL: ${HAWKBIT_DATABASE_URL:-${DATABASE_URL}}
+      SPRING_DATASOURCE_URL: ${HAWKBIT_DATABASE_URL}
       SPRING_DATASOURCE_USERNAME: ${HAWKBIT_DB_USER:-neondb_owner}
-      SPRING_DATASOURCE_PASSWORD: ${HAWKBIT_DB_PASS:-}
+      SPRING_DATASOURCE_PASSWORD: ${HAWKBIT_DB_PASS}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
       SPRING_JPA_DATABASE: POSTGRESQL
 
@@ -92,13 +99,21 @@ services:
       HAWKBIT_SECURITY_USER_ADMIN_PASSWORD: ${HAWKBIT_ADMIN_PASSWORD:-{noop}admin}
       HAWKBIT_SECURITY_USER_ADMIN_ROLES: TENANT_ADMIN
 
+      # ── S3 Artifact Storage ──
+      # Set HAWKBIT_S3_ENABLED=true to activate (overrides filesystem storage)
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ENABLED: ${HAWKBIT_S3_ENABLED:-false}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ENDPOINT: ${S3_ENDPOINT:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_BUCKET_NAME: ${S3_BUCKET:-ninbus-artifacts}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_REGION: ${S3_REGION:-}
+
       # ── Java memory ──
       X_MS: ${HAWKBIT_XMS:-512m}
       X_MX: ${HAWKBIT_XMX:-768m}
       GC: G1
     volumes:
-      # Artifact binary storage — PERSIST THIS!
-      # Future: swap to S3/SeaweedFS with custom hawkBit image
+      # Artifact binary storage (fallback when S3 is disabled)
       - hawkbit-artifacts:/app/artifactrepo
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/rest/v1/system/configs"]
@@ -106,30 +121,46 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 5
+    depends_on:
+      s3:
+        condition: service_healthy
     mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
     cpus: ${HAWKBIT_CPUS:-1.0}
 
-  # ── SeaweedFS (S3-compatible storage) ────────────────────────────────
-  # Currently standalone — not yet integrated with hawkBit (needs custom image).
-  # Available for Ninbus API direct use (future: artifact proxy).
-  # Swap to Cloudflare R2 by changing environment vars.
-  seaweedfs:
-    image: chrislusf/seaweedfs:4.17
-    container_name: seaweedfs
+  # ── MinIO (S3-compatible object storage) ─────────────────────────────
+  # Stores hawkBit artifact binaries. Tested and verified working.
+  #
+  # Swap to Cloudflare R2 for production:
+  #   S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+  #   S3_ACCESS_KEY=<r2-access-key-id>
+  #   S3_SECRET_KEY=<r2-secret-access-key>
+  #   S3_BUCKET=ninbus-artifacts
+  #   S3_REGION=auto
+  #   HAWKBIT_S3_ENABLED=true
+  s3:
+    image: minio/minio:latest
+    container_name: minio
     restart: unless-stopped
     ports:
-      - "${S3_PORT:-8333}:8333"
+      - "${S3_PORT:-8333}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-admin}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-secret}
-      S3_BUCKET: ${S3_BUCKET:-ninbus-artifacts}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-admin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-secret123}
+    command: server /data --console-address ":9001"
     volumes:
-      - seaweedfs-data:/data
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     mem_limit: ${S3_MEM_LIMIT:-256m}
     cpus: ${S3_CPUS:-0.25}
 
 volumes:
   hawkbit-artifacts:
     driver: local
-  seaweedfs-data:
+  s3-data:
     driver: local

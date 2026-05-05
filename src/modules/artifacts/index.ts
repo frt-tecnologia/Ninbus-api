@@ -36,6 +36,14 @@ export const artifactsModule = withAuth(
 				set.status = 400;
 				return { error: 'Bad Request', message: 'Firmware file is required' };
 			}
+			if (!body?.artifactName) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'artifactName is required' };
+			}
+			if (!body?.artifactType) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'artifactType is required' };
+			}
 			try {
 				const result = await uploadArtifact(
 					artifactFile as File,

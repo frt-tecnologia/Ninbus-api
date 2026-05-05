@@ -33,8 +33,8 @@ export const hawkbitTargets = {
 
 	create(
 		data: HawkbitTargetRequestBody | HawkbitTargetRequestBody[],
-	): Promise<HawkbitTarget | HawkbitTarget[]> {
-		return hawkbitRequest({
+	): Promise<HawkbitTarget[]> {
+		return hawkbitRequest<HawkbitTarget[]>({
 			method: 'POST',
 			path: '/rest/v1/targets',
 			body: Array.isArray(data) ? data : [data],

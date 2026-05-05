@@ -132,12 +132,27 @@ export const createApp = () => {
 			if (code === 'VALIDATION') {
 				set.status = 400;
 
-				let parsedMessage = errorMessage;
+				let parsedMessage: any = errorMessage;
 				try {
 					if (typeof errorMessage === 'string' && errorMessage.startsWith('{')) {
 						parsedMessage = JSON.parse(errorMessage);
 					}
 				} catch {}
+
+				// Detect file field validation errors — provide clear guidance
+				const hasFileError =
+					parsedMessage?.errors?.some(
+						(e: any) => e?.schema?.format === 'binary' || e?.message?.includes('Expected kind'),
+					) ??
+					parsedMessage?.message?.includes?.("Expected kind 'File'");
+
+				if (hasFileError) {
+					return {
+						error: 'Validation error',
+						message:
+							'File upload requires multipart/form-data with a binary file field. Send Content-Type: multipart/form-data with the file attached.',
+					};
+				}
 
 				appLogger.warn({ code, error: parsedMessage });
 

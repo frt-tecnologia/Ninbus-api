@@ -183,6 +183,22 @@
       "category": "process",
       "learnedAt": "2026-05-05T21:14:05.731Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-db-migration-per-environment",
+      "rule": "Drizzle migrations must be applied to EACH database independently. Running migrations locally doesn't affect Neon cloud or Docker databases. After schema changes, apply migrations to: (1) local dev DB, (2) test DB, (3) production/cloud DB. When adding a new migration, verify it was applied by checking column names in information_schema.columns.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:48:06.022Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-dns-localhost",
+      "rule": "When services run in Docker containers, HAWKBIT_URL (and any inter-service URLs) must use Docker service names (e.g., http://hawkbit:8080), NOT localhost. localhost inside a container refers to the container itself. Docker Compose creates a DNS network where service names resolve to container IPs. Keep localhost URLs in .env.example for local dev, but use service names in .env.docker and docker-compose.yml defaults.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:48:35.885Z",
+      "reinforcementCount": 1
     }
   ]
 }

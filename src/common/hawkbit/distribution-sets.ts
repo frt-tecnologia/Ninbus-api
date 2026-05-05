@@ -28,7 +28,11 @@ export const hawkbitDistributionSets = {
 		type?: string;
 		modules?: Array<{ id: number }>;
 	}): Promise<HawkbitDistributionSet> {
-		return hawkbitRequest({ method: 'POST', path: '/rest/v1/distributionsets', body: [data] });
+		return hawkbitRequest<HawkbitDistributionSet[]>({
+			method: 'POST',
+			path: '/rest/v1/distributionsets',
+			body: [data],
+		}).then((arr) => arr[0]);
 	},
 
 	update(dsId: number, data: { name?: string; description?: string }): Promise<void> {
@@ -79,6 +83,10 @@ export const hawkbitDistributionSetTypes = {
 		name: string;
 		description?: string;
 	}): Promise<HawkbitDistributionSetType> {
-		return hawkbitRequest({ method: 'POST', path: '/rest/v1/distributionsettypes', body: data });
+		return hawkbitRequest<HawkbitDistributionSetType[]>({
+			method: 'POST',
+			path: '/rest/v1/distributionsettypes',
+			body: [data],
+		}).then((arr) => arr[0]);
 	},
 };

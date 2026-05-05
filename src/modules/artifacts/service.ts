@@ -104,9 +104,8 @@ export async function uploadArtifact(
 
 	if (!hawkbitConfig.enabled) {
 		throw new ArtifactValidationError(
-			'Service unavailable',
-			'HAWKBIT_NOT_ENABLED',
 			'Artifact uploads require hawkBit to be enabled',
+			'HAWKBIT_NOT_ENABLED',
 		);
 	}
 

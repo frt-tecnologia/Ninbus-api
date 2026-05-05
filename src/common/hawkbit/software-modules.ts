@@ -28,7 +28,11 @@ export const hawkbitSoftwareModules = {
 		description?: string;
 		vendor?: string;
 	}): Promise<HawkbitSoftwareModule> {
-		return hawkbitRequest({ method: 'POST', path: '/rest/v1/softwaremodules', body: [data] });
+		return hawkbitRequest<HawkbitSoftwareModule[]>({
+			method: 'POST',
+			path: '/rest/v1/softwaremodules',
+			body: [data],
+		}).then((arr) => arr[0]);
 	},
 
 	update(smId: number, data: { description?: string }): Promise<void> {
@@ -44,6 +48,8 @@ export const hawkbitSoftwareModules = {
 		file: File,
 		params?: { filename?: string; md5sum?: string; sha1sum?: string; sha256sum?: string },
 	): Promise<HawkbitArtifact> {
+		const formData = new FormData();
+		formData.append('file', file);
 		return hawkbitRequest({
 			method: 'POST',
 			path: `/rest/v1/softwaremodules/${smId}/artifacts`,
@@ -53,8 +59,7 @@ export const hawkbitSoftwareModules = {
 				sha1sum: params?.sha1sum,
 				sha256sum: params?.sha256sum,
 			},
-			body: file,
-			headers: {},
+			body: formData,
 		});
 	},
 
@@ -93,6 +98,10 @@ export const hawkbitSoftwareModuleTypes = {
 		minArtifacts?: number;
 		maxAssignments?: number;
 	}): Promise<HawkbitSoftwareModuleType> {
-		return hawkbitRequest({ method: 'POST', path: '/rest/v1/softwaremoduletypes', body: data });
+		return hawkbitRequest<HawkbitSoftwareModuleType[]>({
+			method: 'POST',
+			path: '/rest/v1/softwaremoduletypes',
+			body: [data],
+		}).then((arr) => arr[0]);
 	},
 };

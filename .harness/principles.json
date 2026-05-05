@@ -167,6 +167,22 @@
       "category": "security",
       "learnedAt": "2026-05-05T17:42:45.950Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-pino-production-bundle",
+      "rule": "Pino with pino-pretty uses thread-stream (worker threads) that cannot resolve from a single bundled JS file. In production Docker images (no node_modules), use synchronous JSON logging: pino({ level }). Do NOT use pino.transport() or pino-pretty in production. For development, pipe through pino-pretty CLI or use conditional transport.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T21:13:56.717Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-compose-env",
+      "rule": "docker compose up reads .env by default, NOT .env.docker. All required variables must be in .env (or use docker compose --env-file .env.docker). Add all hawkBit database (HAWKBIT_DATABASE_URL, HAWKBIT_DB_USER, HAWKBIT_DB_PASS) and S3 variables to .env and .env.example. hawkBit's standard Docker image uses BusyBox wget (not curl) — healthchecks must use wget with Basic Auth in URL format: http://user:pass@localhost:8080/endpoint.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:14:05.731Z",
+      "reinforcementCount": 1
     }
   ]
 }

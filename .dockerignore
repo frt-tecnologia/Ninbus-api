@@ -1,39 +1,48 @@
-# Dependencies
+# ── Dependencies ────────────────────────────────────────────
 node_modules
 
-# Development
+# ── Development ─────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# Build artifacts
+# ── Build artifacts (rebuilt in Docker) ────────────────────
 dist
 *.log
 *.tsbuildinfo
 
-# Git
+# ── Git ────────────────────────────────────────────────────
 .git
 .gitignore
 
-# IDE
+# ── IDE ────────────────────────────────────────────────────
 .vscode
 .idea
 *.swp
 *.swo
 
-# Documentation
+# ── Documentation ──────────────────────────────────────────
 README.md
 plan
 
-# CI/CD
+# ── CI/CD ──────────────────────────────────────────────────
 .github
 
-# Tests
+# ── Tests (not needed in production image) ─────────────────
+tests
 *.test.ts
 *.spec.ts
 __tests__
 coverage
 
-# OS
+# ── Harness (dev tooling) ──────────────────────────────────
+.harness
+
+# ── OS ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Docker (prevent recursion) ─────────────────────────────
+docker-compose*.yml
+Dockerfile
+.dockerignore

@@ -4,7 +4,6 @@ import { checkMembership } from '@common/middleware/company-check';
 import {
 	ActionStatusListResponseSchema,
 	DeploymentStatisticsResponseSchema,
-	DeviceActionsResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
 	deploymentActionParams,
@@ -13,19 +12,23 @@ import {
 import { Elysia, t } from 'elysia';
 import * as service from './service';
 
-/** Params for routes that have companyId + deviceId (Ninbus device) */
-const deviceHistoryParams = t.Object({
+const deviceParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
 	deviceId: t.String({ format: 'uuid' }),
 });
 
 /**
- * Deployment device-level routes — statistics, targets, action status, cancel.
+ * Deployment detail routes — statistics, targets, action management.
+ *
+ * Simplified from Mender model:
+ * - No PUT /status with {status: "aborted"} — use DELETE action directly
+ * - No DELETE /devices/:menderDeviceId/deployments — use per-action cancel
+ * - No GET device log — use action status messages
  */
 export const deploymentDeviceRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/deployments' }),
 )
-	// GET /:deploymentId/statistics — Deployment statistics
+	// GET /:deploymentId/statistics
 	.get(
 		'/:deploymentId/statistics',
 		async ({ params, user, set }: any) => {
@@ -48,8 +51,7 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get deployment statistics',
-				description:
-					'Real-time progress from hawkBit: actions by status (running, finished, error, etc.).',
+				description: 'Action counts by status from hawkBit',
 			},
 			response: {
 				200: DeploymentStatisticsResponseSchema,
@@ -59,7 +61,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 	)
 
-	// GET /:deploymentId/targets — List targets assigned to deployment
+	// GET /:deploymentId/targets — Targets assigned to this DS
 	.get(
 		'/:deploymentId/targets',
 		async ({ params, query, user, set }: any) => {
@@ -81,10 +83,7 @@ export const deploymentDeviceRoutes = withAuth(
 				offset: t.Optional(t.Number()),
 				limit: t.Optional(t.Number({ maximum: 500 })),
 			}),
-			detail: {
-				tags: ['Deployments'],
-				summary: 'List targets assigned to deployment',
-			},
+			detail: { tags: ['Deployments'], summary: 'List targets in deployment' },
 			response: {
 				200: t.Object({ data: t.Array(t.Any()), total: t.Number() }),
 				403: ErrorResponseSchema,
@@ -92,7 +91,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 	)
 
-	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Action status history
+	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Action history
 	.get(
 		'/:deploymentId/targets/:targetId/actions/:actionId/status',
 		async ({ params, user, set }: any) => {
@@ -109,7 +108,7 @@ export const deploymentDeviceRoutes = withAuth(
 				return { data: statusList.content, total: statusList.total };
 			} catch {
 				set.status = 404;
-				return { error: 'Not Found', message: 'Action status not found' };
+				return { error: 'Not Found', message: 'Action not found' };
 			}
 		},
 		{
@@ -118,8 +117,7 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get action status history',
-				description:
-					'Detailed status updates for a deployment action (running, downloaded, finished, error, etc.)',
+				description: 'Status updates for an action: running, downloaded, finished, error, etc.',
 			},
 			response: {
 				200: ActionStatusListResponseSchema,
@@ -129,7 +127,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 	)
 
-	// DELETE /:deploymentId/targets/:targetId/actions/:actionId — Cancel action for a target
+	// DELETE /:deploymentId/targets/:targetId/actions/:actionId — Cancel action
 	.delete(
 		'/:deploymentId/targets/:targetId/actions/:actionId',
 		async ({ params, user, set }: any) => {
@@ -143,19 +141,13 @@ export const deploymentDeviceRoutes = withAuth(
 				return { message: 'Action cancelled successfully' };
 			} catch {
 				set.status = 422;
-				return {
-					error: 'Unprocessable Entity',
-					message: 'Cannot cancel this action',
-				};
+				return { error: 'Unprocessable Entity', message: 'Cannot cancel this action' };
 			}
 		},
 		{
 			auth: true,
 			params: deploymentActionParams,
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Cancel deployment action for a target',
-			},
+			detail: { tags: ['Deployments'], summary: 'Cancel deployment action' },
 			response: {
 				200: GenericActionResponseSchema,
 				403: ErrorResponseSchema,
@@ -164,7 +156,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 	)
 
-	// GET /devices/:deviceId/actions — Get device deployment history
+	// GET /devices/:deviceId/actions — Device deployment history
 	.get(
 		'/devices/:deviceId/actions',
 		async ({ params, query, user, set }: any) => {
@@ -175,12 +167,9 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 			const { getDeviceById } = await import('@modules/devices/service');
 			const device = await getDeviceById(params.deviceId, params.companyId);
-			if (!device || !device.hawkbitTargetId) {
+			if (!device?.hawkbitTargetId) {
 				set.status = 404;
-				return {
-					error: 'Not Found',
-					message: 'Device not found or not linked to hawkBit',
-				};
+				return { error: 'Not Found', message: 'Device not found or not linked to hawkBit' };
 			}
 			const actions = await hawkbitTargets.getActions(device.hawkbitTargetId, {
 				limit: query?.limit ?? 50,
@@ -190,16 +179,11 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			params: deviceHistoryParams,
-			query: t.Object({
-				limit: t.Optional(t.Number({ maximum: 100 })),
-			}),
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Get device deployment actions',
-			},
+			params: deviceParams,
+			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
+			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },
 			response: {
-				200: DeviceActionsResponseSchema,
+				200: t.Object({ data: t.Array(t.Any()), total: t.Number() }),
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},

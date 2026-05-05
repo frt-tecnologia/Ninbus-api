@@ -14,45 +14,31 @@ export const registerDeviceSchema = t.Object(
 		serialNumber: t.Optional(t.String({ maxLength: 255, description: 'Device serial number' })),
 		hawkbitTargetId: t.Optional(
 			t.String({
-				description: 'Existing hawkBit target controller ID (if already registered in hawkBit)',
+				description: 'hawkBit target controllerId (if already registered in hawkBit)',
 			}),
 		),
 	},
 	{
-		default: {
-			name: 'Dispositivo Principal 01',
-			serialNumber: 'SN-987654321',
-		},
+		default: { name: 'Dispositivo Principal 01', serialNumber: 'SN-987654321' },
 	},
 );
 
 export const updateDeviceSchema = t.Object(
 	{
-		name: t.Optional(
-			t.String({ minLength: 1, maxLength: 255, description: 'Updated display name' }),
-		),
-		serialNumber: t.Optional(t.String({ maxLength: 255, description: 'Updated serial number' })),
+		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
+		serialNumber: t.Optional(t.String({ maxLength: 255 })),
 	},
-	{
-		default: {
-			name: 'Dispositivo Principal 01 (Atualizado)',
-			serialNumber: 'SN-987654321-B',
-		},
-	},
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: 'SN-987654321-B' } },
 );
 
 export const assignCategoriesSchema = t.Object(
 	{
-		categoryIds: t.Array(t.String({ format: 'uuid', description: 'Category IDs to assign' }), {
+		categoryIds: t.Array(t.String({ format: 'uuid' }), {
 			minItems: 1,
-			description: 'List of category IDs to assign to this device',
+			description: 'Category IDs to assign',
 		}),
 	},
-	{
-		default: {
-			categoryIds: ['123e4567-e89b-12d3-a456-426614174000'],
-		},
-	},
+	{ default: { categoryIds: ['123e4567-e89b-12d3-a456-426614174000'] } },
 );
 
 export const selectDeviceSchema = createSelectSchema(devices, {
@@ -61,43 +47,24 @@ export const selectDeviceSchema = createSelectSchema(devices, {
 	lastSeenAt: nullableDateTimeString,
 });
 
-export const DeviceResponseSchema = t.Object({
-	data: selectDeviceSchema,
-});
-
+export const DeviceResponseSchema = t.Object({ data: selectDeviceSchema });
 export const DeviceListResponseSchema = t.Object({
 	data: t.Array(selectDeviceSchema),
 	total: t.Number(),
 });
-
 export const DeviceCreateResponseSchema = t.Object({
 	message: t.String(),
 	data: selectDeviceSchema,
 });
-
 export const DeviceUpdateResponseSchema = t.Object({
 	message: t.String(),
 	data: selectDeviceSchema,
 });
+export const DeviceDeleteResponseSchema = t.Object({ message: t.String() });
 
-export const DeviceDeleteResponseSchema = t.Object({
-	message: t.String(),
-});
-
-export const HawkbitInventorySchema = t.Record(t.String(), t.String());
-
-export const HawkbitConnectionResponseSchema = t.Object({
-	data: t.Object({
-		targetId: t.String(),
-		connected: t.Boolean(),
-		lastRequestAt: t.Optional(t.Number()),
-		nextExpectedRequestAt: t.Optional(t.Number()),
-		ipAddress: t.Optional(t.String()),
-	}),
-});
-
-export const HawkbitInventoryResponseSchema = t.Object({
-	data: HawkbitInventorySchema,
+// hawkBit response schemas
+export const HawkbitAttributesResponseSchema = t.Object({
+	data: t.Record(t.String(), t.String()),
 });
 
 export const HawkbitActionsResponseSchema = t.Object({

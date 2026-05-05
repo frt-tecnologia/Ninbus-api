@@ -1,25 +1,28 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ErrorResponseSchema,
-	GenericActionResponseSchema,
 	HawkbitActionsResponseSchema,
-	HawkbitConnectionResponseSchema,
-	HawkbitInventoryResponseSchema,
+	HawkbitAttributesResponseSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
 import { checkMembership, loadDevice, requireHawkbitLink } from './auth';
 import * as service from './service';
 
 /**
- * Device hawkBit operations — inventory, connection, actions, cancel.
- * These routes require the device to be linked to hawkBit.
+ * Device hawkBit operations — attributes, actions, cancel.
+ *
+ * Simplified from Mender model. hawkBit eliminates:
+ * - No approve/reject (targets created directly, no auth flow)
+ * - No check-update (hawkBit manages device polling automatically)
+ * - No separate connection endpoint (pollStatus is on the target object)
+ * - No decommission endpoint (DELETE on the device itself handles it)
  */
 export const deviceHawkbitRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/devices' }),
 )
-	// GET /:deviceId/inventory — Get device attributes from hawkBit
+	// GET /:deviceId/attributes — Target attributes (replaces Mender inventory)
 	.get(
-		'/:deviceId/inventory',
+		'/:deviceId/attributes',
 		async ({ params, user, set }: any) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
@@ -45,61 +48,16 @@ export const deviceHawkbitRoutes = withAuth(
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
 			}),
-			response: {
-				200: HawkbitInventoryResponseSchema,
-				403: ErrorResponseSchema,
-			},
+			response: { 200: HawkbitAttributesResponseSchema, 403: ErrorResponseSchema },
 			detail: {
 				tags: ['Devices'],
-				summary: 'Get device attributes from hawkBit',
-				description: 'Returns hardware/software attributes from hawkBit target inventory',
+				summary: 'Get device attributes',
+				description: 'Target attributes from hawkBit (hardware, software, custom properties)',
 			},
 		},
 	)
 
-	// GET /:deviceId/connection — Get device connection state
-	.get(
-		'/:deviceId/connection',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const result = await loadDevice(params.deviceId, params.companyId);
-			if ('status' in result) {
-				set.status = result.status;
-				return result.body;
-			}
-			const linkErr = requireHawkbitLink(result.device);
-			if (linkErr) {
-				set.status = linkErr.status;
-				return linkErr.body;
-			}
-			const connectionState = await service.getHawkbitConnectionState(
-				result.device.hawkbitTargetId,
-			);
-			return { data: connectionState };
-		},
-		{
-			auth: true,
-			params: t.Object({
-				companyId: t.String({ format: 'uuid' }),
-				deviceId: t.String({ format: 'uuid' }),
-			}),
-			response: {
-				200: HawkbitConnectionResponseSchema,
-				403: ErrorResponseSchema,
-			},
-			detail: {
-				tags: ['Devices'],
-				summary: 'Get device connection state',
-				description: 'Returns whether the device is currently connected to hawkBit update server',
-			},
-		},
-	)
-
-	// GET /:deviceId/actions — Get deployment actions for device
+	// GET /:deviceId/actions — Deployment actions for this target
 	.get(
 		'/:deviceId/actions',
 		async ({ params, user, set }: any) => {
@@ -127,14 +85,11 @@ export const deviceHawkbitRoutes = withAuth(
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
 			}),
-			response: {
-				200: HawkbitActionsResponseSchema,
-				403: ErrorResponseSchema,
-			},
+			response: { 200: HawkbitActionsResponseSchema, 403: ErrorResponseSchema },
 			detail: {
 				tags: ['Devices'],
 				summary: 'Get deployment actions for device',
-				description: 'Lists all deployment actions (update status) for a specific device',
+				description: 'Lists all deployment actions for this target. Includes active and completed.',
 			},
 		},
 	)
@@ -177,63 +132,13 @@ export const deviceHawkbitRoutes = withAuth(
 				actionId: t.String({ description: 'hawkBit action ID' }),
 			}),
 			response: {
-				200: GenericActionResponseSchema,
+				200: t.Object({ message: t.String() }),
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
 			detail: {
 				tags: ['Devices'],
 				summary: 'Cancel deployment action',
-				description: 'Cancels an active deployment action for a device in hawkBit',
-			},
-		},
-	)
-
-	// DELETE /:deviceId — Decommission device (remove from hawkBit + local DB)
-	.delete(
-		'/:deviceId/decommission',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const result = await loadDevice(params.deviceId, params.companyId);
-			if ('status' in result) {
-				set.status = result.status;
-				return result.body;
-			}
-			const linkErr = requireHawkbitLink(result.device);
-			if (linkErr) {
-				set.status = linkErr.status;
-				return linkErr.body;
-			}
-			try {
-				await service.deleteDevice(params.deviceId, params.companyId);
-				return { message: 'Device decommissioned successfully' };
-			} catch (error: any) {
-				if (error?.status === 404) {
-					set.status = 404;
-					return { error: 'Not Found', message: 'Device not found in hawkBit' };
-				}
-				throw error;
-			}
-		},
-		{
-			auth: true,
-			params: t.Object({
-				companyId: t.String({ format: 'uuid' }),
-				deviceId: t.String({ format: 'uuid' }),
-			}),
-			response: {
-				200: GenericActionResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-			},
-			detail: {
-				tags: ['Devices'],
-				summary: 'Decommission device',
-				description: 'Removes device from hawkBit and marks as decommissioned in local registry.',
 			},
 		},
 	);

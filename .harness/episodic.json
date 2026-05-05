@@ -104,6 +104,20 @@
       "type": "evaluation",
       "summary": "Iteration 19: 8/8 criteria passed. All routes verified and working. Applied migration 0003 to Neon PostgreSQL (mender_tenant_id → hawkbit_tenant_id, mender_device_id → hawkbit_target_id). Fixed HAWKBIT_URL from localhost to Docker DNS (hawkbit:8080). All 15 route groups return correct responses. All 129 tests passing.",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-20-1778021838786",
+      "timestamp": 1778021838786,
+      "type": "evaluation",
+      "summary": "Iteration 20: 8/8 criteria passed. Fixed all error messages to be clear and actionable. hawkBit 1.0.3 bulk POST endpoints require array body format [data] and return arrays — all create functions now use .then(arr => arr[0]). Artifact upload wraps File in FormData for multipart upload. File validation error shows clear guidance about multipart/form-data. All 129 tests passing. End-to-end artifact upload verified: multipart → hawkBit Software Module → MinIO S3 storage.",
+      "allTestsPassed": true
+    },
+    {
+      "id": "iteration-21-1778022608549",
+      "timestamp": 1778022608549,
+      "type": "evaluation",
+      "summary": "Iteration 21: 8/8 criteria passed. Created comprehensive device provisioning architecture document (docs/device-provisioning.md). Documented two provisioning modes (server token vs device key), complete auto-provisioning flow with hawkBit DDI API, admin cross-company visibility strategy, endpoint optimization plan (query params, no new endpoints), and security gap analysis with 7 identified risks and mitigations. Key gaps identified: (1) no super_admin role, (2) member self-promotion possible, (3) no auto-create hawkBit target on device registration. All gaps documented with solutions that optimize existing endpoints without creating new ones.",
+      "allTestsPassed": true
     }
   ]
 }

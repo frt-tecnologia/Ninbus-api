@@ -199,6 +199,46 @@
       "category": "process",
       "learnedAt": "2026-05-05T21:48:35.885Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-array-format",
+      "rule": "hawkBit 1.0.3 Management API requires array body format [data] for ALL bulk POST endpoints: softwaremodules, softwaremoduletypes, distributionsets, distributionsettypes, targets. The response is also an array — extract arr[0] for single-item creates. Sending a plain object causes 400 \"request body is not well formed\". Distribution set types also require maxAssignments >= 1.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T22:57:29.579Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-artifact-formdata",
+      "rule": "hawkBit artifact binary upload (POST /rest/v1/softwaremodules/{id}/artifacts) requires multipart/form-data with the file wrapped in a FormData object. Sending a raw File object results in 415 Unsupported Media Type because the HTTP client serializes it as JSON. Always: const formData = new FormData(); formData.append('file', file); then pass formData as the request body.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T22:57:36.656Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-file-upload-error-messages",
+      "rule": "When t.File() validation fails (user sends JSON instead of multipart), the default error 'Expected kind File' is confusing. Detect this in onError by checking for schema.format === 'binary' or message.includes('Expected kind') and return a clear message: 'File upload requires multipart/form-data with a binary file field'. Keep t.File() in the schema for security — never weaken to t.Any().",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-05T22:57:50.100Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-provisioning",
+      "rule": "hawkBit DDI (Device Direct Integration) API is what embedded devices use. Two provisioning modes: (A) Server generates securityToken → admin flashes to device, (B) Device has factory-key → admin registers serialNumber → API creates hawkBit target with securityToken=deviceKey. Mode B is recommended for production (100k+). The DDI endpoint is GET /{tenant}/controller/v1/{controllerId} with TargetToken auth header. registerDevice() must auto-create hawkBit target for auto-provisioning to work.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T23:10:16.514Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-super-admin-env-emails",
+      "rule": "Platform-level super admin should be controlled via env variable (SUPER_ADMIN_EMAILS), not a database role. This prevents: (1) any user from creating a company and becoming owner of the platform, (2) privilege escalation via API. Only emails pre-approved in the env var get super_admin access. checkMembership() should bypass for super admin emails. Member promotion must verify caller has owner/admin role and cannot self-promote.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-05T23:10:27.339Z",
+      "reinforcementCount": 1
     }
   ]
 }

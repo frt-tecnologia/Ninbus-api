@@ -66,30 +66,27 @@ const EnvSchema = Type.Object({
 	RESEND_API_KEY: Type.Optional(Type.String({ description: 'Resend API key' })),
 	EMAIL_FROM: Type.String({ description: 'Email sender address' }),
 
-	// ── Mender Gateway Integration ─────────────────────────────
-	MENDER_ENABLED: Type.Boolean({ default: false, description: 'Enable Mender integration' }),
-	MENDER_GATEWAY_URL: Type.Optional(
+	// ── hawkBit Update Server Integration ──────────────────────
+	HAWKBIT_ENABLED: Type.Boolean({ default: false, description: 'Enable hawkBit integration' }),
+	HAWKBIT_URL: Type.Optional(
 		Type.String({
-			description: 'Mender Traefik gateway base URL',
+			description: 'hawkBit Management API base URL',
 			pattern: '^https?://.+',
 		}),
 	),
-	MENDER_PAT: Type.Optional(Type.String({ description: 'Mender Personal Access Token' })),
-	MENDER_TIMEOUT_MS: Type.Optional(
+	HAWKBIT_USERNAME: Type.Optional(
+		Type.String({ description: 'hawkBit admin username (Basic Auth)' }),
+	),
+	HAWKBIT_PASSWORD: Type.Optional(
+		Type.String({ description: 'hawkBit admin password (Basic Auth)' }),
+	),
+	HAWKBIT_TIMEOUT_MS: Type.Optional(
 		Type.Number({ default: 30000, description: 'Request timeout in ms' }),
 	),
-	MENDER_HOST_OVERRIDE: Type.Optional(
-		Type.String({
-			description: 'Override HTTP Host header sent to Mender Traefik (for host.docker.internal)',
-		}),
-	),
-	MENDER_SKIP_TLS: Type.Boolean({
+	HAWKBIT_SKIP_TLS: Type.Boolean({
 		default: false,
-		description: 'Skip TLS certificate verification for Mender gateway',
+		description: 'Skip TLS certificate verification for hawkBit',
 	}),
-	MENDER_TENANT_TOKEN: Type.Optional(
-		Type.String({ description: 'Mender tenant token (for multi-tenant setups)' }),
-	),
 
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
@@ -127,15 +124,14 @@ export function validateEnv(): Env {
 		CORS_ORIGIN: parseCors(process.env['CORS_ORIGIN']),
 		RESEND_API_KEY: process.env['RESEND_API_KEY'],
 		EMAIL_FROM: process.env['EMAIL_FROM'] || 'noreply@example.com',
-		MENDER_ENABLED: process.env['MENDER_ENABLED'] === 'true',
-		MENDER_GATEWAY_URL: process.env['MENDER_GATEWAY_URL'],
-		MENDER_PAT: process.env['MENDER_PAT'],
-		MENDER_TIMEOUT_MS: process.env['MENDER_TIMEOUT_MS']
-			? Number(process.env['MENDER_TIMEOUT_MS'])
+		HAWKBIT_ENABLED: process.env['HAWKBIT_ENABLED'] === 'true',
+		HAWKBIT_URL: process.env['HAWKBIT_URL'],
+		HAWKBIT_USERNAME: process.env['HAWKBIT_USERNAME'],
+		HAWKBIT_PASSWORD: process.env['HAWKBIT_PASSWORD'],
+		HAWKBIT_TIMEOUT_MS: process.env['HAWKBIT_TIMEOUT_MS']
+			? Number(process.env['HAWKBIT_TIMEOUT_MS'])
 			: undefined,
-		MENDER_HOST_OVERRIDE: process.env['MENDER_HOST_OVERRIDE'],
-		MENDER_SKIP_TLS: process.env['MENDER_SKIP_TLS'] === 'true',
-		MENDER_TENANT_TOKEN: process.env['MENDER_TENANT_TOKEN'],
+		HAWKBIT_SKIP_TLS: process.env['HAWKBIT_SKIP_TLS'] === 'true',
 		ENABLE_RATE_LIMITER: process.env['ENABLE_RATE_LIMITER'] !== 'false',
 		RATE_LIMIT_WINDOW_MS: process.env['RATE_LIMIT_WINDOW_MS']
 			? Number(process.env['RATE_LIMIT_WINDOW_MS'])

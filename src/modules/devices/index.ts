@@ -23,7 +23,7 @@ const deviceParams = t.Object({
 });
 
 /**
- * Devices Module — Ninbus device management with Mender integration.
+ * Devices Module — Ninbus device management with hawkBit integration.
  * All routes scoped under a company. Members can view; operators can manage.
  */
 export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId/devices' }))
@@ -36,8 +36,8 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				set.status = err.status;
 				return err.body;
 			}
-			const devices = await service.getCompanyDevices(params.companyId);
-			return { data: devices, total: devices.length };
+			const deviceList = await service.getCompanyDevices(params.companyId);
+			return { data: deviceList, total: deviceList.length };
 		},
 		{
 			auth: true,
@@ -63,7 +63,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				companyId: params.companyId,
 				name: body.name,
 				serialNumber: body.serialNumber,
-				menderDeviceId: body.menderDeviceId,
+				hawkbitTargetId: body.hawkbitTargetId,
 				userId: user.id,
 			});
 			set.status = 201;
@@ -77,7 +77,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				tags: ['Devices'],
 				summary: 'Register a new device',
 				description:
-					'Registers a Ninbus device to the company. Optionally link to an existing Mender device.',
+					'Registers a Ninbus device to the company. Optionally link to an existing hawkBit target.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -101,15 +101,15 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				set.status = result.status;
 				return result.body;
 			}
-			let menderInfo = null;
-			if (result.device.menderDeviceId) {
+			let hawkbitInfo = null;
+			if (result.device.hawkbitTargetId) {
 				try {
-					menderInfo = await service.syncDeviceStatusFromMender(result.device.menderDeviceId);
+					hawkbitInfo = await service.syncDeviceStatusFromHawkbit(result.device.hawkbitTargetId);
 				} catch {
-					/* Mender unavailable */
+					/* hawkBit unavailable */
 				}
 			}
-			return { data: result.device, mender: menderInfo };
+			return { data: result.device, hawkbit: hawkbitInfo };
 		},
 		{
 			auth: true,

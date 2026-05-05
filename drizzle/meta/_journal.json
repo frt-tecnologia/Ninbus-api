@@ -1,20 +1,27 @@
 {
-  "version": "5",
-  "dialect": "pg",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1768558975621,
-      "tag": "0000_easy_venom",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1744614000000,
-      "tag": "0002_striped_robin_chapel",
-      "breakpoints": true
-    }
-  ]
+	"version": "5",
+	"dialect": "pg",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1768558975621,
+			"tag": "0000_easy_venom",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1744614000000,
+			"tag": "0002_striped_robin_chapel",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1746463200000,
+			"tag": "0003_mender_to_hawkbit_migration",
+			"breakpoints": true
+		}
+	]
 }

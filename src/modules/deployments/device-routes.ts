@@ -1,14 +1,13 @@
+import { hawkbitTargets } from '@common/hawkbit/client';
 import { withAuth } from '@common/middleware/auth-guard';
 import { checkMembership } from '@common/middleware/company-check';
 import {
+	ActionStatusListResponseSchema,
 	DeploymentStatisticsResponseSchema,
-	DeviceDeploymentListResponseSchema,
-	DeviceDeploymentLogResponseSchema,
-	DeviceHistoryResponseSchema,
+	DeviceActionsResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
-	abortDeploymentSchema,
-	deploymentDeviceLogParams,
+	deploymentActionParams,
 	deploymentParams,
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
@@ -19,84 +18,13 @@ const deviceHistoryParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
 	deviceId: t.String({ format: 'uuid' }),
 });
-/** Params for routes with companyId + menderDeviceId */
-const menderDeviceParams = t.Object({
-	companyId: t.String({ format: 'uuid' }),
-	menderDeviceId: t.String(),
-});
 
 /**
- * Deployment device-level routes — per-device abort, device list, logs, history.
+ * Deployment device-level routes — statistics, targets, action status, cancel.
  */
 export const deploymentDeviceRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/deployments' }),
 )
-	// PUT /:deploymentId/status — Abort entire deployment
-	.put(
-		'/:deploymentId/status',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			try {
-				await service.abortDeployment(params.deploymentId);
-				return { message: 'Deployment aborted successfully' };
-			} catch {
-				set.status = 422;
-				return { error: 'Unprocessable Entity', message: 'Cannot abort this deployment' };
-			}
-		},
-		{
-			auth: true,
-			params: deploymentParams,
-			body: abortDeploymentSchema,
-			detail: { tags: ['Deployments'], summary: 'Abort entire deployment' },
-			response: {
-				200: GenericActionResponseSchema,
-				403: ErrorResponseSchema,
-				422: ErrorResponseSchema,
-			},
-		},
-	)
-
-	// DELETE /devices/:menderDeviceId/deployments — Abort all active deployments for a device
-	.delete(
-		'/devices/:menderDeviceId/deployments',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			try {
-				await service.abortDeviceDeployment(params.menderDeviceId);
-				return { message: 'Device deployments aborted successfully' };
-			} catch {
-				set.status = 422;
-				return {
-					error: 'Unprocessable Entity',
-					message: 'Cannot abort deployments for this device',
-				};
-			}
-		},
-		{
-			auth: true,
-			params: menderDeviceParams,
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Abort all active deployments for a device',
-				description: 'Aborts all active OTA deployments for a specific device via Mender DELETE.',
-			},
-			response: {
-				200: GenericActionResponseSchema,
-				403: ErrorResponseSchema,
-				422: ErrorResponseSchema,
-			},
-		},
-	)
-
 	// GET /:deploymentId/statistics — Deployment statistics
 	.get(
 		'/:deploymentId/statistics',
@@ -107,7 +35,7 @@ export const deploymentDeviceRoutes = withAuth(
 				return err.body;
 			}
 			try {
-				const stats = await service.getDeploymentStatistics(params.deploymentId);
+				const stats = await service.getDeploymentStatistics(Number(params.deploymentId));
 				return { data: stats };
 			} catch {
 				set.status = 404;
@@ -120,7 +48,8 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get deployment statistics',
-				description: 'Real-time progress: success, pending, failure, downloading, installing, rebooting, aborted, decommissioned, pause_before_installing, pause_before_committing, pause_before_rebooting, noartifact, already-installed.',
+				description:
+					'Real-time progress from hawkBit: actions by status (running, finished, error, etc.).',
 			},
 			response: {
 				200: DeploymentStatisticsResponseSchema,
@@ -130,38 +59,42 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 	)
 
-	// GET /:deploymentId/devices — List devices in deployment
+	// GET /:deploymentId/targets — List targets assigned to deployment
 	.get(
-		'/:deploymentId/devices',
+		'/:deploymentId/targets',
 		async ({ params, query, user, set }: any) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
 				set.status = err.status;
 				return err.body;
 			}
-			const devlist = await service.getDeploymentDevices(params.deploymentId, {
-				status: query?.status,
-				page: query?.page,
-				perPage: query?.perPage,
+			const result = await service.getDeploymentTargets(Number(params.deploymentId), {
+				offset: query?.offset,
+				limit: query?.limit,
 			});
-			return { data: devlist, total: devlist.length };
+			return { data: result.content, total: result.total };
 		},
 		{
 			auth: true,
 			params: deploymentParams,
 			query: t.Object({
-				status: t.Optional(t.String({ description: 'Filter by device status' })),
-				page: t.Optional(t.Number({ description: 'Page number' })),
-				perPage: t.Optional(t.Number({ description: 'Items per page', maximum: 500 })),
+				offset: t.Optional(t.Number()),
+				limit: t.Optional(t.Number({ maximum: 500 })),
 			}),
-			detail: { tags: ['Deployments'], summary: 'List devices in deployment' },
-			response: { 200: DeviceDeploymentListResponseSchema, 403: ErrorResponseSchema },
+			detail: {
+				tags: ['Deployments'],
+				summary: 'List targets assigned to deployment',
+			},
+			response: {
+				200: t.Object({ data: t.Array(t.Any()), total: t.Number() }),
+				403: ErrorResponseSchema,
+			},
 		},
 	)
 
-	// GET /:deploymentId/devices/:menderDeviceId/log — Device deployment log
+	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Action status history
 	.get(
-		'/:deploymentId/devices/:menderDeviceId/log',
+		'/:deploymentId/targets/:targetId/actions/:actionId/status',
 		async ({ params, user, set }: any) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
@@ -169,31 +102,71 @@ export const deploymentDeviceRoutes = withAuth(
 				return err.body;
 			}
 			try {
-				const log = await service.getDeviceDeploymentLog(
-					params.deploymentId,
-					params.menderDeviceId,
+				const statusList = await hawkbitTargets.getActionStatus(
+					params.targetId,
+					Number(params.actionId),
 				);
-				return { data: log };
+				return { data: statusList.content, total: statusList.total };
 			} catch {
 				set.status = 404;
-				return { error: 'Not Found', message: 'Log not found' };
+				return { error: 'Not Found', message: 'Action status not found' };
 			}
 		},
 		{
 			auth: true,
-			params: deploymentDeviceLogParams,
-			detail: { tags: ['Deployments'], summary: 'Get device deployment log' },
+			params: deploymentActionParams,
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Get action status history',
+				description:
+					'Detailed status updates for a deployment action (running, downloaded, finished, error, etc.)',
+			},
 			response: {
-				200: DeviceDeploymentLogResponseSchema,
+				200: ActionStatusListResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// GET /devices/:deviceId/history — Device deployment history
+	// DELETE /:deploymentId/targets/:targetId/actions/:actionId — Cancel action for a target
+	.delete(
+		'/:deploymentId/targets/:targetId/actions/:actionId',
+		async ({ params, user, set }: any) => {
+			const err = await checkMembership(params.companyId, user.id);
+			if (err) {
+				set.status = err.status;
+				return err.body;
+			}
+			try {
+				await hawkbitTargets.cancelAction(params.targetId, Number(params.actionId), true);
+				return { message: 'Action cancelled successfully' };
+			} catch {
+				set.status = 422;
+				return {
+					error: 'Unprocessable Entity',
+					message: 'Cannot cancel this action',
+				};
+			}
+		},
+		{
+			auth: true,
+			params: deploymentActionParams,
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Cancel deployment action for a target',
+			},
+			response: {
+				200: GenericActionResponseSchema,
+				403: ErrorResponseSchema,
+				422: ErrorResponseSchema,
+			},
+		},
+	)
+
+	// GET /devices/:deviceId/actions — Get device deployment history
 	.get(
-		'/devices/:deviceId/history',
+		'/devices/:deviceId/actions',
 		async ({ params, query, user, set }: any) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
@@ -202,28 +175,31 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 			const { getDeviceById } = await import('@modules/devices/service');
 			const device = await getDeviceById(params.deviceId, params.companyId);
-			if (!device || !device.menderDeviceId) {
+			if (!device || !device.hawkbitTargetId) {
 				set.status = 404;
-				return { error: 'Not Found', message: 'Device not found or not linked to Mender' };
+				return {
+					error: 'Not Found',
+					message: 'Device not found or not linked to hawkBit',
+				};
 			}
-			const history = await service.getDeviceDeploymentHistory(device.menderDeviceId, {
-				status: query?.status,
-				page: query?.page,
-				perPage: query?.perPage,
+			const actions = await hawkbitTargets.getActions(device.hawkbitTargetId, {
+				limit: query?.limit ?? 50,
+				sort: 'id:DESC',
 			});
-			return { data: history };
+			return { data: actions.content, total: actions.total };
 		},
 		{
 			auth: true,
 			params: deviceHistoryParams,
 			query: t.Object({
-				status: t.Optional(t.String()),
-				page: t.Optional(t.Number()),
-				perPage: t.Optional(t.Number({ maximum: 20 })),
+				limit: t.Optional(t.Number({ maximum: 100 })),
 			}),
-			detail: { tags: ['Deployments'], summary: 'Get device deployment history' },
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Get device deployment actions',
+			},
 			response: {
-				200: DeviceHistoryResponseSchema,
+				200: DeviceActionsResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},

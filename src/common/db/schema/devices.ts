@@ -4,8 +4,7 @@ import { categories } from './categories';
 import { companies } from './companies';
 
 /**
- * Ninbus devices — local registry linked to Mender device IDs.
- * device_category_assignments provides N:N with categories.
+ * Ninbus devices — local registry linked to hawkBit target IDs.
  */
 
 export const deviceStatusEnum = pgEnum('device_status', [
@@ -21,7 +20,7 @@ export const devices = pgTable('devices', {
 	companyId: uuid('company_id')
 		.notNull()
 		.references(() => companies.id, { onDelete: 'cascade' }),
-	menderDeviceId: text('mender_device_id'),
+	hawkbitTargetId: text('hawkbit_target_id'),
 	name: text('name').notNull(),
 	serialNumber: text('serial_number'),
 	status: deviceStatusEnum('status').notNull().default('pending'),

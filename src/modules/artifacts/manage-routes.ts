@@ -4,22 +4,21 @@ import {
 	ArtifactDeleteResponseSchema,
 	ArtifactListResponseSchema,
 	ArtifactResponseSchema,
-	DownloadLinkResponseSchema,
+	DownloadArtifactResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
-	ReleaseListResponseSchema,
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
 import { Elysia, t } from 'elysia';
 import * as service from './service';
 
 /**
- * Artifact management routes — list, get, update, delete, download, releases.
+ * Artifact management routes — list, get, update, delete, download.
  */
 export const artifactManageRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/artifacts' }),
 )
-	// GET / — List artifacts (with Ninbus type enrichment)
+	// GET / — List software modules (artifacts)
 	.get(
 		'/',
 		async ({ params, query, user, set }: any) => {
@@ -29,9 +28,8 @@ export const artifactManageRoutes = withAuth(
 				return err.body;
 			}
 			const result = await service.listArtifacts({
-				page: query?.page,
-				perPage: query?.perPage,
-				name: query?.name,
+				offset: query?.offset,
+				limit: query?.limit,
 			});
 			return result;
 		},
@@ -39,14 +37,13 @@ export const artifactManageRoutes = withAuth(
 			auth: true,
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
-				page: t.Optional(t.Number()),
-				perPage: t.Optional(t.Number({ maximum: 500 })),
-				name: t.Optional(t.String({ description: 'Filter by artifact name' })),
+				offset: t.Optional(t.Number()),
+				limit: t.Optional(t.Number({ maximum: 500 })),
 			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'List OTA artifacts',
-				description: 'Lists all firmware artifacts enriched with Ninbus type metadata',
+				summary: 'List OTA artifacts (Software Modules)',
+				description: 'Lists all software modules from hawkBit enriched with Ninbus type metadata',
 			},
 			response: {
 				200: ArtifactListResponseSchema,
@@ -65,7 +62,7 @@ export const artifactManageRoutes = withAuth(
 				return err.body;
 			}
 			try {
-				const artifact = await service.getArtifact(params.artifactId);
+				const artifact = await service.getArtifact(Number(params.artifactId));
 				return { data: artifact };
 			} catch {
 				set.status = 404;
@@ -76,51 +73,14 @@ export const artifactManageRoutes = withAuth(
 			auth: true,
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'Get artifact details',
-				description: 'Artifact metadata enriched with Ninbus type info',
+				summary: 'Get artifact details (Software Module)',
 			},
 			response: {
 				200: ArtifactResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-			},
-		},
-	)
-
-	// GET /:artifactId/download — Get download link
-	.get(
-		'/:artifactId/download',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			try {
-				const link = await service.getArtifactDownloadLink(params.artifactId);
-				return { data: link };
-			} catch {
-				set.status = 404;
-				return { error: 'Not Found', message: 'Artifact not found' };
-			}
-		},
-		{
-			auth: true,
-			params: t.Object({
-				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
-			}),
-			detail: {
-				tags: ['Artifacts'],
-				summary: 'Get artifact download link',
-				description: 'Returns a pre-signed URL for downloading',
-			},
-			response: {
-				200: DownloadLinkResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
@@ -136,16 +96,16 @@ export const artifactManageRoutes = withAuth(
 				set.status = err.status;
 				return err.body;
 			}
-			await service.deleteArtifact(params.artifactId);
+			await service.deleteArtifact(Number(params.artifactId));
 			return { message: 'Artifact deleted successfully' };
 		},
 		{
 			auth: true,
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
-			detail: { tags: ['Artifacts'], summary: 'Delete artifact' },
+			detail: { tags: ['Artifacts'], summary: 'Delete artifact (Software Module)' },
 			response: {
 				200: ArtifactDeleteResponseSchema,
 				403: ErrorResponseSchema,
@@ -162,14 +122,14 @@ export const artifactManageRoutes = withAuth(
 				set.status = err.status;
 				return err.body;
 			}
-			await service.updateArtifact(params.artifactId, body.description);
+			await service.updateArtifact(Number(params.artifactId), body.description);
 			return { message: 'Artifact updated successfully' };
 		},
 		{
 			auth: true,
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
 			body: updateArtifactSchema,
 			detail: { tags: ['Artifacts'], summary: 'Update artifact metadata' },
@@ -180,31 +140,45 @@ export const artifactManageRoutes = withAuth(
 		},
 	)
 
-	// GET /releases — List releases
+	// GET /:artifactId/download — Get artifact download info
 	.get(
-		'/releases',
+		'/:artifactId/download',
 		async ({ params, query, user, set }: any) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
 				set.status = err.status;
 				return err.body;
 			}
-			const { menderReleases } = await import('@common/mender/client');
-			const releases = await menderReleases.list({ page: query?.page, perPage: query?.perPage });
-			return { data: releases };
+			try {
+				const downloadInfo = await service.getArtifactDownloadUrl(
+					Number(params.artifactId),
+					Number(query?.artifactFileId ?? 0),
+				);
+				return { data: downloadInfo };
+			} catch {
+				set.status = 404;
+				return { error: 'Not Found', message: 'Artifact not found' };
+			}
 		},
 		{
 			auth: true,
-			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
-			query: t.Object({ page: t.Optional(t.Number()), perPage: t.Optional(t.Number()) }),
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
+			}),
+			query: t.Object({
+				artifactFileId: t.Optional(
+					t.Number({ description: 'Specific artifact file ID (within the SM)' }),
+				),
+			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'List releases',
-				description: 'Lists all releases (artifact groupings) from Mender',
+				summary: 'Get artifact download info',
 			},
 			response: {
-				200: ReleaseListResponseSchema,
+				200: DownloadArtifactResponseSchema,
 				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
 			},
 		},
 	);

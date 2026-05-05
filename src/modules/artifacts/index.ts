@@ -1,30 +1,28 @@
-import { NINBUS_ARTIFACT_TYPE_META } from '@common/mender/client';
+import { NINBUS_ARTIFACT_TYPE_META } from '@common/hawkbit/client';
 import { withAuth } from '@common/middleware/auth-guard';
 import { checkMembership } from '@common/middleware/company-check';
 import {
 	ArtifactTypeListResponseSchema,
 	ArtifactUploadResponseSchema,
 	ErrorResponseSchema,
-	GenerateArtifactBodySchema,
 	UploadArtifactBodySchema,
 } from '@modules/artifacts/schemas';
 import { Elysia, t } from 'elysia';
-import { ArtifactValidationError, generateAndUploadArtifact, uploadArtifact } from './service';
+import { ArtifactValidationError, uploadArtifact } from './service';
 
 /**
  * Artifacts Module — Upload and types.
  *
- * Upload flow:
- * 1. Client sends multipart/form-data with `.mender` file + optional description
- * 2. Server validates file extension and size
- * 3. Server proxies the file to Mender Gateway's artifact upload API
- * 4. Mender parses the artifact, validates structure, and indexes it
- * 5. Server returns enriched artifact data with Ninbus type metadata
+ * hawkBit artifact flow:
+ * 1. Client sends raw firmware file (.fir, .frz, .bin) with artifact name and type
+ * 2. Server creates a Software Module in hawkBit with the correct type
+ * 3. Server uploads the binary as an Artifact within the Software Module
+ * 4. Returns enriched data with Ninbus type metadata
  */
 export const artifactsModule = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/artifacts' }),
 )
-	// POST / — Upload Mender artifact
+	// POST / — Upload firmware artifact to hawkBit
 	.post(
 		'/',
 		async ({ params, body, user, set }: any) => {
@@ -33,13 +31,19 @@ export const artifactsModule = withAuth(
 				set.status = err.status;
 				return err.body;
 			}
-			const artifactFile = body?.artifact;
+			const artifactFile = body?.file;
 			if (!artifactFile || !(artifactFile instanceof File)) {
 				set.status = 400;
-				return { error: 'Bad Request', message: 'Artifact file is required' };
+				return { error: 'Bad Request', message: 'Firmware file is required' };
 			}
 			try {
-				const result = await uploadArtifact(artifactFile as File, body?.description);
+				const result = await uploadArtifact(
+					artifactFile as File,
+					body.artifactName,
+					body.artifactType,
+					body.version,
+					body?.description,
+				);
 				set.status = 201;
 				return { message: 'Artifact uploaded successfully', data: result };
 			} catch (error) {
@@ -56,65 +60,9 @@ export const artifactsModule = withAuth(
 			body: UploadArtifactBodySchema,
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'Upload Mender artifact',
+				summary: 'Upload firmware artifact to hawkBit',
 				description:
-					'Uploads a .mender artifact file to Mender Gateway. Supports artifact versions v1, v2, v3.',
-			},
-			response: {
-				201: ArtifactUploadResponseSchema,
-				400: ErrorResponseSchema,
-				403: ErrorResponseSchema,
-				413: ErrorResponseSchema,
-				415: ErrorResponseSchema,
-				422: ErrorResponseSchema,
-			},
-		},
-	)
-
-	// POST /generate — Generate .mender artifact from raw firmware file
-	.post(
-		'/generate',
-		async ({ params, body, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const rawFile = body?.file;
-			if (!rawFile || !(rawFile instanceof File)) {
-				set.status = 400;
-				return { error: 'Bad Request', message: 'Raw firmware file is required' };
-			}
-			try {
-				const result = await generateAndUploadArtifact(
-					rawFile as File,
-					body.artifactName,
-					body.artifactType,
-					body?.description,
-				);
-				set.status = 201;
-				return { message: 'Artifact generated and uploaded successfully', data: result };
-			} catch (error) {
-				if (error instanceof ArtifactValidationError) {
-					set.status = 400;
-					return { error: 'Validation error', message: error.message, code: error.code };
-				}
-				throw error;
-			}
-		},
-		{
-			auth: true,
-			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
-			body: GenerateArtifactBodySchema,
-			detail: {
-				tags: ['Artifacts'],
-				summary: 'Generate .mender artifact from raw firmware',
-				description:
-					'Accepts a raw firmware file (.fir, .frz, .bin) and generates a .mender artifact with the specified type. ' +
-					'The type determines what action the embedded device takes:\n' +
-					'- firmware-ninbus → NAND flash → reboot (HIGH risk)\n' +
-					'- firmware-controller → CAN bus → LightDot (MEDIUM risk)\n' +
-					'- configuration-nfx → NAND NFX → CAN → LightDot config (LOW risk)',
+					'Uploads a raw firmware file (.fir, .frz, .bin) to hawkBit. Creates a Software Module + Artifact.',
 			},
 			response: {
 				201: ArtifactUploadResponseSchema,
@@ -134,7 +82,10 @@ export const artifactsModule = withAuth(
 				return err.body;
 			}
 			return {
-				data: Object.entries(NINBUS_ARTIFACT_TYPE_META).map(([type, meta]) => ({ type, ...meta })),
+				data: Object.entries(NINBUS_ARTIFACT_TYPE_META).map(([type, meta]) => ({
+					type,
+					...meta,
+				})),
 			};
 		},
 		{

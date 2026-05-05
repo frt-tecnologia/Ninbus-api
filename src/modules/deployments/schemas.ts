@@ -2,7 +2,7 @@ import { t } from 'elysia';
 
 /**
  * Artifact type identifiers for Ninbus devices.
- * These MUST match the Mender artifact header type field exactly.
+ * These map to hawkBit Software Module Types.
  *
  * | Type                     | Destination                    | Risk  | Reboot |
  * |--------------------------|--------------------------------|-------|--------|
@@ -45,6 +45,12 @@ export const createOtaDeploymentSchema = t.Object(
 					'Type of artifact being deployed. Determines the update path on the embedded device.',
 			},
 		),
+		version: t.Optional(
+			t.String({
+				maxLength: 64,
+				description: 'Distribution set version (default: derived from artifactName)',
+			}),
+		),
 		deviceIds: t.Optional(
 			t.Array(t.String({ format: 'uuid' }), {
 				description: 'Specific Ninbus device IDs to deploy to',
@@ -60,9 +66,6 @@ export const createOtaDeploymentSchema = t.Object(
 				description: 'Deploy to all accepted devices in the company',
 			}),
 		),
-		retries: t.Optional(
-			t.Number({ minimum: 0, maximum: 10, description: 'Retry count on failure' }),
-		),
 	},
 	{
 		default: {
@@ -70,107 +73,96 @@ export const createOtaDeploymentSchema = t.Object(
 			artifactName: 'ninbus-firmware-v3.1.2',
 			artifactType: 'firmware-ninbus',
 			allDevices: true,
-			retries: 3,
 		},
 	},
 );
 
-export const abortDeploymentSchema = t.Object(
+export const abortActionSchema = t.Object(
 	{
-		status: t.Literal('aborted', { description: 'Must be "aborted"' }),
+		force: t.Optional(
+			t.Boolean({
+				default: true,
+				description: 'Force cancel even if action is in progress',
+			}),
+		),
 	},
 	{
 		default: {
-			status: 'aborted',
+			force: true,
 		},
 	},
 );
 
-export const DeploymentStatisticsSchema = t.Object({
-	success: t.Number(),
-	pending: t.Number(),
-	failure: t.Number(),
-	downloading: t.Number(),
-	installing: t.Number(),
-	rebooting: t.Number(),
-	noartifact: t.Number(),
-	'already-installed': t.Number(),
-	aborted: t.Number(),
-	decommissioned: t.Number(),
-	pause_before_installing: t.Number(),
-	pause_before_committing: t.Number(),
-	pause_before_rebooting: t.Number(),
-});
+// ── hawkBit Distribution Set Schema ──────────────────────────────────
 
-export const DeploymentSchema = t.Object({
-	id: t.String(),
+export const DistributionSetSchema = t.Object({
+	id: t.Number(),
 	name: t.String(),
-	artifact_name: t.String(),
+	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
-	created: t.String(),
-	finished: t.Optional(t.String()),
-	status: t.String(),
-	device_count: t.Optional(t.Number()),
-	max_devices: t.Optional(t.Number()),
-	artifacts: t.Optional(t.Array(t.String())),
-	statistics: t.Optional(t.Object({
-		status: DeploymentStatisticsSchema,
-		total_size: t.Number(),
-	})),
-	filter: t.Optional(t.Any()),
+	typeName: t.Optional(t.String()),
+	description: t.Optional(t.String()),
+	locked: t.Optional(t.Boolean()),
+	complete: t.Optional(t.Boolean()),
+	valid: t.Optional(t.Boolean()),
 });
 
-export const DeviceDeploymentSchema = t.Object({
-	id: t.String(),
-	device_id: t.String(),
-	deployment_id: t.Optional(t.String()),
-	status: t.String(),
-	created: t.Optional(t.String()),
-	finished: t.Optional(t.String()),
-	log: t.Optional(t.Boolean()),
-	substate: t.Optional(t.String()),
-	image: t.Optional(t.Any()),
+// ── hawkBit Action Schema ────────────────────────────────────────────
+
+export const ActionSchema = t.Object({
+	id: t.Number(),
+	type: t.Optional(t.String()),
+	active: t.Optional(t.Boolean()),
+	status: t.Optional(t.String()),
+	forceType: t.Optional(t.String()),
+	weight: t.Optional(t.Number()),
+	rollout: t.Optional(t.Number()),
+	rolloutName: t.Optional(t.String()),
+	lastStatusCode: t.Optional(t.Number()),
 });
 
-export const DeviceDeploymentLogSchema = t.Object({
-	data: t.String(),
+export const ActionStatusSchema = t.Object({
+	id: t.Number(),
+	type: t.String(),
+	messages: t.Optional(t.Array(t.String())),
+	reportedAt: t.Optional(t.Number()),
+	code: t.Optional(t.Number()),
 });
+
+// ── Response Schemas ─────────────────────────────────────────────────
 
 export const DeploymentResponseSchema = t.Object({
-	data: DeploymentSchema,
+	data: DistributionSetSchema,
 });
 
 export const DeploymentListResponseSchema = t.Object({
-	data: t.Array(DeploymentSchema),
+	data: t.Array(DistributionSetSchema),
 	total: t.Number(),
 });
 
 export const DeploymentCreateResponseSchema = t.Object({
 	message: t.String(),
-	data: DeploymentSchema,
-});
-
-export const DeviceHistoryEntrySchema = t.Object({
-	id: t.String(),
-	deployment: DeploymentSchema,
-	device: DeviceDeploymentSchema,
-});
-
-export const DeviceDeploymentLogResponseSchema = t.Object({
-	data: t.String(),
+	data: t.Object({
+		dsId: t.Number(),
+		name: t.String(),
+		version: t.Optional(t.String()),
+		targetsAssigned: t.Number(),
+		artifactType: t.String(),
+	}),
 });
 
 export const DeploymentStatisticsResponseSchema = t.Object({
-	data: DeploymentStatisticsSchema,
+	data: t.Any(),
 });
 
-export const DeviceDeploymentListResponseSchema = t.Object({
-	data: t.Array(DeviceDeploymentSchema),
+export const DeviceActionsResponseSchema = t.Object({
+	data: t.Array(ActionSchema),
 	total: t.Optional(t.Number()),
 });
 
-export const DeviceHistoryResponseSchema = t.Object({
-	data: t.Array(DeviceHistoryEntrySchema),
+export const ActionStatusListResponseSchema = t.Object({
+	data: t.Array(ActionStatusSchema),
+	total: t.Optional(t.Number()),
 });
 
 // Shared generic schemas
@@ -191,15 +183,15 @@ export const ArtifactTypeListResponseSchema = t.Object({
 	data: t.Array(ArtifactTypeItemSchema),
 });
 
-// ── Params (used by device-routes.ts) ────────────────────────────────────
+// ── Params ────────────────────────────────────────────────────────────
 
 export const companyParams = t.Object({ companyId: t.String({ format: 'uuid' }) });
 export const deploymentParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
 	deploymentId: t.String(),
 });
-export const deploymentDeviceLogParams = t.Object({
+export const deploymentActionParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
-	deploymentId: t.String(),
-	menderDeviceId: t.String(),
+	targetId: t.String(),
+	actionId: t.String(),
 });

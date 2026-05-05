@@ -111,6 +111,14 @@
 			"category": "architecture",
 			"learnedAt": "2026-04-29T04:42:12.285Z",
 			"reinforcementCount": 1
+		},
+		{
+			"id": "p-mender-deployment-statuses-complete",
+			"rule": "Mender v4.1.1 returns 13 device deployment statuses in statistics (map[string]int): success, pending, failure, downloading, installing, rebooting, noartifact, already-installed, aborted, decommissioned, pause_before_installing, pause_before_committing, pause_before_rebooting. The deployment device response includes `image` (full MenderArtifact), `log` (boolean), and `substate`. Device history is nested {id, deployment: MenderDeployment, device: MenderDeploymentDevice}, NOT flat. Always verify against the live Mender API or Go source code, never assume.",
+			"origin": "learned",
+			"category": "architecture",
+			"learnedAt": "2026-05-03T23:00:08.623Z",
+			"reinforcementCount": 1
 		}
 	]
 }

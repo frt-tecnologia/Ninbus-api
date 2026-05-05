@@ -8,7 +8,7 @@ export async function getUserCompanies(userId: string) {
 			id: companies.id,
 			name: companies.name,
 			status: companies.status,
-			menderTenantId: companies.menderTenantId,
+			hawkbitTenantId: companies.hawkbitTenantId,
 			role: companyMembers.role,
 			createdAt: companies.createdAt,
 			updatedAt: companies.updatedAt,

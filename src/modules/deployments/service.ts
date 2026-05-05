@@ -1,22 +1,21 @@
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import {
-	type MenderDeployment,
-	type MenderDeploymentDevice,
-	type MenderDeploymentStatistics,
+	type HawkbitDistributionSet,
 	type NinbusArtifactType,
-	menderArtifacts,
-	menderDeployments,
-} from '@common/mender/client';
-import { getDeviceIdsByCategories, getMenderDeviceIdsForCompany } from '@modules/devices/service';
+	getOrCreateSoftwareModuleType,
+	hawkbitDistributionSets,
+	hawkbitSoftwareModules,
+} from '@common/hawkbit/client';
+import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
 import { DeviceSyncEngine } from '@modules/devices/sync';
 import { and, eq, inArray } from 'drizzle-orm';
 
 /**
- * Resolve target Mender device IDs from deployment parameters.
+ * Resolve target hawkBit target IDs from deployment parameters.
  * Supports: specific devices, categories, or all company devices.
  */
-async function resolveMenderDeviceIds(
+async function resolveHawkbitTargetIds(
 	companyId: string,
 	options: {
 		deviceIds?: string[];
@@ -24,15 +23,14 @@ async function resolveMenderDeviceIds(
 		allDevices?: boolean;
 	},
 ): Promise<string[]> {
-	// Ensure devices are synced before resolving IDs
 	await DeviceSyncEngine.syncCompany(companyId);
 
-	const menderIds = new Set<string>();
+	const targetIds = new Set<string>();
 
 	// Specific devices
 	if (options.deviceIds && options.deviceIds.length > 0) {
 		const companyDevices = await db
-			.select({ menderDeviceId: devices.menderDeviceId })
+			.select({ hawkbitTargetId: devices.hawkbitTargetId })
 			.from(devices)
 			.where(
 				and(
@@ -42,7 +40,7 @@ async function resolveMenderDeviceIds(
 				),
 			);
 		for (const d of companyDevices) {
-			if (d.menderDeviceId) menderIds.add(d.menderDeviceId);
+			if (d.hawkbitTargetId) targetIds.add(d.hawkbitTargetId);
 		}
 	}
 
@@ -51,7 +49,7 @@ async function resolveMenderDeviceIds(
 		const ninbusIds = await getDeviceIdsByCategories(companyId, options.categoryIds);
 		if (ninbusIds.length > 0) {
 			const companyDevices = await db
-				.select({ menderDeviceId: devices.menderDeviceId })
+				.select({ hawkbitTargetId: devices.hawkbitTargetId })
 				.from(devices)
 				.where(
 					and(
@@ -61,139 +59,97 @@ async function resolveMenderDeviceIds(
 					),
 				);
 			for (const d of companyDevices) {
-				if (d.menderDeviceId) menderIds.add(d.menderDeviceId);
+				if (d.hawkbitTargetId) targetIds.add(d.hawkbitTargetId);
 			}
 		}
 	}
 
 	// All company devices
 	if (options.allDevices) {
-		const allMenderIds = await getMenderDeviceIdsForCompany(companyId);
-		for (const id of allMenderIds) {
-			menderIds.add(id);
+		const allTargetIds = await getHawkbitTargetIdsForCompany(companyId);
+		for (const id of allTargetIds) {
+			targetIds.add(id);
 		}
 	}
 
-	return [...menderIds];
+	return [...targetIds];
 }
 
 export interface CreateDeploymentInput {
 	name: string;
 	artifactName: string;
 	artifactType: NinbusArtifactType;
+	version?: string;
 	deviceIds?: string[];
 	categoryIds?: string[];
 	allDevices?: boolean;
-	retries?: number;
 }
 
 export async function createDeployment(companyId: string, data: CreateDeploymentInput) {
-	const menderDeviceIds = await resolveMenderDeviceIds(companyId, {
+	const targetIds = await resolveHawkbitTargetIds(companyId, {
 		deviceIds: data.deviceIds,
 		categoryIds: data.categoryIds,
 		allDevices: data.allDevices,
 	});
 
-	if (menderDeviceIds.length === 0) {
+	if (targetIds.length === 0) {
 		throw new Error('No eligible devices found for deployment');
 	}
 
-	// Validate artifact exists and matches type before creating deployment
-	const artifactValidation = await validateArtifactForDeployment(
-		data.artifactName,
-		data.artifactType,
-	);
+	// 1. Get or create the Software Module Type for this artifact type
+	const smType = await getOrCreateSoftwareModuleType(data.artifactType);
 
-	const deployment = await menderDeployments.create({
-		name: data.name,
-		artifact_name: data.artifactName,
-		devices: menderDeviceIds,
-		retries: data.retries,
+	// 2. Create a Software Module (artifact container)
+	const sm = await hawkbitSoftwareModules.create({
+		name: data.artifactName,
+		version: data.version ?? '1.0',
+		type: smType.typeKey,
+		description: `Ninbus OTA: ${data.artifactType} — ${data.name}`,
 	});
 
+	// 3. Create a Distribution Set with the Software Module
+	const ds = await hawkbitDistributionSets.create({
+		name: data.name,
+		version: data.version ?? '1.0',
+		description: `Deployment: ${data.name} (${data.artifactType})`,
+		modules: [{ id: sm.id }],
+	});
+
+	// 4. Assign targets to the Distribution Set
+	await hawkbitDistributionSets.assignTargets(ds.id, targetIds);
+
 	return {
-		...deployment,
+		dsId: ds.id,
+		name: ds.name,
+		version: ds.version,
+		targetsAssigned: targetIds.length,
 		artifactType: data.artifactType,
-		artifactMeta: artifactValidation,
 	};
 }
 
-/**
- * Validates that the artifact exists in Mender and is compatible
- * with the requested deployment type.
- *
- * @throws Error if artifact not found or type mismatch
- */
-export async function validateArtifactForDeployment(
-	artifactName: string,
-	expectedType: NinbusArtifactType,
+export async function getDeployment(dsId: number): Promise<HawkbitDistributionSet> {
+	return hawkbitDistributionSets.get(dsId);
+}
+
+export async function getDeploymentStatistics(dsId: number): Promise<unknown> {
+	return hawkbitDistributionSets.getStatistics(dsId);
+}
+
+export async function deleteDeployment(dsId: number): Promise<void> {
+	return hawkbitDistributionSets.delete(dsId);
+}
+
+export async function listDeployments(params?: {
+	offset?: number;
+	limit?: number;
+}): Promise<{ data: HawkbitDistributionSet[]; total: number }> {
+	const result = await hawkbitDistributionSets.list(params);
+	return { data: result.content, total: result.total };
+}
+
+export async function getDeploymentTargets(
+	dsId: number,
+	params?: { offset?: number; limit?: number },
 ) {
-	// Fetch all artifacts and find by name
-	const artifacts = await menderArtifacts.list({ name: artifactName });
-	const artifact = artifacts.find((a) => a.name === artifactName);
-
-	if (!artifact) {
-		throw new Error(
-			`Artifact '${artifactName}' not found in Mender. Upload it first via POST /api/companies/:companyId/artifacts`,
-		);
-	}
-
-	// Validate device type compatibility
-	if (
-		artifact.device_types_compatible.length > 0 &&
-		!artifact.device_types_compatible.includes('ninbus-wifi-v3')
-	) {
-		throw new Error(
-			`Artifact '${artifactName}' is not compatible with ninbus-wifi-v3. ` +
-				`Compatible types: ${artifact.device_types_compatible.join(', ')}`,
-		);
-	}
-
-	return {
-		artifactId: artifact.id,
-		artifactName: artifact.name,
-		size: artifact.size,
-		expectedType,
-		deviceTypesCompatible: artifact.device_types_compatible,
-		validated: true,
-	};
-}
-
-export async function getDeployment(deploymentId: string): Promise<MenderDeployment> {
-	return menderDeployments.get(deploymentId);
-}
-
-export async function getDeploymentStatistics(
-	deploymentId: string,
-): Promise<MenderDeploymentStatistics> {
-	return menderDeployments.getStatistics(deploymentId);
-}
-
-export async function abortDeployment(deploymentId: string): Promise<void> {
-	return menderDeployments.abort(deploymentId);
-}
-
-export async function abortDeviceDeployment(deviceId: string): Promise<void> {
-	return menderDeployments.abortDevice(deviceId);
-}
-
-export async function getDeploymentDevices(
-	deploymentId: string,
-	params?: { status?: string; page?: number; perPage?: number },
-): Promise<MenderDeploymentDevice[]> {
-	return menderDeployments.listDevices(deploymentId, params);
-}
-
-export async function getDeviceDeploymentLog(
-	deploymentId: string,
-	deviceId: string,
-): Promise<string> {
-	return menderDeployments.getDeviceLog(deploymentId, deviceId);
-}
-
-export async function getDeviceDeploymentHistory(
-	menderDeviceId: string,
-	params?: { status?: string; page?: number; perPage?: number },
-) {
-	return menderDeployments.listDeviceHistory(menderDeviceId, params);
+	return hawkbitDistributionSets.getAssignedTargets(dsId, params);
 }

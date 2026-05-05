@@ -3,21 +3,73 @@ import { t } from 'elysia';
 /**
  * Artifacts module schemas.
  *
- * Validates body input for artifact upload and update endpoints.
+ * In hawkBit, artifacts are managed as:
+ * 1. Software Module (container with type, name, version)
+ * 2. Artifact (binary file uploaded to a Software Module)
+ *
  * File validation (size, extension) is done in the service layer.
  */
 
 /**
  * Max artifact file size in bytes (500 MB).
- * Matches Mender Gateway's default limit.
  */
 export const ARTIFACT_MAX_SIZE_BYTES = 500 * 1024 * 1024;
 
 /**
- * Allowed file extensions for Mender artifact uploads.
- * The Mender Gateway only accepts `.mender` files.
+ * Allowed file extensions for raw firmware upload.
+ * hawkBit accepts any binary — the API wraps it in a Software Module.
  */
-export const ARTIFACT_ALLOWED_EXTENSIONS = ['.mender'] as const;
+export const ARTIFACT_ALLOWED_EXTENSIONS = [
+	'.fir',
+	'.frz',
+	'.nfx',
+	'.bin',
+	'.hex',
+	'.fw',
+	'.cfg',
+	'.conf',
+] as const;
+
+/**
+ * Schema for uploading a raw firmware file.
+ * The API creates a Software Module + Artifact in hawkBit.
+ */
+export const UploadArtifactBodySchema = t.Object(
+	{
+		file: t.File({
+			description: 'Raw firmware file (.fir, .frz, .bin). Max: 500 MB.',
+		}),
+		artifactName: t.String({
+			minLength: 1,
+			maxLength: 256,
+			description: 'Unique artifact name (e.g., "ninbus-firmware-3.3.0")',
+		}),
+		artifactType: t.Union(
+			[
+				t.Literal('firmware-ninbus'),
+				t.Literal('firmware-controller'),
+				t.Literal('configuration-nfx'),
+			],
+			{ description: 'Artifact type — determines what action the device takes' },
+		),
+		version: t.Optional(
+			t.String({
+				maxLength: 64,
+				description: 'Software module version (default: "1.0")',
+			}),
+		),
+		description: t.Optional(
+			t.String({ minLength: 1, maxLength: 1000, description: 'Optional description' }),
+		),
+	},
+	{
+		default: {
+			artifactName: 'ninbus-firmware-3.3.0',
+			artifactType: 'firmware-ninbus',
+			description: 'Firmware Update',
+		},
+	},
+);
 
 /**
  * Schema for updating artifact metadata.
@@ -37,112 +89,77 @@ export const updateArtifactSchema = t.Object(
 	},
 );
 
-/**
- * Schema for generating artifact from raw firmware file.
- * Accepts raw .fir/.frz files + artifact type + name.
- */
-export const GenerateArtifactBodySchema = t.Object({
-	file: t.File({
-		description:
-			'Raw firmware file (.fir, .frz, .bin). The API generates the .mender artifact internally.',
-	}),
-	artifactName: t.String({
-		minLength: 1,
-		maxLength: 256,
-		description: 'Unique artifact name (e.g., "ninbus-firmware-3.3.0")',
-	}),
-	artifactType: t.Union(
-		[
-			t.Literal('firmware-ninbus'),
-			t.Literal('firmware-controller'),
-			t.Literal('configuration-nfx'),
-		],
-		{ description: 'Artifact type — determines what action the device takes' },
-	),
-	description: t.Optional(
-		t.String({ minLength: 1, maxLength: 1000, description: 'Optional description' }),
-	),
-});
+// ── hawkBit Software Module Schema ───────────────────────────────────
 
-export const UploadArtifactBodySchema = t.Object(
-	{
-		artifact: t.File({
-			description:
-				'Mender artifact file (.mender). Must be the last part of the multipart request. Max: 500 MB.',
-		}),
-		description: t.Optional(
-			t.String({ minLength: 1, maxLength: 1000, description: 'Optional description' }),
-		),
-	},
-	{
-		default: {
-			description: 'Firmware Update',
-		},
-	},
-);
-
-export const ArtifactUpdateFileSchema = t.Object({
+export const SoftwareModuleSchema = t.Object({
+	id: t.Number(),
 	name: t.String(),
-	checksum: t.String(),
-	size: t.Number(),
-	date: t.Optional(t.String()),
-});
-
-export const ArtifactUpdateSchema = t.Object({
-	type_info: t.Object({
-		type: t.Union([t.String(), t.Null()]),
-	}),
-	files: t.Optional(t.Array(ArtifactUpdateFileSchema)),
-	meta_data: t.Optional(t.Record(t.String(), t.Any())),
-});
-
-export const ArtifactSchema = t.Object({
-	id: t.String(),
-	name: t.String(),
+	version: t.String(),
+	type: t.String(),
+	typeName: t.Optional(t.String()),
 	description: t.Optional(t.String()),
-	device_types_compatible: t.Optional(t.Array(t.String())),
-	info: t.Optional(
-		t.Object({
-			format: t.String(),
-			version: t.Number(),
-		}),
-	),
-	signed: t.Optional(t.Boolean()),
-	updates: t.Optional(t.Array(ArtifactUpdateSchema)),
-	artifact_provides: t.Optional(t.Record(t.String(), t.String())),
-	artifact_depends: t.Optional(t.Record(t.String(), t.Array(t.String()))),
-	clears_artifact_provides: t.Optional(t.Array(t.String())),
-	size: t.Optional(t.Number()),
-	modified: t.Optional(t.String()),
+	vendor: t.Optional(t.String()),
+	locked: t.Optional(t.Boolean()),
+	deleted: t.Optional(t.Boolean()),
+	complete: t.Optional(t.Boolean()),
+	createdBy: t.Optional(t.String()),
+	createdAt: t.Optional(t.Number()),
+	lastModifiedBy: t.Optional(t.String()),
+	lastModifiedAt: t.Optional(t.Number()),
 });
 
-export const ReleaseSchema = t.Object({
-	name: t.String(),
-	artifacts: t.Array(ArtifactSchema),
-	device_types_compatible: t.Array(t.String()),
+export const ArtifactMetadataSchema = t.Object({
+	id: t.Number(),
+	providedFilename: t.Optional(t.String()),
+	size: t.Optional(t.Number()),
+	hashes: t.Optional(
+		t.Object({
+			sha1: t.Optional(t.String()),
+			sha256: t.Optional(t.String()),
+			md5: t.Optional(t.String()),
+		}),
+	),
+	createdBy: t.Optional(t.String()),
+	createdAt: t.Optional(t.Number()),
 });
+
+// ── Response Schemas ─────────────────────────────────────────────────
 
 export const ArtifactListResponseSchema = t.Object({
-	data: t.Array(ArtifactSchema),
-	total: t.Optional(t.Number()),
-});
-
-export const ReleaseListResponseSchema = t.Object({
-	data: t.Array(ReleaseSchema),
-	total: t.Optional(t.Number()),
+	data: t.Array(SoftwareModuleSchema),
+	total: t.Number(),
 });
 
 export const ArtifactResponseSchema = t.Object({
-	data: ArtifactSchema,
+	data: SoftwareModuleSchema,
 });
 
 export const ArtifactUploadResponseSchema = t.Object({
 	message: t.String(),
-	data: t.Optional(ArtifactSchema),
+	data: t.Optional(
+		t.Object({
+			smId: t.Number(),
+			artifactId: t.Optional(t.Number()),
+			name: t.String(),
+			version: t.String(),
+			type: t.String(),
+			size: t.Number(),
+		}),
+	),
 });
 
 export const ArtifactDeleteResponseSchema = t.Object({
 	message: t.String(),
+});
+
+export const DownloadArtifactResponseSchema = t.Object({
+	data: t.Object({
+		smId: t.Number(),
+		artifactId: t.Number(),
+		filename: t.Optional(t.String()),
+		size: t.Optional(t.Number()),
+		downloadUrl: t.String(),
+	}),
 });
 
 // Shared generic schemas
@@ -161,10 +178,4 @@ export const ArtifactTypeItemSchema = t.Object({
 
 export const ArtifactTypeListResponseSchema = t.Object({
 	data: t.Array(ArtifactTypeItemSchema),
-});
-
-// ── Download & Release Responses ──────────────────────────────────────
-
-export const DownloadLinkResponseSchema = t.Object({
-	data: t.String(),
 });

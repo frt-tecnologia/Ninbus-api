@@ -14,7 +14,7 @@ export const companies = pgTable('companies', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	name: text('name').notNull(),
 	status: companyStatusEnum('status').notNull().default('active'),
-	menderTenantId: text('mender_tenant_id'),
+	hawkbitTenantId: text('hawkbit_tenant_id'),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

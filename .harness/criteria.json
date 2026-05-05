@@ -1,42 +1,42 @@
 [
-	{
-		"name": "Functional Correctness",
-		"weight": 10,
-		"description": "Build clean (bun build). All tests pass (bun test). Auth, device CRUD + Mender ops, deployment CRUD + per-device abort, artifact management all functional. Mender sync engine guards on menderConfig.enabled."
-	},
-	{
-		"name": "Code Quality",
-		"weight": 8,
-		"description": "Every file under 250 lines. Clean separation: schemas.ts (types) → index.ts / routes.ts (handlers) → service.ts (logic) → mender client (adapter). No inline response schemas in route files — all imported from schemas.ts. Params/query schemas may be inline in routes or imported from schemas.ts."
-	},
-	{
-		"name": "Schema Organization",
-		"weight": 9,
-		"description": "Each module's schemas.ts owns all body, response, and shared param schemas for that module. ErrorResponseSchema and GenericActionResponseSchema live in common/schemas and are re-exported by each module. Route files (index.ts, *-routes.ts) NEVER define response schemas inline — they only import from their module's schemas.ts. Params and query schemas may live in schemas.ts or be defined locally in route files."
-	},
-	{
-		"name": "Error Handling",
-		"weight": 8,
-		"description": "Mender errors isolated — never leak API paths or request IDs to clients. MenderApiError wraps external failures. sync.ts catches all Mender errors silently. Actionable error messages returned to clients."
-	},
-	{
-		"name": "Test Coverage",
-		"weight": 8,
-		"description": "184 tests across 8 files covering auth, devices, deployments, artifacts (upload + generate), categories, companies, health, posts. Tests validate auth, authorization, validation, CRUD, Mender endpoint structure. Auth tests match actual Better Auth behavior (accepts incomplete registration)."
-	},
-	{
-		"name": "Config Centralization",
-		"weight": 7,
-		"description": "ALL config flows through env.ts (single source of truth). Zero process.env reads outside env.ts (except standalone migrate.ts). menderConfig is thin accessor over env. MENDER_HOST_OVERRIDE, MENDER_SKIP_TLS, MENDER_TENANT_TOKEN supported. .env.example and .env.test kept in sync."
-	},
-	{
-		"name": "Security",
-		"weight": 8,
-		"description": "PAT never logged or exposed in responses. Company membership checked via checkMembership() helper on every company-scoped endpoint. Mender link verified via requireMenderLink() on Mender operations. Input validation at route boundary via TypeBox schemas."
-	},
-	{
-		"name": "🔮 Futuro (Aprendizado Contínuo)",
-		"weight": 5,
-		"description": "Principles extracted and stored in .harness/principles.json. Architecture decisions documented. Conventions for Elysia/TypeScript patterns established and followed."
-	}
+  {
+    "name": "Functional Correctness",
+    "weight": 10,
+    "description": "Build clean (bun build). All tests pass (bun test). Auth, device CRUD + hawkBit ops, deployment CRUD (Distribution Sets + target assignment), artifact management (Software Modules + binary upload) all functional. hawkBit sync engine guards on hawkbitConfig.enabled."
+  },
+  {
+    "name": "Code Quality",
+    "weight": 8,
+    "description": "Every file under 250 lines. Clean separation: schemas.ts (types) → index.ts / routes.ts (handlers) → service.ts (logic) → hawkbit client (adapter). No inline response schemas in route files — all imported from schemas.ts. Params/query schemas may be inline in routes or imported from schemas.ts."
+  },
+  {
+    "name": "Schema Organization",
+    "weight": 9,
+    "description": "Each module's schemas.ts owns all body, response, and shared param schemas for that module. ErrorResponseSchema and GenericActionResponseSchema live in common/schemas and are re-exported by each module. Route files (index.ts, *-routes.ts) NEVER define response schemas inline — they only import from their module's schemas.ts. Params and query schemas may live in schemas.ts or be defined locally in route files."
+  },
+  {
+    "name": "Error Handling",
+    "weight": 8,
+    "description": "hawkBit errors isolated — never leak API paths or request IDs to clients. HawkbitApiError wraps external failures. sync.ts catches all hawkBit errors silently. Actionable error messages returned to clients."
+  },
+  {
+    "name": "Test Coverage",
+    "weight": 8,
+    "description": "Tests covering auth, devices, deployments, artifacts, categories, companies, health, posts. Tests validate auth, authorization, validation, CRUD, hawkBit endpoint structure. Auth tests match actual Better Auth behavior."
+  },
+  {
+    "name": "Config Centralization",
+    "weight": 7,
+    "description": "ALL config flows through env.ts (single source of truth). Zero process.env reads outside env.ts (except standalone migrate.ts). hawkbitConfig is thin accessor over env. HAWKBIT_URL, HAWKBIT_USERNAME, HAWKBIT_PASSWORD, HAWKBIT_TIMEOUT_MS, HAWKBIT_SKIP_TLS supported. .env.example and .env.test kept in sync."
+  },
+  {
+    "name": "Security",
+    "weight": 8,
+    "description": "Basic Auth credentials never logged or exposed in responses. Company membership checked via checkMembership() helper on every company-scoped endpoint. hawkBit link verified via requireHawkbitLink() on hawkBit operations. Input validation at route boundary via TypeBox schemas."
+  },
+  {
+    "name": "🔮 Futuro (Aprendizado Contínuo)",
+    "weight": 5,
+    "description": "Principles extracted and stored in .harness/principles.json. Architecture decisions documented. Conventions for Elysia/TypeScript patterns established and followed."
+  }
 ]

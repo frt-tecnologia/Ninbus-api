@@ -153,7 +153,6 @@ describe('Devices Module', () => {
 		});
 
 		it('DELETE /:deviceId removes device', async () => {
-			// Create a device to delete
 			const createRes = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -208,7 +207,6 @@ describe('Devices Module', () => {
 			);
 			expect(response.status).toBe(200);
 
-			// Verify only 1 category
 			const getRes = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/categories`, {
 					headers: { Cookie: ownerCookie },
@@ -275,36 +273,43 @@ describe('Devices Module', () => {
 		});
 	});
 
-	describe('Mender Integration Endpoints', () => {
-		it('POST /approve returns 400 for unlinked device', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/approve`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ authId: 'test-auth-id' }),
-				}),
-			);
-			expect(response.status).toBe(400);
-		});
-
-		it('POST /check-update returns 400 for unlinked device', async () => {
-			const response = await app.handle(
-				new Request(
-					`http://localhost/api/companies/${companyId}/devices/${deviceId}/check-update`,
-					{
-						method: 'POST',
-						headers: { Cookie: ownerCookie },
-					},
-				),
-			);
-			expect(response.status).toBe(400);
-		});
-
+	describe('hawkBit Integration Endpoints', () => {
 		it('GET /inventory returns 400 for unlinked device', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/inventory`, {
 					headers: { Cookie: ownerCookie },
 				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('GET /connection returns 400 for unlinked device', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/connection`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('GET /actions returns 400 for unlinked device', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/actions`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('DELETE /decommission returns 400 for unlinked device', async () => {
+			const response = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/${deviceId}/decommission`,
+					{
+						method: 'DELETE',
+						headers: { Cookie: ownerCookie },
+					},
+				),
 			);
 			expect(response.status).toBe(400);
 		});

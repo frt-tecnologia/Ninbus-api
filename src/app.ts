@@ -10,7 +10,7 @@ import { companyMemberRoutes } from '@modules/companies/member-routes';
 import { deploymentsModule } from '@modules/deployments';
 import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
 import { devicesModule } from '@modules/devices';
-import { deviceMenderRoutes } from '@modules/devices/mender-routes';
+import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
 import { Elysia } from 'elysia';
@@ -23,7 +23,8 @@ import { requestLogger } from './common/middleware/request-logger';
  *
  * Registers global middleware, OpenAPI/Scalar documentation,
  * error handling, and feature modules.
- * * @see https://elysiajs.com/concepts/plugin.html
+ *
+ * @see https://elysiajs.com/concepts/plugin.html
  */
 export const createApp = () => {
 	const app = new Elysia()
@@ -42,10 +43,10 @@ export const createApp = () => {
 				documentation: {
 					info: {
 						title: 'Ninbus API',
-						version: '1.0.0',
+						version: '2.0.0',
 						description:
 							'Ninbus IoT Platform — Device management, OTA deployments and fleet orchestration.\n\n' +
-							'Powered by Elysia.js + Mender Gateway.\n\n' +
+							'Powered by Elysia.js + Eclipse hawkBit.\n\n' +
 							'Full Better Auth documentation: https://better-auth.com',
 					},
 					tags: [
@@ -68,15 +69,16 @@ export const createApp = () => {
 						},
 						{
 							name: 'Devices',
-							description: 'Ninbus device registry with Mender Gateway integration',
+							description: 'Ninbus device registry with Eclipse hawkBit integration',
 						},
 						{
 							name: 'Deployments',
-							description: 'OTA deployment creation, monitoring and management',
+							description:
+								'OTA deployment creation, monitoring and management via hawkBit Distribution Sets',
 						},
 						{
 							name: 'Artifacts',
-							description: 'Firmware artifact management (upload, download, releases)',
+							description: 'Firmware artifact management via hawkBit Software Modules',
 						},
 					],
 				},
@@ -161,7 +163,7 @@ export const createApp = () => {
 		// Root endpoint - API info
 		.get('/', () => ({
 			name: 'Ninbus API',
-			version: '1.0.0',
+			version: '2.0.0',
 			docs: '/docs',
 			health: '/health',
 		}))
@@ -173,7 +175,7 @@ export const createApp = () => {
 		.use(companyMemberRoutes)
 		.use(categoriesModule)
 		.use(devicesModule)
-		.use(deviceMenderRoutes)
+		.use(deviceHawkbitRoutes)
 		.use(deploymentsModule)
 		.use(deploymentDeviceRoutes)
 		.use(artifactsModule)

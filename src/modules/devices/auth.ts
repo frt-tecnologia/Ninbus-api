@@ -15,14 +15,14 @@ export async function loadDevice(
 	return { device };
 }
 
-export function requireMenderLink(device: { menderDeviceId: string | null }): {
+export function requireHawkbitLink(device: { hawkbitTargetId: string | null }): {
 	status: number;
 	body: any;
 } | null {
-	if (!device.menderDeviceId) {
+	if (!device.hawkbitTargetId) {
 		return {
 			status: 400,
-			body: { error: 'Bad Request', message: 'Device is not linked to Mender' },
+			body: { error: 'Bad Request', message: 'Device is not linked to hawkBit' },
 		};
 	}
 	return null;

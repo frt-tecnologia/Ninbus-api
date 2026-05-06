@@ -3,7 +3,7 @@ import { categories, deviceCategoryAssignments, devices } from '@common/db/schem
 import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { provisionDevice } from './provisioning';
+import { provisionDevice, listUnclaimedDevices, claimDevice } from './provisioning';
 import { DeviceSyncEngine } from './sync';
 
 // ---------------------------------------------------------------------------
@@ -42,10 +42,14 @@ export async function registerDevice(data: {
 	companyId: string;
 	name: string;
 	serialNumber: string;
-	deviceKey?: string;
 	userId: string;
 }) {
-	return provisionDevice(data);
+	return claimDevice({
+		companyId: data.companyId,
+		serialNumber: data.serialNumber,
+		name: data.name,
+		userId: data.userId,
+	});
 }
 
 export async function updateDevice(
@@ -212,4 +216,4 @@ export async function syncDeviceStatusFromHawkbit(targetId: string) {
 	}
 }
 
-export { linkDevice } from './provisioning';
+export { linkDevice, provisionDevice, listUnclaimedDevices } from './provisioning';

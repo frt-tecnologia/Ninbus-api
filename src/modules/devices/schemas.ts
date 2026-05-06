@@ -8,26 +8,46 @@ import {
 import { createSelectSchema } from 'drizzle-typebox';
 import { t } from 'elysia';
 
-export const registerDeviceSchema = t.Object(
+export const provisionDeviceSchema = t.Object(
 	{
-		name: t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' }),
 		serialNumber: t.String({
 			minLength: 1,
 			maxLength: 255,
-			description:
-				'Device serial number (controllerId in hawkBit). Printed on the device label.',
+			description: 'Device serial number (controllerId in hawkBit). Printed on the device label.',
 		}),
-		deviceKey: t.Optional(
+		deviceKey: t.String({
+			minLength: 8,
+			maxLength: 256,
+			description:
+				'Factory security token. Will be set as the hawkBit target securityToken so the device can authenticate via DDI.',
+		}),
+		name: t.Optional(
 			t.String({
-				minLength: 8,
-				maxLength: 256,
-				description:
-					'Device security token (factory key). When provided, creates the hawkBit target automatically. Admin-only field.',
+				maxLength: 255,
+				description: 'Optional display name. Defaults to serial number if not provided.',
 			}),
 		),
 	},
 	{
-		default: { name: 'Dispositivo Principal 01', serialNumber: 'SN-987654321' },
+		default: {
+			serialNumber: 'SN-987654321',
+			deviceKey: 'factory-device-key-from-label',
+		},
+	},
+);
+
+export const registerDeviceSchema = t.Object(
+	{
+		name: t.Optional(t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' })),
+		serialNumber: t.String({
+			minLength: 1,
+			maxLength: 255,
+			description:
+				'Device serial number. Must match a device pre-provisioned in hawkBit.',
+		}),
+	},
+	{
+		default: { serialNumber: 'SN-987654321' },
 	},
 );
 

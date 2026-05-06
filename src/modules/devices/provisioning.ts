@@ -1,81 +1,169 @@
 /**
- * Device Provisioning — Mode B (Device Key) auto-provisioning.
+ * Device Provisioning — factory pre-registration and company claim.
  *
- * Two flows:
- *   1. Admin registers device WITH deviceKey → auto-creates hawkBit target → status "accepted"
- *   2. Operator registers device WITHOUT deviceKey → local DB only → status "pending"
- *      → Admin later links device via PUT /:deviceId/link with deviceKey
+ * Flow:
+ *   1. Factory/warehouse admin: POST /api/devices/provision
+ *      → Creates hawkBit target (securityToken = deviceKey)
+ *      → Inserts device in DB with status "unclaimed", companyId = null
+ *      → Device starts polling hawkBit immediately
  *
- * The deviceKey is the factory security token printed on the device label.
- * It becomes the hawkBit target's securityToken (used by the DDI client).
+ *   2. Company member: POST /api/companies/:id/devices
+ *      → Finds existing device by serialNumber
+ *      → Sets companyId + status "accepted"
+ *      → Device becomes visible in company dashboard
+ *
  * The deviceKey is NEVER stored in our DB and NEVER returned in API responses.
+ * It is only passed to hawkBit as the target's securityToken.
  */
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
-// Register + auto-provision (called from service.registerDevice)
+// Factory provisioning — creates hawkBit target + local unclaimed device
 // ---------------------------------------------------------------------------
 
 export async function provisionDevice(data: {
-	companyId: string;
-	name: string;
 	serialNumber: string;
-	deviceKey?: string;
+	deviceKey: string;
+	name?: string;
 	userId: string;
-}) {
-	// 1. Insert into local DB — status depends on whether deviceKey was provided
-	const initialStatus = data.deviceKey ? 'accepted' : 'pending';
-	const hawkbitTargetId = data.deviceKey ? data.serialNumber : null;
+}): Promise<{ success: boolean; device: any; error?: string }> {
+	const displayName = data.name || data.serialNumber;
 
+	// 1. Check if serial number is already registered
+	const [existing] = await db
+		.select()
+		.from(devices)
+		.where(eq(devices.serialNumber, data.serialNumber));
+
+	if (existing) {
+		return { success: false, device: existing, error: 'Serial number already registered' };
+	}
+
+	// 2. Create hawkBit target with factory deviceKey
+	if (hawkbitConfig.enabled) {
+		try {
+			await hawkbitTargets.create({
+				controllerId: data.serialNumber,
+				name: displayName,
+				securityToken: data.deviceKey,
+			});
+			appLogger.info(
+				`[PROVISION] Created hawkBit target: ${data.serialNumber}`,
+			);
+		} catch (error: any) {
+			// Target might already exist in hawkBit (e.g. device already polled)
+			appLogger.warn(
+				`[PROVISION] hawkBit target creation for ${data.serialNumber}: ${error?.message ?? error}. Continuing with local registration.`,
+			);
+		}
+	}
+
+	// 3. Insert into local DB — unclaimed, no company
 	const [device] = await db
 		.insert(devices)
 		.values({
-			companyId: data.companyId,
-			name: data.name,
+			companyId: null,
+			name: displayName,
 			serialNumber: data.serialNumber,
-			hawkbitTargetId,
-			status: initialStatus,
+			hawkbitTargetId: data.serialNumber,
+			status: 'unclaimed',
 			createdBy: data.userId,
 		})
 		.returning();
 
-	if (!device) return device;
-
-	// 2. If deviceKey provided (Mode B) — auto-create hawkBit target
-	if (data.deviceKey && hawkbitConfig.enabled) {
-		try {
-			await hawkbitTargets.create({
-				controllerId: data.serialNumber,
-				name: data.name,
-				securityToken: data.deviceKey,
-			});
-			appLogger.info(
-				`[PROVISION] Created hawkBit target: ${data.serialNumber} (Mode B auto-provisioning)`,
-			);
-		} catch (error: any) {
-			// Target might already exist — log but revert to pending
-			appLogger.warn(
-				`[PROVISION] hawkBit target creation failed for ${data.serialNumber}: ${error?.message ?? error}`,
-			);
-			await db
-				.update(devices)
-				.set({ hawkbitTargetId: null, status: 'pending', updatedAt: new Date() })
-				.where(eq(devices.id, device.id));
-			const [updated] = await db.select().from(devices).where(eq(devices.id, device.id));
-			return updated || device;
-		}
+	if (!device) {
+		return { success: false, device: null, error: 'Failed to create device' };
 	}
 
-	return device;
+	return { success: true, device };
 }
 
 // ---------------------------------------------------------------------------
-// Link a pending device (admin provides deviceKey after registration)
+// List unclaimed devices (no company)
+// ---------------------------------------------------------------------------
+
+export async function listUnclaimedDevices() {
+	return db
+		.select()
+		.from(devices)
+		.where(and(isNull(devices.companyId), eq(devices.status, 'unclaimed')))
+		.orderBy(devices.createdAt);
+}
+
+// ---------------------------------------------------------------------------
+// Claim device for a company (called from service.registerDevice)
+// ---------------------------------------------------------------------------
+
+export async function claimDevice(data: {
+	companyId: string;
+	serialNumber: string;
+	name?: string;
+	userId: string;
+}): Promise<{ success: boolean; device: any; error?: string }> {
+	// 1. Find existing device by serial number
+	const [existing] = await db
+		.select()
+		.from(devices)
+		.where(eq(devices.serialNumber, data.serialNumber));
+
+	if (!existing) {
+		// Device not provisioned yet — create local entry as pending
+		const [device] = await db
+			.insert(devices)
+			.values({
+				companyId: data.companyId,
+				name: data.name || data.serialNumber,
+				serialNumber: data.serialNumber,
+				hawkbitTargetId: null,
+				status: 'pending',
+				createdBy: data.userId,
+			})
+			.returning();
+
+		return {
+			success: true,
+			device,
+			error: 'Device not yet provisioned in hawkBit. Registered locally as pending.',
+		};
+	}
+
+	// 2. Device already belongs to another company
+	if (existing.companyId && existing.companyId !== data.companyId) {
+		return { success: false, device: existing, error: 'Device already claimed by another company' };
+	}
+
+	// 3. Device already in this company
+	if (existing.companyId === data.companyId) {
+		return { success: false, device: existing, error: 'Device already in this company' };
+	}
+
+	// 4. Claim the unclaimed device
+	const displayName = data.name || existing.name;
+	const [claimed] = await db
+		.update(devices)
+		.set({
+			companyId: data.companyId,
+			name: displayName,
+			status: existing.hawkbitTargetId ? 'accepted' : 'pending',
+			updatedAt: new Date(),
+		})
+		.where(eq(devices.id, existing.id))
+		.returning();
+
+	appLogger.info(
+		`[CLAIM] Device ${data.serialNumber} claimed by company ${data.companyId}`,
+	);
+
+	return { success: true, device: claimed };
+}
+
+// ---------------------------------------------------------------------------
+// Link a pending device (legacy — admin provides deviceKey after registration)
 // ---------------------------------------------------------------------------
 
 export async function linkDevice(
@@ -83,7 +171,6 @@ export async function linkDevice(
 	companyId: string,
 	deviceKey: string,
 ): Promise<{ success: boolean; device: any; error?: string }> {
-	// 1. Load the device
 	const [device] = await db
 		.select()
 		.from(devices)
@@ -105,7 +192,7 @@ export async function linkDevice(
 		};
 	}
 
-	// 2. Create hawkBit target with the factory deviceKey as securityToken
+	// Create hawkBit target with the factory deviceKey
 	if (hawkbitConfig.enabled) {
 		try {
 			await hawkbitTargets.create({
@@ -128,7 +215,6 @@ export async function linkDevice(
 		}
 	}
 
-	// 3. Update local DB — device is now accepted
 	const [updated] = await db
 		.update(devices)
 		.set({

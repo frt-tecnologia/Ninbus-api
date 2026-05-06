@@ -8,6 +8,7 @@ import { companies } from './companies';
  */
 
 export const deviceStatusEnum = pgEnum('device_status', [
+	'unclaimed',
 	'pending',
 	'accepted',
 	'rejected',
@@ -18,7 +19,6 @@ export const deviceStatusEnum = pgEnum('device_status', [
 export const devices = pgTable('devices', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	companyId: uuid('company_id')
-		.notNull()
 		.references(() => companies.id, { onDelete: 'cascade' }),
 	hawkbitTargetId: text('hawkbit_target_id'),
 	name: text('name').notNull(),
@@ -26,7 +26,6 @@ export const devices = pgTable('devices', {
 	status: deviceStatusEnum('status').notNull().default('pending'),
 	lastSeenAt: timestamp('last_seen_at'),
 	createdBy: text('created_by')
-		.notNull()
 		.references(() => user.id, { onDelete: 'cascade' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),

@@ -12,6 +12,7 @@ import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
 import { devicesModule } from '@modules/devices';
 import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { deviceCategoryRoutes } from '@modules/devices/category-routes';
+import { provisioningRoutes } from '@modules/devices/provision-routes';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
 import { Elysia } from 'elysia';
@@ -222,6 +223,7 @@ export const createApp = () => {
 		.use(categoriesModule)
 		.use(devicesModule)
 		.use(deviceCategoryRoutes)
+		.use(provisioningRoutes)
 		.use(deviceHawkbitRoutes)
 		.use(deploymentsModule)
 		.use(deploymentDeviceRoutes)

@@ -51,7 +51,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 	)
 
-	// POST / — Register device
+	// POST / — Claim device for this company
 	.post(
 		'/',
 		async ({ params, body, user, set }) => {
@@ -60,19 +60,26 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				set.status = err.status;
 				return err.body;
 			}
-			const device = await service.registerDevice({
+			const result = await service.registerDevice({
 				companyId: params.companyId,
-				name: body.name,
+				name: body.name || body.serialNumber,
 				serialNumber: body.serialNumber,
-				deviceKey: body.deviceKey,
 				userId: user.id,
 			});
+			if (!result.success) {
+				if (result.error === 'Device already claimed by another company') {
+					set.status = 409;
+					return { error: 'Conflict', message: result.error };
+				}
+				if (result.error === 'Device already in this company') {
+					set.status = 409;
+					return { error: 'Conflict', message: result.error };
+				}
+			}
 			set.status = 201;
 			return {
-				message: body.deviceKey
-					? 'Device registered and linked to hawkBit'
-					: 'Device registered successfully',
-				data: device,
+				message: result.error || 'Device claimed successfully',
+				data: result.device,
 			};
 		},
 		{
@@ -91,6 +98,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				201: DeviceCreateResponseSchema,
 				400: ErrorResponseSchema,
 				403: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 			},
 		},
 	)

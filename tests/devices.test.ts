@@ -240,15 +240,15 @@ describe('Devices Module', () => {
 		});
 	});
 
-	describe('Mode B Provisioning', () => {
-		it('POST without deviceKey creates pending device', async () => {
+	describe('Device Claiming', () => {
+		it('POST claim with unknown serial creates pending device locally', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
-						name: 'Pending Device',
-						serialNumber: 'SN-PENDING-001',
+						name: 'Claimed Device',
+						serialNumber: 'SN-CLAIM-001',
 					}),
 				}),
 			);
@@ -256,10 +256,30 @@ describe('Devices Module', () => {
 			const body = await response.json();
 			expect(body.data.status).toBe('pending');
 			expect(body.data.hawkbitTargetId).toBeNull();
-			expect(body.message).toBe('Device registered successfully');
+			expect(body.data.companyId).toBe(companyId);
 		});
 
-		it('POST without serialNumber returns 400', async () => {
+		it('POST claim same serial twice returns 409', async () => {
+			// Claim first
+			await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: 'SN-DUP-001' }),
+				}),
+			);
+			// Claim again same company
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: 'SN-DUP-001' }),
+				}),
+			);
+			expect(response.status).toBe(409);
+		});
+
+		it('POST claim without serialNumber returns 400', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',

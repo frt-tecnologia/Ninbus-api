@@ -69,7 +69,7 @@ describe('Devices Module', () => {
 				{
 					method: 'POST',
 					url: `http://localhost/api/companies/${companyId}/devices`,
-					body: { name: 'Test' },
+					body: { name: 'Test', serialNumber: 'SN-TEST-001' },
 				},
 			];
 			for (const ep of endpoints) {
@@ -149,7 +149,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'To Delete' }),
+					body: JSON.stringify({ name: 'To Delete', serialNumber: 'SN-DELETE-001' }),
 				}),
 			);
 			const deleteId = (await createRes.json()).data.id;
@@ -235,6 +235,92 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/actions`, {
 					headers: { Cookie: ownerCookie },
 				}),
+			);
+			expect(response.status).toBe(400);
+		});
+	});
+
+	describe('Mode B Provisioning', () => {
+		it('POST without deviceKey creates pending device', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({
+						name: 'Pending Device',
+						serialNumber: 'SN-PENDING-001',
+					}),
+				}),
+			);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.status).toBe('pending');
+			expect(body.data.hawkbitTargetId).toBeNull();
+			expect(body.message).toBe('Device registered successfully');
+		});
+
+		it('POST without serialNumber returns 400', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ name: 'No Serial' }),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('PUT /:deviceId/link returns 404 for non-existent device', async () => {
+			const response = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/00000000-0000-0000-0000-000000000000/link`,
+					{
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ deviceKey: 'factory-key-abc123' }),
+					},
+				),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('PUT /:deviceId/link without auth returns 401', async () => {
+			const response = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
+					{
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ deviceKey: 'factory-key-abc123' }),
+					},
+				),
+			);
+			expect(response.status).toBe(401);
+		});
+
+		it('PUT /:deviceId/link without body returns 400', async () => {
+			const response = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
+					{
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					},
+				),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('PUT /:deviceId/link with short deviceKey returns 400', async () => {
+			const response = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
+					{
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ deviceKey: 'short' }),
+					},
+				),
 			);
 			expect(response.status).toBe(400);
 		});

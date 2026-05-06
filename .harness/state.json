@@ -1,58 +1,9 @@
 {
-  "currentIteration": 21,
+  "currentIteration": 22,
   "maxIterations": 3,
-  "phase": "completed",
-  "results": [
-    {
-      "criterionName": "Functional Correctness",
-      "passed": true,
-      "notes": "No code changes this iteration. Documented the complete device-to-cloud provisioning flow with hawkBit DDI API. Identified that registerDevice() needs auto-creation of hawkBit target for Mode B (device key) provisioning.",
-      "evidence": "docs/device-provisioning.md covers both modes, DDI polling endpoints, and the enhancement needed for auto-creation."
-    },
-    {
-      "criterionName": "Code Quality",
-      "passed": true,
-      "notes": "Document under 250 lines per section. Clear separation of concerns in the architecture doc.",
-      "evidence": "docs/device-provisioning.md: 8 sections with diagrams, tables, and code examples."
-    },
-    {
-      "criterionName": "Schema Organization",
-      "passed": true,
-      "notes": "No changes. Identified that registerDeviceSchema needs a deviceKey field for Mode B provisioning.",
-      "evidence": "Section 5.1.C documents the deviceKey field addition to registerDeviceSchema."
-    },
-    {
-      "criterionName": "Error Handling",
-      "passed": true,
-      "notes": "No changes. hawkBit errors remain isolated. Documented the 401 flow when device polls before target exists.",
-      "evidence": "Section 2 describes the 401 → register → 200 flow."
-    },
-    {
-      "criterionName": "Test Coverage",
-      "passed": true,
-      "notes": "129 tests still passing. Documented test scenarios needed for auto-provisioning and super admin.",
-      "evidence": "bun test → 129 pass, 0 fail."
-    },
-    {
-      "criterionName": "Config Centralization",
-      "passed": true,
-      "notes": "Identified need for SUPER_ADMIN_EMAILS env var in env.ts. Documented in Section 4.2.",
-      "evidence": "Section 4.2 Gap 1: SUPER_ADMIN_EMAILS comma-separated list of pre-approved admin emails."
-    },
-    {
-      "criterionName": "Security",
-      "passed": true,
-      "notes": "Identified 7 attack vectors with current protections and gaps. Critical gaps: (1) no super_admin role — any user creating a company becomes owner, (2) addMember() has no role check — members can self-promote, (3) no email verification in production. All gaps documented with solutions.",
-      "evidence": "Section 4: 7-row attack table with current protection status and gaps identified."
-    },
-    {
-      "criterionName": "🔮 Futuro (Aprendizado Contínuo)",
-      "passed": true,
-      "notes": "Key architectural decisions documented: Mode B (device key) recommended for production, auto-provisioning requires hawkBit target creation on register, super admin via env-based email list, endpoint optimization via query params not new endpoints.",
-      "evidence": "docs/device-provisioning.md with 8 sections, 6 diagrams, priority table with next steps."
-    }
-  ],
-  "overallNotes": "Created comprehensive device provisioning architecture document (docs/device-provisioning.md). Documented two provisioning modes (server token vs device key), complete auto-provisioning flow with hawkBit DDI API, admin cross-company visibility strategy, endpoint optimization plan (query params, no new endpoints), and security gap analysis with 7 identified risks and mitigations. Key gaps identified: (1) no super_admin role, (2) member self-promotion possible, (3) no auto-create hawkBit target on device registration. All gaps documented with solutions that optimize existing endpoints without creating new ones.",
-  "humanFeedback": "User asks about device provisioning architecture: (1) two provisioning modes — server key vs device key, (2) auto-provisioning flow, (3) company assignment, (4) admin cross-company visibility, (5) endpoint optimization, (6) security against unauthorized admin escalation. Need to design and document the complete device-to-cloud provisioning flow with hawkBit DDI (Device Direct Integration) API.",
-  "lastUpdated": "2026-05-05T23:10:08.548Z"
+  "phase": "analysis",
+  "results": [],
+  "overallNotes": "",
+  "humanFeedback": "Implement Mode B (Device Key) provisioning: (1) Admin registers device with serialNumber + deviceKey → auto-creates hawkBit target, (2) Non-admin registers with just serialNumber → pending status, (3) Admin later links pending device with deviceKey. Update schemas, service, routes, and tests. Never expose deviceKey in responses.",
+  "lastUpdated": "2026-05-06T03:12:03.098Z"
 }

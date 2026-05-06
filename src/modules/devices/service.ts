@@ -3,6 +3,7 @@ import { categories, deviceCategoryAssignments, devices } from '@common/db/schem
 import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { provisionDevice } from './provisioning';
 import { DeviceSyncEngine } from './sync';
 
 // ---------------------------------------------------------------------------
@@ -40,29 +41,11 @@ export async function getDeviceById(deviceId: string, companyId: string) {
 export async function registerDevice(data: {
 	companyId: string;
 	name: string;
-	serialNumber?: string;
-	hawkbitTargetId?: string;
+	serialNumber: string;
+	deviceKey?: string;
 	userId: string;
 }) {
-	const [device] = await db
-		.insert(devices)
-		.values({
-			companyId: data.companyId,
-			name: data.name,
-			serialNumber: data.serialNumber,
-			hawkbitTargetId: data.hawkbitTargetId,
-			status: data.hawkbitTargetId ? 'accepted' : 'pending',
-			createdBy: data.userId,
-		})
-		.returning();
-
-	if (device && device.status === 'pending') {
-		await DeviceSyncEngine.syncCompany(data.companyId);
-		const [updated] = await db.select().from(devices).where(eq(devices.id, device.id));
-		return updated || device;
-	}
-
-	return device;
+	return provisionDevice(data);
 }
 
 export async function updateDevice(
@@ -228,3 +211,5 @@ export async function syncDeviceStatusFromHawkbit(targetId: string) {
 		return null;
 	}
 }
+
+export { linkDevice } from './provisioning';

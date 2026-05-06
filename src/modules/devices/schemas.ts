@@ -11,15 +11,39 @@ import { t } from 'elysia';
 export const registerDeviceSchema = t.Object(
 	{
 		name: t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' }),
-		serialNumber: t.Optional(t.String({ maxLength: 255, description: 'Device serial number' })),
-		hawkbitTargetId: t.Optional(
+		serialNumber: t.String({
+			minLength: 1,
+			maxLength: 255,
+			description:
+				'Device serial number (controllerId in hawkBit). Printed on the device label.',
+		}),
+		deviceKey: t.Optional(
 			t.String({
-				description: 'hawkBit target controllerId (if already registered in hawkBit)',
+				minLength: 8,
+				maxLength: 256,
+				description:
+					'Device security token (factory key). When provided, creates the hawkBit target automatically. Admin-only field.',
 			}),
 		),
 	},
 	{
 		default: { name: 'Dispositivo Principal 01', serialNumber: 'SN-987654321' },
+	},
+);
+
+export const linkDeviceSchema = t.Object(
+	{
+		deviceKey: t.String({
+			minLength: 8,
+			maxLength: 256,
+			description:
+				'Device security token (factory key). Creates the hawkBit target and links this device.',
+		}),
+	},
+	{
+		default: {
+			deviceKey: 'factory-device-key-from-label',
+		},
 	},
 );
 
@@ -45,6 +69,11 @@ export const selectDeviceSchema = createSelectSchema(devices, {
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
 	lastSeenAt: nullableDateTimeString,
+});
+
+export const LinkDeviceResponseSchema = t.Object({
+	message: t.String(),
+	data: selectDeviceSchema,
 });
 
 export const DeviceResponseSchema = t.Object({ data: selectDeviceSchema });

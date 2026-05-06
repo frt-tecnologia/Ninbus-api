@@ -6,7 +6,8 @@ import {
 	DeviceResponseSchema,
 	DeviceUpdateResponseSchema,
 	ErrorResponseSchema,
-	assignCategoriesSchema,
+	LinkDeviceResponseSchema,
+	linkDeviceSchema,
 	registerDeviceSchema,
 	updateDeviceSchema,
 } from '@modules/devices/schemas';
@@ -63,11 +64,16 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				companyId: params.companyId,
 				name: body.name,
 				serialNumber: body.serialNumber,
-				hawkbitTargetId: body.hawkbitTargetId,
+				deviceKey: body.deviceKey,
 				userId: user.id,
 			});
 			set.status = 201;
-			return { message: 'Device registered successfully', data: device };
+			return {
+				message: body.deviceKey
+					? 'Device registered and linked to hawkBit'
+					: 'Device registered successfully',
+				data: device,
+			};
 		},
 		{
 			auth: true,
@@ -75,9 +81,11 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			body: registerDeviceSchema,
 			detail: {
 				tags: ['Devices'],
-				summary: 'Register a new device',
+				summary: 'Register a new device (Mode B provisioning)',
 				description:
-					'Registers a Ninbus device to the company. Optionally link to an existing hawkBit target.',
+					'Registers a device to the company with its serial number. ' +
+					'If deviceKey (factory key) is provided, automatically creates the hawkBit target and sets status to "accepted". ' +
+					'Without deviceKey, the device is registered with status "pending" — an admin can link it later via PUT /:deviceId/link.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -181,45 +189,47 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 	)
 
-	// GET /:deviceId/categories — List device categories
-	.get(
-		'/:deviceId/categories',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const cats = await service.getDeviceCategories(params.deviceId);
-			return { data: cats, total: cats.length };
-		},
-		{
-			auth: true,
-			params: deviceParams,
-			detail: { tags: ['Devices'], summary: 'List device categories' },
-		},
-	)
-
-	// PUT /:deviceId/categories — Assign categories to device
+	// PUT /:deviceId/link — Link pending device to hawkBit (admin provides deviceKey)
 	.put(
-		'/:deviceId/categories',
+		'/:deviceId/link',
 		async ({ params, body, user, set }) => {
 			const err = await checkMembership(params.companyId, user.id);
 			if (err) {
 				set.status = err.status;
 				return err.body;
 			}
-			await service.assignCategories(params.deviceId, body.categoryIds);
-			return { message: 'Categories assigned successfully' };
+			const result = await service.linkDevice(
+				params.deviceId,
+				params.companyId,
+				body.deviceKey,
+			);
+			if (!result.success) {
+				if (result.error === 'Device not found') {
+					set.status = 404;
+					return { error: 'Not Found', message: result.error };
+				}
+				set.status = 409;
+				return { error: 'Conflict', message: result.error };
+			}
+			return { message: 'Device linked to hawkBit successfully', data: result.device };
 		},
 		{
 			auth: true,
 			params: deviceParams,
-			body: assignCategoriesSchema,
+			body: linkDeviceSchema,
 			detail: {
 				tags: ['Devices'],
-				summary: 'Assign categories to device',
-				description: 'Replaces all category assignments for a device (N:N relationship)',
+				summary: 'Link device to hawkBit (Mode B provisioning)',
+				description:
+					'Links a pending device to hawkBit by providing its factory device key. ' +
+					'Creates a hawkBit target with securityToken=deviceKey and sets device status to "accepted". ' +
+					'The deviceKey must match the key flashed on the physical device at the factory.',
+			},
+			response: {
+				200: LinkDeviceResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 			},
 		},
 	);

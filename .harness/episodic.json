@@ -118,6 +118,13 @@
       "type": "evaluation",
       "summary": "Iteration 21: 8/8 criteria passed. Created comprehensive device provisioning architecture document (docs/device-provisioning.md). Documented two provisioning modes (server token vs device key), complete auto-provisioning flow with hawkBit DDI API, admin cross-company visibility strategy, endpoint optimization plan (query params, no new endpoints), and security gap analysis with 7 identified risks and mitigations. Key gaps identified: (1) no super_admin role, (2) member self-promotion possible, (3) no auto-create hawkBit target on device registration. All gaps documented with solutions that optimize existing endpoints without creating new ones.",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-22-1778038276810",
+      "timestamp": 1778038276810,
+      "type": "evaluation",
+      "summary": "Iteration 22: 8/8 criteria passed. Implemented Mode B device provisioning. Two flows: (1) Admin registers with serialNumber+deviceKey → auto-creates hawkBit target → accepted, (2) Operator registers with just serialNumber → pending → admin links later via PUT /:deviceId/link. New provisioning.ts file, new link route, 135 tests passing (6 new). All files under 250 lines. Build clean.",
+      "allTestsPassed": true
     }
   ]
 }

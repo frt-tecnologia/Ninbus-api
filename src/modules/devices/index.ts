@@ -80,12 +80,12 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			params: companyParams,
 			body: registerDeviceSchema,
 			detail: {
-				tags: ['Devices'],
-				summary: 'Register a new device (Mode B provisioning)',
+				tags: ['Device Claims'],
+				summary: 'Claim a device for this company',
 				description:
-					'Registers a device to the company with its serial number. ' +
-					'If deviceKey (factory key) is provided, automatically creates the hawkBit target and sets status to "accepted". ' +
-					'Without deviceKey, the device is registered with status "pending" — an admin can link it later via PUT /:deviceId/link.',
+					'Claims a pre-provisioned device by serial number. The device must already exist in hawkBit (provisioned at the factory). ' +
+					'If found in hawkBit, the device is linked and status becomes "accepted". ' +
+					'If not found in hawkBit, the device is registered locally with status "pending" (will be linked when the device connects).',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -218,12 +218,11 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			params: deviceParams,
 			body: linkDeviceSchema,
 			detail: {
-				tags: ['Devices'],
-				summary: 'Link device to hawkBit (Mode B provisioning)',
+				tags: ['Device Claims'],
+				summary: 'Link pending device to hawkBit',
 				description:
-					'Links a pending device to hawkBit by providing its factory device key. ' +
-					'Creates a hawkBit target with securityToken=deviceKey and sets device status to "accepted". ' +
-					'The deviceKey must match the key flashed on the physical device at the factory.',
+					'(Legacy) Links a pending device by providing its factory device key. ' +
+					'For new deployments, use POST /api/devices/provision instead.',
 			},
 			response: {
 				200: LinkDeviceResponseSchema,

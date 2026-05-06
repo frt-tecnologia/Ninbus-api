@@ -50,7 +50,7 @@ export const deviceHawkbitRoutes = withAuth(
 			}),
 			response: { 200: HawkbitAttributesResponseSchema, 403: ErrorResponseSchema },
 			detail: {
-				tags: ['Devices'],
+				tags: ['Device hawkBit'],
 				summary: 'Get device attributes',
 				description: 'Target attributes from hawkBit (hardware, software, custom properties)',
 			},
@@ -87,7 +87,7 @@ export const deviceHawkbitRoutes = withAuth(
 			}),
 			response: { 200: HawkbitActionsResponseSchema, 403: ErrorResponseSchema },
 			detail: {
-				tags: ['Devices'],
+				tags: ['Device hawkBit'],
 				summary: 'Get deployment actions for device',
 				description: 'Lists all deployment actions for this target. Includes active and completed.',
 			},
@@ -137,7 +137,7 @@ export const deviceHawkbitRoutes = withAuth(
 				404: ErrorResponseSchema,
 			},
 			detail: {
-				tags: ['Devices'],
+				tags: ['Device hawkBit'],
 				summary: 'Cancel deployment action',
 			},
 		},

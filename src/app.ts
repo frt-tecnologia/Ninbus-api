@@ -51,27 +51,50 @@ export const createApp = () => {
 							'Full Better Auth documentation: https://better-auth.com',
 					},
 					tags: [
+						// ── Platform ──────────────────────────────────────────
 						{ name: 'Health', description: 'Health check endpoints' },
 						{
 							name: 'Auth',
 							description: 'Authentication endpoints (Better Auth)',
 						},
+
+						// ── Provisioning (fábrica / depósito) ─────────────────
 						{
-							name: 'Posts',
-							description: 'Posts CRUD endpoints (reference implementation)',
+							name: 'Provisioning',
+							description:
+								'Pre-registration of devices in hawkBit. Done at the factory or warehouse BEFORE any company claims the device. Creates the hawkBit target so the device can start polling immediately.',
 						},
+
+						// ── Multi-tenancy ─────────────────────────────────────
 						{
 							name: 'Companies',
-							description: 'Multi-tenancy company management',
+							description:
+								'Multi-tenancy company management. Each company represents a fleet of devices.',
 						},
 						{
 							name: 'Categories',
-							description: 'Device grouping categories (bus lines, garages, yards, regions)',
+							description:
+								'Device grouping within a company (bus lines, garages, yards, regions)',
+						},
+
+						// ── Devices (company-scoped) ───────────────────────────
+						{
+							name: 'Device Claims',
+							description:
+								'Assign ("claim") a pre-provisioned device to a company. Any company member can claim an unclaimed device by providing its serial number. The device becomes visible in the company dashboard.',
 						},
 						{
 							name: 'Devices',
-							description: 'Ninbus device registry with Eclipse hawkBit integration',
+							description:
+								'Company device management — list, get, update, remove, categories. Devices are scoped to a company.',
 						},
+						{
+							name: 'Device hawkBit',
+							description:
+								'hawkBit operations on a linked device — attributes, actions, cancel deployment. Requires the device to be linked to a hawkBit target.',
+						},
+
+						// ── OTA ───────────────────────────────────────────────
 						{
 							name: 'Deployments',
 							description:
@@ -79,7 +102,14 @@ export const createApp = () => {
 						},
 						{
 							name: 'Artifacts',
-							description: 'Firmware artifact management via hawkBit Software Modules',
+							description:
+								'Firmware artifact management via hawkBit Software Modules',
+						},
+
+						// ── Reference ─────────────────────────────────────────
+						{
+							name: 'Posts',
+							description: 'Posts CRUD (reference implementation)',
 						},
 					],
 				},

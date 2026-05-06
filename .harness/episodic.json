@@ -125,6 +125,13 @@
       "type": "evaluation",
       "summary": "Iteration 22: 8/8 criteria passed. Implemented Mode B device provisioning. Two flows: (1) Admin registers with serialNumber+deviceKey → auto-creates hawkBit target → accepted, (2) Operator registers with just serialNumber → pending → admin links later via PUT /:deviceId/link. New provisioning.ts file, new link route, 135 tests passing (6 new). All files under 250 lines. Build clean.",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-23-1778040585076",
+      "timestamp": 1778040585076,
+      "type": "evaluation",
+      "summary": "Iteration 23: 8/8 criteria passed. Reorganized Swagger /docs with 10 tags reflecting the real business model. Provisioning tag (new) ready for factory pre-registration routes. Device Claims tag for company adoption. Device hawkBit tag for hawkBit operations. All existing routes re-tagged correctly. No functional code changes — documentation only.",
+      "allTestsPassed": true
     }
   ]
 }

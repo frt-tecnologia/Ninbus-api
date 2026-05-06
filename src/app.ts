@@ -58,7 +58,7 @@ export const createApp = () => {
 							description: 'Authentication endpoints (Better Auth)',
 						},
 
-						// ── Provisioning (fábrica / depósito) ─────────────────
+						// ── Provisioning (factory / warehouse) ─────────────────
 						{
 							name: 'Provisioning',
 							description:

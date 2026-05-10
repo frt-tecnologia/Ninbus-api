@@ -239,6 +239,38 @@
       "category": "security",
       "learnedAt": "2026-05-05T23:10:27.339Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-rbac-companyrole-macro",
+      "rule": "Use the `companyRole` macro (defined in auth-guard.ts) for company-scoped RBAC instead of manual checkMembership() calls. The macro resolves membership + role in a single lifecycle hook and returns 401/403 automatically. Role hierarchy: owner(4) > admin(3) > operator(2) > viewer(1). Required roles per action: viewer = read (GET), operator = write devices/deployments/categories (POST/PUT), admin = destructive (DELETE companies/artifacts/categories, manage members), owner = delete company. The `companyRole` macro uses `resolve` + `beforeHandle` — resolve derives the role, beforeHandle validates permissions. This avoids double DB queries and keeps route handlers clean (no manual auth checks).",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-09T16:10:12.396Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-platform-routes-no-company-role",
+      "rule": "NEVER set companyRole on routes without :companyId in the path. The withAuth macro checks params.companyId — if missing, it returns 400 \"Company ID is required\". Platform-level routes (factory provisioning, unclaimed listing) should only use `auth: true`.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-09T21:46:20.246Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-two-level-error-guard",
+      "rule": "ALL hawkBit-dependent routes need TWO levels of error protection: (1) Service functions check hawkbitConfig.enabled → return empty data or throw ArtifactValidationError('HAWKBIT_NOT_ENABLED') for 400. (2) Route handlers catch ALL network errors (connection refused, timeout) → return 503 Service Unavailable. Level 1 prevents errors when HAWKBIT_ENABLED=false. Level 2 prevents 500 errors when hawkBit is enabled but unreachable.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-09T23:50:46.512Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-targettoken-auth-required",
+      "rule": "hawkBit 1.0.3 ships with authentication.targettoken.enabled=false by DEFAULT. This means ALL DDI polls return 401 regardless of the correct securityToken. ALWAYS set HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED=true in docker-compose.yml or enable via PUT /rest/v1/system/configs/authentication.targettoken.enabled. Without this, no device can ever authenticate via DDI.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-10T01:16:05.244Z",
+      "reinforcementCount": 1
     }
   ]
 }

@@ -2,22 +2,22 @@
 
 Backend da plataforma IoT Ninbus — gerenciamento de dispositivos, deployments OTA e orquestração de frotas.
 
-Construído com **Bun** + **Elysia** + **Better Auth** + **Drizzle ORM** + **Mender Gateway**.
+Construído com **Bun** + **Elysia** + **Better Auth** + **Drizzle ORM** + **Eclipse hawkBit**.
 
 ---
 
 ## Visão Geral
 
 ```
-Frontend ──▶ Ninbus API ──▶ Mender Gateway (Traefik)
+Frontend ──▶ Ninbus API ──▶ Eclipse hawkBit (1.0.3)
    │             │                    │
    │             │              ┌─────┴─────┐
-   │             │              │ Microserviços Mender
-   │             │              │ deviceauth, deployments,
-   │             │              │ inventory, deviceconnect
+   │             │              │ Management API
+   │             │              │ Targets, Distribution Sets,
+   │             │              │ Software Modules, Artifacts
    │             │              └───────────┘
    │             │
-   │        PostgreSQL
+   │        PostgreSQL (Neon)
    │     (dispositivos, empresas,
    │      categorias, sessões)
    │
@@ -25,13 +25,14 @@ Frontend ──▶ Ninbus API ──▶ Mender Gateway (Traefik)
        firmware-ninbus | firmware-controller | configuration-nfx
 ```
 
-O Ninbus API é a camada de negócio entre o frontend e o Mender. Ele gerencia:
+O Ninbus API é a camada de negócio entre o frontend e o hawkBit. Ele gerencia:
 
-- **Multi-tenancy** — empresas, membros, roles (owner/admin/operator/viewer)
-- **Dispositivos** — registro, vinculação com Mender, categorização (linhas, garagens, pátios)
-- **Deployments OTA** — criação, monitoramento, abort por dispositivo
-- **Artefatos** — upload `.mender`, listagem, releases, metadados por tipo
-- **Sincronização** — auto-aceite de dispositivos pendentes via serial number
+- **Multi-tenancy** — empresas, membros, RBAC (owner/admin/operator/viewer)
+- **Provisioning** — pré-registro de dispositivos na fábrica/depósito (hawkBit target + DB local)
+- **Dispositivos** — registro, claim por empresa, categorização, atributos hawkBit
+- **Deployments OTA** — criação de Distribution Sets, atribuição a targets, monitoramento
+- **Artefatos** — upload de firmware raw (.fir/.frz/.bin) via Software Modules hawkBit
+- **Sincronização** — sync bidirecional hawkBit ↔ DB local
 
 ---
 
@@ -39,71 +40,57 @@ O Ninbus API é a camada de negócio entre o frontend e o Mender. Ele gerencia:
 
 ### Pré-requisitos
 
-- [Bun](https://bun.sh) >= 1.1
+- [Bun](https://bun.sh) >= 1.3
 - [PostgreSQL](https://www.postgresql.org/) >= 16
-- [Docker](https://www.docker.com/) (opcional, para Mender Gateway)
+- [Docker](https://www.docker.com/) (opcional, para hawkBit + MinIO)
 
 ### Instalação
 
 ```bash
-# Clone o repositório
 git clone https://github.com/ninbus/ninbus-api.git
 cd ninbus-api
 
-# Instale as dependências
 bun install
 
-# Configure as variáveis de ambiente
 cp .env.example .env
-# Edite o .env com seus valores (veja seção Configuração abaixo)
+# Edite o .env com seus valores
 
-# Rode as migrations
 bun run db:migrate
-
-# Inicie o servidor em modo desenvolvimento
 bun run dev
 ```
 
-O servidor inicia em `http://localhost:3000` (ou a porta configurada em `PORT`).
+O servidor inicia em `http://localhost:8081` (porta configurável via `PORT`).
 
-### Usando Docker
+### Usando Docker (hawkBit + MinIO + API)
 
 ```bash
-# Build e suba os containers
-bun run docker:build
-bun run docker:up
-
-# Veja os logs
-bun run docker:logs
+docker compose up -d
+docker compose logs -f api
 ```
 
 ---
 
 ## Documentação da API
 
-Após iniciar o servidor, acesse a documentação interativa:
+Após iniciar o servidor, acesse a documentação interativa Scalar:
 
 ```
-http://localhost:3000/docs
+http://localhost:8081/docs
 ```
 
-A documentação é gerada automaticamente via **Scalar** + **OpenAPI 3.0**. Todas as rotas, body schemas, response schemas e exemplos estão documentados lá.
+Documentação OpenAPI 3.0 gerada automaticamente a partir dos schemas TypeBox.
 
 ### Health Check
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:8081/health
 ```
 
 ---
 
 ## Configuração
 
-Todas as variáveis são validadas no startup via TypeBox. Copie `.env.example` para `.env`:
-
-```bash
-cp .env.example .env
-```
+Todas as variáveis são validadas no startup via TypeBox. Copie `.env.example` para `.env`.
 
 ### Variáveis Obrigatórias
 
@@ -111,9 +98,7 @@ cp .env.example .env
 |----------|-----------|---------|
 | `DATABASE_URL` | Connection string PostgreSQL | `postgresql://postgres:postgres@localhost:5432/ninbus_db` |
 | `BETTER_AUTH_SECRET` | Secret para sessões (mín 32 chars) | `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | URL base da API (para redirects) | `http://localhost:3000` |
-| `REQUIRE_EMAIL_VERIFICATION` | Exigir verificação de email | `false` |
-| `RESEND_API_KEY` | API key do Resend (opcional) | — |
+| `BETTER_AUTH_URL` | URL base da API (para callbacks) | `http://localhost:8081` |
 | `EMAIL_FROM` | Email sender address | `noreply@example.com` |
 
 ### Variáveis Opcionais
@@ -127,24 +112,19 @@ cp .env.example .env
 | `CORS_ORIGIN` | — | Origins separados por vírgula |
 | `ENABLE_AUTH` | `true` | Desabilita autenticação |
 | `ENABLE_RATE_LIMITER` | `true` | Rate limiting global |
-| `RATE_LIMIT_WINDOW_MS` | `60000` | Janela de tempo (ms) rate limit global |
-| `RATE_LIMIT_MAX` | `100` | Max requisições global por IP |
-| `AUTH_RATE_LIMIT_WINDOW_MS` | `60000` | Janela de tempo (ms) rate limit auth |
-| `AUTH_RATE_LIMIT_MAX` | `10` | Max requisições auth por IP |
 
-### Mender Gateway
+### Eclipse hawkBit
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `MENDER_ENABLED` | `false` | Habilita integração com Mender |
-| `MENDER_GATEWAY_URL` | — | URL do Traefik Gateway do Mender |
-| `MENDER_PAT` | — | Personal Access Token do Mender |
-| `MENDER_TIMEOUT_MS` | `30000` | Timeout das requisições |
-| `MENDER_HOST_OVERRIDE` | — | Override do header Host (para Docker) |
-| `MENDER_SKIP_TLS` | `false` | Ignora certificado TLS (dev) |
-| `MENDER_TENANT_TOKEN` | — | Token para Mender multi-tenant |
+| `HAWKBIT_ENABLED` | `false` | Habilita integração hawkBit |
+| `HAWKBIT_URL` | — | URL base do hawkBit Management API |
+| `HAWKBIT_USERNAME` | — | Basic Auth username |
+| `HAWKBIT_PASSWORD` | — | Basic Auth password |
+| `HAWKBIT_TIMEOUT_MS` | `30000` | Timeout das requisições |
+| `HAWKBIT_SKIP_TLS` | `false` | Ignora certificado TLS (dev) |
 
-> **Nota**: O PAT é obtido via `POST /api/management/v1/useradm/settings/tokens` no Mender.
+> **Nota**: hawkBit usa HTTP Basic Auth (não PAT como Mender).
 
 ---
 
@@ -153,296 +133,296 @@ cp .env.example .env
 ```
 src/
 ├── index.ts                      # Entrypoint — migrations + server + graceful shutdown
-├── app.ts                        # Composition root — middleware + módulos
+├── app.ts                        # Composition root — middleware + módulos + Swagger tags
 │
 ├── common/
 │   ├── config/
-│   │   ├── env.ts                # Fonte única da verdade — 24 vars validadas por TypeBox
-│   │   ├── mender.ts             # Thin accessor tipado sobre env (zero process.env)
+│   │   ├── env.ts                # Fonte única da verdade — TypeBox validated
+│   │   ├── hawkbit.ts            # Thin accessor tipado sobre env (zero process.env)
 │   │   ├── auth.ts               # Better Auth config (session, email, cookies)
-│   │   ├── auth-client.ts        # Better Auth client (email OTP plugin)
+│   │   ├── auth-client.ts        # Better Auth client
 │   │   └── email.ts              # Resend email helper
 │   ├── db/
 │   │   ├── index.ts              # Drizzle client (pool max 10)
 │   │   └── schema/               # Drizzle table definitions
 │   │       ├── auth.ts           # Better Auth tables (user, session, account, verification)
-│   │       ├── companies.ts      # companies + company_members
+│   │       ├── companies.ts      # companies + company_members (RBAC: owner/admin/operator/viewer)
 │   │       ├── categories.ts     # categories (bus_line, garage, yard, region, custom)
-│   │       ├── devices.ts        # devices + device_category_assignments
+│   │       ├── devices.ts        # devices + device_category_assignments (N:N)
 │   │       ├── posts.ts          # Posts (reference)
 │   │       └── index.ts          # Barrel exports
-│   ├── mender/
-│   │   ├── artifact-generator.ts # Pure TS .mender v3 generator (tar+gzip)
-│   │   ├── client.ts             # API functions (deviceauth, deployments, inventory, connect)
-│   │   ├── http.ts               # HTTP client — PAT injection, Host override, TLS skip
-│   │   └── types.ts              # Mender DTO interfaces
+│   ├── hawkbit/
+│   │   ├── client.ts             # Barrel re-export + utility functions
+│   │   ├── http.ts               # HTTP client — Basic Auth, timeout, TLS
+│   │   ├── targets.ts            # Target CRUD, attributes, actions, DS assignment
+│   │   ├── distribution-sets.ts  # Distribution Set CRUD, target assignment, statistics
+│   │   ├── software-modules.ts   # Software Module CRUD, artifact upload/download
+│   │   ├── constants.ts          # Ninbus artifact types (firmware-ninbus, firmware-controller, configuration-nfx)
+│   │   └── types.ts              # hawkBit API DTO interfaces
 │   ├── middleware/
-│   │   ├── auth-guard.ts         # withAuth() — deriva user/session + macro auth
-│   │   ├── company-check.ts      # checkMembership() — shared authorization helper
-│   │   ├── company-guard.ts      # hasCompanyRole() — role-based middleware
+│   │   ├── auth-guard.ts         # withAuth() — deriva user/session + macros auth + companyRole
+│   │   ├── company-check.ts      # checkMembership() — shared helper (legacy, prefer companyRole macro)
+│   │   ├── company-guard.ts      # hasCompanyRole() — standalone role middleware (legacy)
 │   │   ├── rate-limiter.ts       # Rate limiting global + auth
 │   │   └── request-logger.ts     # Structured request logging
-│   ├── logger/
-│   │   └── index.ts              # Pino logger (silent em testes)
-│   └── schemas/
-│       └── index.ts              # ErrorResponseSchema + GenericActionResponseSchema
+│   ├── logger/index.ts           # Pino logger (silent em testes, JSON em produção)
+│   └── schemas/index.ts          # ErrorResponseSchema + GenericActionResponseSchema
 │
 ├── modules/
-│   ├── artifacts/                # Upload, generate, list, delete, releases
-│   │   ├── schemas.ts            # Body + response schemas + constants
-│   │   ├── service.ts            # Validation, Mender proxy, artifact generation
-│   │   ├── index.ts              # POST /upload + POST /generate + GET /types
-│   │   └── manage-routes.ts      # GET / list, get, delete, download, releases
-│   ├── auth/                     # Better Auth routes
-│   │   ├── schemas.ts            # Auth body + response schemas
-│   │   └── index.ts              # sign-up, sign-in, sign-out, session, password reset
-│   ├── categories/               # Device grouping (bus_line, garage, yard, region)
-│   │   ├── schemas.ts            # Category schemas
-│   │   ├── service.ts            # Category CRUD logic
-│   │   └── index.ts              # Category routes
+│   ├── auth/                     # Better Auth routes (sign-up, sign-in, session, password reset)
+│   │   ├── schemas.ts
+│   │   └── index.ts
 │   ├── companies/                # Multi-tenancy CRUD + members
-│   │   ├── schemas.ts            # Company + member schemas
-│   │   ├── service.ts            # Company + member CRUD logic
-│   │   ├── index.ts              # Company CRUD routes
-│   │   └── member-routes.ts      # Member management routes
-│   ├── deployments/              # OTA deployment creation + monitoring
-│   │   ├── schemas.ts            # Schemas + param schemas
-│   │   ├── service.ts            # Mender deployment logic
-│   │   ├── index.ts              # POST create + GET artifact-types + GET deployment
-│   │   └── device-routes.ts      # Abort, statistics, device list, logs, history
-│   ├── devices/                  # Ninbus device registry
-│   │   ├── schemas.ts            # Body + response schemas
-│   │   ├── service.ts            # CRUD + Mender integration + sync trigger
-│   │   ├── sync.ts               # Mender ↔ Ninbus sync engine
-│   │   ├── auth.ts               # checkMembership + loadDevice + requireMenderLink
-│   │   ├── index.ts              # CRUD routes
-│   │   └── mender-routes.ts      # Approve, reject, decommission, check-update, inventory, connection
+│   │   ├── schemas.ts
+│   │   ├── service.ts
+│   │   ├── index.ts              # Company CRUD (viewer: GET, admin: PUT, owner: DELETE)
+│   │   └── member-routes.ts      # Member management (viewer: list, admin: add/role/remove)
+│   ├── categories/               # Device grouping
+│   │   ├── schemas.ts
+│   │   ├── service.ts
+│   │   └── index.ts              # Category CRUD (viewer: GET, operator: POST/PUT, admin: DELETE)
+│   ├── devices/                  # Device registry + hawkBit integration
+│   │   ├── schemas.ts
+│   │   ├── service.ts            # CRUD + hawkBit sync + link
+│   │   ├── provisioning.ts       # Factory provisioning logic
+│   │   ├── sync.ts               # hawkBit ↔ Ninbus sync engine
+│   │   ├── auth.ts               # loadDevice + requireHawkbitLink helpers
+│   │   ├── index.ts              # Device CRUD + claim (viewer: GET, operator: POST/PUT, admin: DELETE)
+│   │   ├── provision-routes.ts   # Factory provisioning (POST /provision, GET /unclaimed)
+│   │   ├── hawkbit-routes.ts     # hawkBit operations (viewer: GET attrs/actions, operator: cancel)
+│   │   └── category-routes.ts    # Category assignment (viewer: GET, operator: PUT)
+│   ├── deployments/              # OTA deployments via hawkBit Distribution Sets
+│   │   ├── schemas.ts
+│   │   ├── service.ts            # Create DS → assign targets → monitor
+│   │   ├── index.ts              # Deployment CRUD (viewer: GET, operator: POST, admin: DELETE)
+│   │   └── device-routes.ts      # Statistics, targets, action status/cancel
+│   ├── artifacts/                # Firmware management via hawkBit Software Modules
+│   │   ├── schemas.ts
+│   │   ├── service.ts            # Upload + enrichment + validation
+│   │   ├── index.ts              # Upload (operator) + artifact types (viewer)
+│   │   └── manage-routes.ts      # List/get/update/delete/download
 │   ├── health/                   # GET /health
 │   └── posts/                    # Reference CRUD module
-│       ├── schemas.ts
-│       ├── service.ts
-│       └── index.ts
 │
 └── scripts/
     ├── migrate.ts                # Drizzle migrations runner
     └── seed.ts                   # Database seeder
 
-tests/                            # 184 testes Bun
-├── auth.test.ts
-├── artifacts.test.ts
-├── categories.test.ts
-├── companies.test.ts
-├── deployments.test.ts
-├── devices.test.ts
-├── health.test.ts
-└── posts.test.ts
+tests/                            # 136 testes Bun
 ```
-
-### Padrão por Módulo
-
-Cada módulo segue a mesma estrutura:
-
-```
-module/
-├── schemas.ts     ← Body schemas, response schemas, param schemas
-├── service.ts     ← Lógica de negócio (DB + Mender calls)
-├── index.ts       ← Rotas CRUD principais (importa schemas)
-└── *-routes.ts    ← Rotas extras (split por operação quando > 200 linhas)
-```
-
-**Regra**: Arquivos de rota NUNCA definem response schemas inline — sempre importam do `schemas.ts`.
 
 ---
 
 ## Rotas da API
 
+### RBAC — Role Hierarchy
+
+```
+owner (4) > admin (3) > operator (2) > viewer (1)
+```
+
+| Role | List/Get | Create | Update | Delete | Members |
+|------|----------|--------|--------|--------|---------|
+| owner | ✅ | ✅ | ✅ | ✅ | ✅ |
+| admin | ✅ | ✅ | ✅ | ✅ | ✅ |
+| operator | ✅ | ✅ | ✅ | ❌ | ❌ |
+| viewer | ✅ | ❌ | ❌ | ❌ | ❌ |
+
 ### Autenticação (`/api/auth/*`)
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| POST | `/api/auth/sign-up/email` | Registrar com email + senha + nome |
-| POST | `/api/auth/sign-in/email` | Login com email + senha |
-| POST | `/api/auth/sign-out` | Encerrar sessão |
-| GET | `/api/auth/get-session` | Sessão atual |
-| POST | `/api/auth/request-password-reset` | Solicitar reset de senha |
-| POST | `/api/auth/reset-password` | Resetar senha com token |
-
-> Body schemas documentados nas route descriptions (Better Auth lê body internamente).
-
-### Empresas (`/api/companies/*`)
 
 | Método | Rota | Auth | Descrição |
 |--------|------|------|-----------|
-| GET | `/api/companies` | ✅ | Listar empresas do usuário |
-| POST | `/api/companies` | ✅ | Criar empresa |
-| GET | `/api/companies/:companyId` | ✅ Membro | Detalhes da empresa |
-| PUT | `/api/companies/:companyId` | ✅ Membro | Atualizar empresa |
-| DELETE | `/api/companies/:companyId` | ✅ Membro | Remover empresa |
-| GET | `/api/companies/:companyId/members` | ✅ Membro | Listar membros |
-| POST | `/api/companies/:companyId/members` | ✅ Membro | Adicionar membro |
+| POST | `/api/auth/sign-up/email` | ❌ | Registrar |
+| POST | `/api/auth/sign-in/email` | ❌ | Login |
+| POST | `/api/auth/sign-out` | ✅ | Encerrar sessão |
+| GET | `/api/auth/get-session` | ✅ | Sessão atual |
+| POST | `/api/auth/request-password-reset` | ❌ | Solicitar reset |
+| POST | `/api/auth/reset-password` | ❌ | Resetar com token |
+
+### Provisioning (`/api/devices/*`)
+
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/api/devices/provision` | ✅ | Pré-registrar dispositivo na fábrica (cria hawkBit target) |
+| GET | `/api/devices/unclaimed` | ✅ | Listar dispositivos sem empresa |
+
+### Empresas (`/api/companies/*`)
+
+| Método | Rota | Role mín. | Descrição |
+|--------|------|-----------|-----------|
+| GET | `/api/companies` | auth | Listar empresas do usuário |
+| POST | `/api/companies` | auth | Criar empresa (user vira owner) |
+| GET | `/api/companies/:id` | viewer | Detalhes |
+| PUT | `/api/companies/:id` | admin | Atualizar |
+| DELETE | `/api/companies/:id` | owner | Remover |
+| GET | `/api/companies/:id/members` | viewer | Listar membros |
+| POST | `/api/companies/:id/members` | admin | Adicionar membro |
+| PUT | `/api/companies/:id/members/:userId` | admin | Alterar role |
+| DELETE | `/api/companies/:id/members/:userId` | admin | Remover membro |
 
 ### Dispositivos (`/api/companies/:companyId/devices/*`)
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/` | Listar dispositivos da empresa |
-| POST | `/` | Registrar dispositivo |
-| GET | `/:deviceId` | Detalhes (com sync Mender) |
-| PUT | `/:deviceId` | Atualizar dispositivo |
-| DELETE | `/:deviceId` | Remover dispositivo |
-| GET | `/:deviceId/categories` | Categorias do dispositivo |
-| PUT | `/:deviceId/categories` | Atribuir categorias |
-| POST | `/:deviceId/approve` | Aprovar no Mender |
-| POST | `/:deviceId/reject` | Rejeitar no Mender |
-| POST | `/:deviceId/decommission` | Descommissionar do Mender |
-| POST | `/:deviceId/check-update` | Forçar verificação de update |
-| GET | `/:deviceId/inventory` | Inventory do Mender |
-| GET | `/:deviceId/connection` | Estado de conexão |
+| Método | Rota | Role mín. | Descrição |
+|--------|------|-----------|-----------|
+| GET | `/` | viewer | Listar dispositivos |
+| POST | `/` | operator | Registrar/claim dispositivo |
+| GET | `/:deviceId` | viewer | Detalhes (com hawkBit sync) |
+| PUT | `/:deviceId` | operator | Atualizar |
+| DELETE | `/:deviceId` | admin | Remover |
+| PUT | `/:deviceId/link` | operator | Vincular ao hawkBit |
+| GET | `/:deviceId/categories` | viewer | Categorias do dispositivo |
+| PUT | `/:deviceId/categories` | operator | Atribuir categorias |
+| GET | `/:deviceId/attributes` | viewer | Atributos hawkBit do target |
+| GET | `/:deviceId/actions` | viewer | Ações de deployment hawkBit |
+| DELETE | `/:deviceId/actions/:actionId` | operator | Cancelar ação de deployment |
+
+### Categorias (`/api/companies/:companyId/categories/*`)
+
+| Método | Rota | Role mín. | Descrição |
+|--------|------|-----------|-----------|
+| GET | `/` | viewer | Listar categorias |
+| POST | `/` | operator | Criar categoria |
+| GET | `/:categoryId` | viewer | Detalhes |
+| PUT | `/:categoryId` | operator | Atualizar |
+| DELETE | `/:categoryId` | admin | Remover |
 
 ### Deployments (`/api/companies/:companyId/deployments/*`)
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/artifact-types` | Tipos de artefato Ninbus |
-| POST | `/` | Criar deployment OTA |
-| GET | `/:deploymentId` | Detalhes do deployment |
-| PUT | `/:deploymentId/status` | Abortar deployment |
-| GET | `/:deploymentId/statistics` | Estatísticas de progresso |
-| GET | `/:deploymentId/devices` | Lista de dispositivos no deployment |
-| GET | `/:deploymentId/devices/:menderDeviceId/log` | Log de instalação do dispositivo |
-| DELETE | `/devices/:menderDeviceId/deployments` | Abortar todos deployments do dispositivo |
-| GET | `/devices/:deviceId/history` | Histórico de deployments |
+| Método | Rota | Role mín. | Descrição |
+|--------|------|-----------|-----------|
+| GET | `/artifact-types` | viewer | Tipos de artefato Ninbus |
+| POST | `/` | operator | Criar deployment OTA |
+| GET | `/` | viewer | Listar deployments |
+| GET | `/:deploymentId` | viewer | Detalhes |
+| DELETE | `/:deploymentId` | admin | Remover |
+| GET | `/:deploymentId/statistics` | viewer | Estatísticas hawkBit |
+| GET | `/:deploymentId/targets` | viewer | Targets no deployment |
+| GET | `/…/status` | viewer | Histórico de status da ação |
+| DELETE | `/…/actions/:actionId` | operator | Cancelar ação |
+| GET | `/devices/:deviceId/actions` | viewer | Ações do dispositivo |
 
 ### Artefatos (`/api/companies/:companyId/artifacts/*`)
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| POST | `/` | Upload de artefato `.mender` |
-| POST | `/generate` | Gerar `.mender` a partir de firmware raw (.fir/.frz/.bin) |
-| GET | `/types` | Tipos de artefato Ninbus |
-| GET | `/` | Listar artefatos |
-| GET | `/:artifactId` | Detalhes do artefato |
-| GET | `/:artifactId/download` | Link de download |
-| DELETE | `/:artifactId` | Remover artefato |
-| PUT | `/:artifactId` | Atualizar descrição |
-| GET | `/releases` | Listar releases |
+| Método | Rota | Role mín. | Descrição |
+|--------|------|-----------|-----------|
+| POST | `/` | operator | Upload firmware (.fir/.frz/.bin) |
+| GET | `/types` | viewer | Tipos de artefato |
+| GET | `/` | viewer | Listar artefatos |
+| GET | `/:artifactId` | viewer | Detalhes |
+| GET | `/:artifactId/download` | viewer | Download info |
+| PUT | `/:artifactId` | operator | Atualizar descrição |
+| DELETE | `/:artifactId` | admin | Remover |
 
 ---
 
-## Tipos de Artefato Ninbus
-
-O sistema suporta 3 tipos de artefato para dispositivos Ninbus WiFi v3:
+## Tipos de Artefato
 
 | Tipo | Destino | Risco | Reboot |
 |------|---------|-------|--------|
-| `firmware-ninbus` | NAND → Bootloader → STM32F407 | 🔴 HIGH | ✅ Sim |
-| `firmware-controller` | CAN Bus → LightDot | 🟡 MEDIUM | ❌ Não |
-| `configuration-nfx` | NAND NFX → CAN → LightDot | 🟢 LOW | ❌ Não |
+| `firmware-ninbus` | NAND → Bootloader → STM32F407 | 🔴 HIGH | ✅ |
+| `firmware-controller` | CAN Bus → LightDot | 🟡 MEDIUM | ❌ |
+| `configuration-nfx` | NAND NFX → CAN → LightDot | 🟢 LOW | ❌ |
+
+---
+
+## hawkBit Integration
+
+### Conceitos hawkBit ↔ Ninbus
+
+| hawkBit | Ninbus API | Descrição |
+|---------|-----------|-----------|
+| Target (controllerId) | Device | Dispositivo IoT com status de conexão |
+| Software Module | Artifact container | Container tipado (firmware-ninbus, etc.) |
+| Artifact | Binary file | Arquivo binário (.fir/.frz/.bin) |
+| Distribution Set | Deployment | Agrupa SMs e é atribuído a targets |
+| Target Attributes | Device inventory | Hardware/software info do device |
+| Action | Deployment status | Status por target (running/finished/error) |
+
+### Fluxo de Upload
+
+```
+POST /artifacts → cria Software Module → upload binary como Artifact
+```
+
+### Fluxo de Deployment
+
+```
+POST /deployments → resolve targets → cria Software Module →
+cria Distribution Set → assigna targets → hawkBit envia firmware via polling
+```
+
+### Fluxo de Provisioning
+
+```
+POST /devices/provision → cria hawkBit Target (securityToken=deviceKey) →
+cria Device local (status=unclaimed) → device começa polling hawkBit
+```
+
+### API hawkBit Usada
+
+| Endpoint | Método | Uso |
+|----------|--------|-----|
+| `/rest/v1/targets` | GET/POST | Listar/criar targets |
+| `/rest/v1/targets/{id}` | GET/PUT/DELETE | CRUD de target |
+| `/rest/v1/targets/{id}/attributes` | GET | Atributos do device |
+| `/rest/v1/targets/{id}/actions` | GET/DELETE | Ações de deployment |
+| `/rest/v1/targets/{id}/actions/{aid}/status` | GET | Histórico de status |
+| `/rest/v1/softwaremodules` | GET/POST | CRUD de SM |
+| `/rest/v1/softwaremodules/{id}/artifacts` | POST (multipart) | Upload de binário |
+| `/rest/v1/distributionsets` | GET/POST/DELETE | CRUD de DS |
+| `/rest/v1/distributionsets/{id}/assignedTargets` | GET/POST | Atribuir targets |
+| `/rest/v1/distributionsets/{id}/statistics` | GET | Estatísticas |
+| `/rest/v1/softwaremoduletypes` | GET/POST | Tipos de SM |
+| `/rest/v1/distributionsettypes` | GET/POST | Tipos de DS |
 
 ---
 
 ## Testes
 
 ```bash
-# Suba o PostgreSQL
-docker run -d --name ninbus-postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=ninbus_db \
-  -p 5432:5432 \
-  postgres:16-alpine
+# Suba o PostgreSQL local
+docker run -d --name ninbus-test-pg \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=ninbus_db -p 5432:5432 postgres:16-alpine
 
-# Rode as migrations no banco de teste
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ninbus_db bun run db:migrate
+# Rode as migrations
+bun --env-file=.env.test run src/scripts/migrate.ts
 
 # Rode os testes
-bun test
-
-# Ou em modo watch
-bun run test:watch
+bun test --env-file=.env.test
 ```
 
-**184 testes** cobrindo: auth, CRUD de empresas/dispositivos/categorias, deployments, artefatos, health, validação, autorização.
+**136 testes** cobrindo: auth, CRUD de empresas/dispositivos/categorias, deployments, artefatos, health, RBAC, validação, autorização.
 
 ---
 
-## Scripts Disponíveis
+## Scripts
 
-| Script | Comando | Descrição |
-|--------|---------|-----------|
-| `dev` | `bun run dev` | Servidor com hot reload |
-| `build` | `bun run build` | Build de produção |
-| `start` | `bun run start` | Iniciar build de produção |
-| `test` | `bun test` | Rodar testes |
-| `lint` | `bun run lint` | Lint com Biome |
-| `lint:fix` | `bun run lint:fix` | Lint + auto-fix |
-| `format` | `bun run format` | Format com Biome |
-| `db:generate` | `bun run db:generate` | Gerar migration |
-| `db:migrate` | `bun run db:migrate` | Rodar migrations |
-| `db:push` | `bun run db:push` | Push schema direto (dev) |
-| `db:seed` | `bun run db:seed` | Popular banco |
-| `db:studio` | `bun run db:studio` | Drizzle Studio |
-| `docker:build` | `bun run docker:build` | Build Docker image |
-| `docker:up` | `bun run docker:up` | Subir containers |
-| `docker:down` | `bun run docker:down` | Derrubar containers |
-| `docker:logs` | `bun run docker:logs` | Ver logs dos containers |
+| Script | Descrição |
+|--------|-----------|
+| `bun run dev` | Servidor com hot reload |
+| `bun run build` | Build de produção (single bundle) |
+| `bun run start` | Iniciar build de produção |
+| `bun test --env-file=.env.test` | Rodar testes |
+| `bun run lint` | Lint com Biome |
+| `bun run db:migrate` | Rodar migrations |
+| `bun run db:push` | Push schema direto (dev) |
+| `bun run db:studio` | Drizzle Studio |
 
 ---
 
 ## Stack
 
-| Tecnologia | Versão | Uso |
-|------------|--------|-----|
-| [Bun](https://bun.sh) | >= 1.1 | Runtime + bundler + test runner |
-| [Elysia](https://elysiajs.com) | latest | Web framework (plugins, macros, OpenAPI) |
-| [Better Auth](https://better-auth.com) | latest | Autenticação (email/password, sessões, cookies) |
-| [Drizzle ORM](https://orm.drizzle.team) | latest | ORM PostgreSQL com TypeBox schemas |
-| [TypeBox](https://github.com/sinclairtypebox/typebox) | latest | Runtime type validation |
-| [Biome](https://biomejs.dev) | latest | Linter + formatter |
-| [Scalar](https://scalar.com) | — | Documentação OpenAPI interativa |
-| Mender Gateway | — | OTA deployment server (externo) |
-
----
-
-## Arquitetura
-
-```
-┌──────────────────────────────────────────────────────┐
-│                    Ninbus API                         │
-│                                                      │
-│  Route (handler)  →  Service (logic)  →  Adapter     │
-│  schemas.ts            service.ts        mender/     │
-│  index.ts              (Drizzle DB)      client.ts   │
-│  *-routes.ts                            http.ts      │
-│                                                      │
-│  ┌────────────┐  ┌────────────┐  ┌───────────────┐   │
-│  │  Better     │  │  Drizzle   │  │  Mender HTTP   │  │
-│  │  Auth       │  │  ORM       │  │  Client        │  │
-│  │  (sessions) │  │  (Postgres)│  │  (PAT + Host)  │  │
-│  └────────────┘  └────────────┘  └───────────────┘   │
-│                                                      │
-│  env.ts → Single source of truth (24 vars validadas) │
-└──────────────────────────────────────────────────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │   Mender Gateway    │
-              │   (Traefik v3.6)    │
-              │                     │
-              │  deviceauth         │
-              │  deployments        │
-              │  inventory          │
-              │  deviceconnect      │
-              └─────────────────────┘
-```
-
-### Fluxo de Autorização
-
-```
-Request → auth-guard (withAuth) → company-check (checkMembership) → loadDevice → requireMenderLink → handler
-                │                        │                              │              │
-          deriva user/session       verifica membro              busca dispositivo   verifica vínculo Mender
-          rejeita 401 se não auth  rejeita 403 se não membro     rejeita 404 se não   rejeita 400 se não linkado
-```
+| Tecnologia | Uso |
+|------------|-----|
+| [Bun](https://bun.sh) | Runtime + bundler + test runner |
+| [Elysia.js](https://elysiajs.com) | Web framework (plugins, macros, OpenAPI) |
+| [Better Auth](https://better-auth.com) | Autenticação (email/password, sessões, cookies) |
+| [Drizzle ORM](https://orm.drizzle.team) | ORM PostgreSQL |
+| [TypeBox](https://github.com/sinclairtypebox/typebox) | Runtime type validation |
+| [Biome](https://biomejs.dev) | Linter + formatter |
+| [Scalar](https://scalar.com) | Documentação OpenAPI interativa |
+| [Eclipse hawkBit](https://eclipse.org/hawkbit/) | OTA deployment server |
 
 ---
 

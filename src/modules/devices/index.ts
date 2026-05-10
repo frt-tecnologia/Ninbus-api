@@ -12,7 +12,7 @@ import {
 	updateDeviceSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { checkMembership, loadDevice } from './auth';
+import { loadDevice } from './auth';
 import * as service from './service';
 
 /** Params with companyId only */
@@ -25,23 +25,26 @@ const deviceParams = t.Object({
 
 /**
  * Devices Module — Ninbus device management with hawkBit integration.
- * All routes scoped under a company. Members can view; operators can manage.
+ *
+ * Role requirements:
+ * - GET /              → viewer (list devices)
+ * - POST /             → operator (register/claim device)
+ * - GET /:deviceId     → viewer (view details)
+ * - PUT /:deviceId     → operator (update name, metadata)
+ * - DELETE /:deviceId  → admin (remove device)
+ * - PUT /:deviceId/link → operator (link to hawkBit)
  */
 export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId/devices' }))
 	// GET / — List company devices
 	.get(
 		'/',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params }) => {
 			const deviceList = await service.getCompanyDevices(params.companyId);
 			return { data: deviceList, total: deviceList.length };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: companyParams,
 			detail: { tags: ['Devices'], summary: 'List company devices' },
 			response: {
@@ -55,11 +58,6 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	.post(
 		'/',
 		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
 			const result = await service.registerDevice({
 				companyId: params.companyId,
 				name: body.name || body.serialNumber,
@@ -84,15 +82,15 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: companyParams,
 			body: registerDeviceSchema,
 			detail: {
-				tags: ['Device Claims'],
-				summary: 'Claim a device for this company',
+				tags: ['Devices'],
+				summary: 'Register / claim a device for this company',
 				description:
-					'Claims a pre-provisioned device by serial number. The device must already exist in hawkBit (provisioned at the factory). ' +
-					'If found in hawkBit, the device is linked and status becomes "accepted". ' +
-					'If not found in hawkBit, the device is registered locally with status "pending" (will be linked when the device connects).',
+					'Claims a pre-provisioned device by serial number. Requires operator role or above. ' +
+					'The device must already exist in hawkBit (provisioned at the factory).',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -106,12 +104,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// GET /:deviceId — Get device details
 	.get(
 		'/:deviceId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
@@ -129,6 +122,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deviceParams,
 			detail: { tags: ['Devices'], summary: 'Get device details' },
 			response: {
@@ -142,12 +136,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// PUT /:deviceId — Update device
 	.put(
 		'/:deviceId',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const device = await service.updateDevice(params.deviceId, params.companyId, body);
 			if (!device) {
 				set.status = 404;
@@ -157,9 +146,10 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deviceParams,
 			body: updateDeviceSchema,
-			detail: { tags: ['Devices'], summary: 'Update device' },
+			detail: { tags: ['Devices'], summary: 'Update device', description: 'Updates device metadata. Requires operator role or above.' },
 			response: {
 				200: DeviceUpdateResponseSchema,
 				403: ErrorResponseSchema,
@@ -171,12 +161,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// DELETE /:deviceId — Remove device
 	.delete(
 		'/:deviceId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
@@ -187,8 +172,13 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: deviceParams,
-			detail: { tags: ['Devices'], summary: 'Remove device' },
+			detail: {
+				tags: ['Devices'],
+				summary: 'Remove device',
+				description: 'Removes a device from the company. Requires admin role or above.',
+			},
 			response: {
 				200: DeviceDeleteResponseSchema,
 				403: ErrorResponseSchema,
@@ -200,12 +190,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// PUT /:deviceId/link — Link pending device to hawkBit (admin provides deviceKey)
 	.put(
 		'/:deviceId/link',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const result = await service.linkDevice(
 				params.deviceId,
 				params.companyId,
@@ -223,14 +208,15 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deviceParams,
 			body: linkDeviceSchema,
 			detail: {
-				tags: ['Device Claims'],
+				tags: ['Devices'],
 				summary: 'Link pending device to hawkBit',
 				description:
 					'(Legacy) Links a pending device by providing its factory device key. ' +
-					'For new deployments, use POST /api/devices/provision instead.',
+					'For new deployments, use POST /api/devices/provision instead. Requires operator role or above.',
 			},
 			response: {
 				200: LinkDeviceResponseSchema,

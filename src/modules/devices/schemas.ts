@@ -13,7 +13,9 @@ export const provisionDeviceSchema = t.Object(
 		serialNumber: t.String({
 			minLength: 1,
 			maxLength: 255,
-			description: 'Device serial number (controllerId in hawkBit). Printed on the device label.',
+			description:
+				'Device serial number. Accepts hex format (255FFFFFFF123456) or dotted display format (25.5F.FF.FFF.FFFFF.F). ' +
+				'Stored as uppercase hex — same format used as hawkBit controllerId.',
 		}),
 		deviceKey: t.String({
 			minLength: 8,
@@ -24,14 +26,15 @@ export const provisionDeviceSchema = t.Object(
 		name: t.Optional(
 			t.String({
 				maxLength: 255,
-				description: 'Optional display name. Defaults to serial number if not provided.',
+				description: 'Optional display name. Defaults to dotted serial format if not provided.',
 			}),
 		),
 	},
 	{
 		default: {
-			serialNumber: 'SN-987654321',
+			serialNumber: '255FFFFFFF123456',
 			deviceKey: 'factory-device-key-from-label',
+			name: 'Ninbus-veiculo-06',
 		},
 	},
 );
@@ -43,12 +46,11 @@ export const registerDeviceSchema = t.Object(
 			minLength: 1,
 			maxLength: 255,
 			description:
-				'Device serial number. Must match a device pre-provisioned in hawkBit.',
+				'Device serial number. Accepts hex (255FFFFFFF123456) or dotted format (25.5F.FF.FFF.FFFFF.F). ' +
+				'Used to match with a pre-provisioned device in hawkBit.',
 		}),
 	},
-	{
-		default: { serialNumber: 'SN-987654321' },
-	},
+	{ default: { serialNumber: '255FFFFFFF123456' } },
 );
 
 export const linkDeviceSchema = t.Object(
@@ -72,7 +74,7 @@ export const updateDeviceSchema = t.Object(
 		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
 		serialNumber: t.Optional(t.String({ maxLength: 255 })),
 	},
-	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: 'SN-987654321-B' } },
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '255FFFFFFF123456' } },
 );
 
 export const assignCategoriesSchema = t.Object(

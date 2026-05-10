@@ -68,8 +68,15 @@ services:
     depends_on:
       hawkbit:
         condition: service_healthy
+    # ── Resource limits & security ──
     mem_limit: ${API_MEM_LIMIT:-256m}
     cpus: ${API_CPUS:-0.5}
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
 
   # ── Eclipse hawkBit Update Server (custom build with S3) ────────────
   # Built from: docker/hawkbit/Dockerfile
@@ -99,6 +106,15 @@ services:
       HAWKBIT_SECURITY_USER_ADMIN_PASSWORD: ${HAWKBIT_ADMIN_PASSWORD:-{noop}admin}
       HAWKBIT_SECURITY_USER_ADMIN_ROLES: TENANT_ADMIN
 
+      # ── DDI Security & Auto-Provisioning ──
+      # TargetToken auth: allows devices to authenticate via Authorization: TargetToken <token>
+      # Without this, ALL DDI polls return 401 regardless of the securityToken value.
+      HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED: ${HAWKBIT_DDI_TARGET_TOKEN_AUTH:-true}
+
+      # Auto-provisioning: auto-creates target on first DDI poll.
+      # The device must still send the correct securityToken to authenticate.
+      HAWKBIT_SERVER_DDI_AUTOPROVISIONING_ENABLED: ${HAWKBIT_AUTOPROVISIONING:-true}
+
       # ── S3 Artifact Storage ──
       # Set HAWKBIT_S3_ENABLED=true to activate (overrides filesystem storage)
       ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ENABLED: ${HAWKBIT_S3_ENABLED:-false}
@@ -124,8 +140,35 @@ services:
     depends_on:
       s3:
         condition: service_healthy
+    # ── Resource limits & security ──
     mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
     cpus: ${HAWKBIT_CPUS:-1.0}
+    pids_limit: 200
+    security_opt:
+      - no-new-privileges:true
+
+  # ── Eclipse hawkBit UI ───────────────────────────────────────────────
+# ── Eclipse hawkBit UI ───────────────────────────────────────────────
+  hawkbit-ui:
+    image: hawkbit/hawkbit-simple-ui:latest
+    container_name: ninbus-api-hawkbit-ui
+    restart: unless-stopped
+    ports:
+      - "8082:8088"
+    environment:
+      # O Simple UI usa essas variáveis específicas para descobrir a API do Management
+      HAWKBIT_SERVER_HOST: hawkbit
+      HAWKBIT_SERVER_PORT: 8080
+      # Por precaução, mantemos a URL caso alguma parte antiga dependa dela
+      HAWKBIT_URL: http://hawkbit:8080
+    depends_on:
+      hawkbit:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
 
   # ── MinIO (S3-compatible object storage) ─────────────────────────────
   # Stores hawkBit artifact binaries. Tested and verified working.
@@ -138,7 +181,7 @@ services:
   #   S3_REGION=auto
   #   HAWKBIT_S3_ENABLED=true
   s3:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-07-18T21-56-31Z
     container_name: minio
     restart: unless-stopped
     ports:
@@ -156,8 +199,12 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
+    # ── Resource limits & security ──
     mem_limit: ${S3_MEM_LIMIT:-256m}
     cpus: ${S3_CPUS:-0.25}
+    pids_limit: 50
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   hawkbit-artifacts:

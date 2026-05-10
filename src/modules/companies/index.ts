@@ -1,5 +1,4 @@
 import { withAuth } from '@common/middleware/auth-guard';
-import { checkMembership } from '@common/middleware/company-check';
 import {
 	CompanyCreateResponseSchema,
 	CompanyDeleteResponseSchema,
@@ -15,7 +14,13 @@ import * as service from './service';
 
 /**
  * Companies Module — Multi-tenancy management.
- * Users can own/manage multiple companies.
+ *
+ * Role requirements:
+ * - GET /            → viewer (any member)
+ * - POST /           → any authenticated user (creates company as owner)
+ * - GET /:id         → viewer (any member)
+ * - PUT /:id         → admin (rename, status changes)
+ * - DELETE /:id      → owner (destructive operation)
  */
 export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' }))
 	// GET / — List user's companies
@@ -38,7 +43,7 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 	)
 
-	// POST / — Create company
+	// POST / — Create company (any authenticated user becomes owner)
 	.post(
 		'/',
 		async ({ body, user, set }) => {
@@ -62,15 +67,10 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 	)
 
-	// GET /:companyId — Get company
+	// GET /:companyId — Get company (any member)
 	.get(
 		'/:companyId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			const company = await service.getCompanyById(params.companyId);
 			if (!company) {
 				set.status = 404;
@@ -80,6 +80,7 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			detail: {
 				tags: ['Companies'],
@@ -94,15 +95,10 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 	)
 
-	// PUT /:companyId — Update company
+	// PUT /:companyId — Update company (admin+)
 	.put(
 		'/:companyId',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const company = await service.updateCompany(params.companyId, body);
 			if (!company) {
 				set.status = 404;
@@ -112,9 +108,14 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			body: UpdateCompanyBodySchema,
-			detail: { tags: ['Companies'], summary: 'Update company' },
+			detail: {
+				tags: ['Companies'],
+				summary: 'Update company',
+				description: 'Updates company name or status. Requires admin role or above.',
+			},
 			response: {
 				200: CompanyUpdateResponseSchema,
 				403: ErrorResponseSchema,
@@ -123,25 +124,21 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 	)
 
-	// DELETE /:companyId — Delete company
+	// DELETE /:companyId — Delete company (owner only)
 	.delete(
 		'/:companyId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params }) => {
 			await service.deleteCompany(params.companyId);
 			return { message: 'Company deleted successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'owner',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			detail: {
 				tags: ['Companies'],
 				summary: 'Delete company',
-				description: 'Deletes a company and all associated data',
+				description: 'Deletes a company and all associated data. Owner only.',
 			},
 			response: {
 				200: CompanyDeleteResponseSchema,

@@ -23,6 +23,8 @@ export const devices = pgTable('devices', {
 	hawkbitTargetId: text('hawkbit_target_id'),
 	name: text('name').notNull(),
 	serialNumber: text('serial_number'),
+	/** Human-readable dotted format (e.g. "25.5F.FF.FFF.FFFFF.F"). Auto-derived from serialNumber hex. */
+	serialDisplay: text('serial_display'),
 	status: deviceStatusEnum('status').notNull().default('pending'),
 	lastSeenAt: timestamp('last_seen_at'),
 	createdBy: text('created_by')

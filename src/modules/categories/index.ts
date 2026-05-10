@@ -9,31 +9,32 @@ import {
 	createCategorySchema,
 	updateCategorySchema,
 } from '@modules/categories/schemas';
-import { isCompanyMember } from '@modules/companies/service';
 import { Elysia, t } from 'elysia';
 import * as service from './service';
 
 /**
- * Categories Module — Device grouping categories.
- * Categories belong to companies and group devices for fleet management.
+ * Categories Module — Device grouping within a company.
+ *
+ * Role requirements:
+ * - GET /              → viewer (list categories)
+ * - POST /             → operator (create category)
+ * - GET /:id           → viewer (view category)
+ * - PUT /:id           → operator (update category)
+ * - DELETE /:id        → admin (delete category)
  */
 export const categoriesModule = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/categories' }),
 )
-	// GET — List categories
+	// GET / — List categories
 	.get(
 		'/',
-		async ({ params, user, set }) => {
-			const memberCheck = await isCompanyMember(params.companyId, user.id);
-			if (!memberCheck) {
-				set.status = 403;
-				return { error: 'Forbidden', message: 'Not a member of this company' };
-			}
+		async ({ params }) => {
 			const cats = await service.getCompanyCategories(params.companyId);
 			return { data: cats, total: cats.length };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			detail: { tags: ['Categories'], summary: 'List company categories' },
 			response: {
@@ -43,27 +44,29 @@ export const categoriesModule = withAuth(
 		},
 	)
 
-	// POST — Create category
+	// POST / — Create category
 	.post(
 		'/',
-		async ({ params, body, user, set }) => {
-			const memberCheck = await isCompanyMember(params.companyId, user.id);
-			if (!memberCheck) {
-				set.status = 403;
-				return { error: 'Forbidden', message: 'Not a member of this company' };
-			}
+		async ({ params, body, set }) => {
 			const category = await service.createCategory({
 				companyId: params.companyId,
-				...body,
+				name: body.name,
+				type: body.type,
+				description: body.description,
 			});
 			set.status = 201;
 			return { message: 'Category created successfully', data: category };
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			body: createCategorySchema,
-			detail: { tags: ['Categories'], summary: 'Create category' },
+			detail: {
+				tags: ['Categories'],
+				summary: 'Create category',
+				description: 'Creates a device grouping category. Requires operator role or above.',
+			},
 			response: {
 				201: CategoryCreateResponseSchema,
 				400: ErrorResponseSchema,
@@ -75,12 +78,7 @@ export const categoriesModule = withAuth(
 	// GET /:categoryId — Get category
 	.get(
 		'/:categoryId',
-		async ({ params, user, set }) => {
-			const memberCheck = await isCompanyMember(params.companyId, user.id);
-			if (!memberCheck) {
-				set.status = 403;
-				return { error: 'Forbidden', message: 'Not a member of this company' };
-			}
+		async ({ params, set }) => {
 			const category = await service.getCategoryById(params.categoryId, params.companyId);
 			if (!category) {
 				set.status = 404;
@@ -90,6 +88,7 @@ export const categoriesModule = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),
@@ -106,12 +105,7 @@ export const categoriesModule = withAuth(
 	// PUT /:categoryId — Update category
 	.put(
 		'/:categoryId',
-		async ({ params, body, user, set }) => {
-			const memberCheck = await isCompanyMember(params.companyId, user.id);
-			if (!memberCheck) {
-				set.status = 403;
-				return { error: 'Forbidden', message: 'Not a member of this company' };
-			}
+		async ({ params, body, set }) => {
 			const category = await service.updateCategory(params.categoryId, params.companyId, body);
 			if (!category) {
 				set.status = 404;
@@ -121,12 +115,17 @@ export const categoriesModule = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),
 			}),
 			body: updateCategorySchema,
-			detail: { tags: ['Categories'], summary: 'Update category' },
+			detail: {
+				tags: ['Categories'],
+				summary: 'Update category',
+				description: 'Updates category name or description. Requires operator role or above.',
+			},
 			response: {
 				200: CategoryUpdateResponseSchema,
 				403: ErrorResponseSchema,
@@ -138,22 +137,22 @@ export const categoriesModule = withAuth(
 	// DELETE /:categoryId — Delete category
 	.delete(
 		'/:categoryId',
-		async ({ params, user, set }) => {
-			const memberCheck = await isCompanyMember(params.companyId, user.id);
-			if (!memberCheck) {
-				set.status = 403;
-				return { error: 'Forbidden', message: 'Not a member of this company' };
-			}
+		async ({ params }) => {
 			await service.deleteCategory(params.categoryId, params.companyId);
 			return { message: 'Category deleted successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),
 			}),
-			detail: { tags: ['Categories'], summary: 'Delete category' },
+			detail: {
+				tags: ['Categories'],
+				summary: 'Delete category',
+				description: 'Deletes a category. Requires admin role or above.',
+			},
 			response: {
 				200: CategoryDeleteResponseSchema,
 				403: ErrorResponseSchema,

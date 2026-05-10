@@ -51,6 +51,18 @@ export const createApp = () => {
 							'Powered by Elysia.js + Eclipse hawkBit.\n\n' +
 							'Full Better Auth documentation: https://better-auth.com',
 					},
+					components: {
+						securitySchemes: {
+							cookieAuth: {
+								type: 'apiKey',
+								in: 'cookie',
+								name: 'auth.session_token',
+								description:
+									'Session cookie obtained via POST /api/auth/sign-in/email. ' +
+									'Sign in first, then the browser will send the cookie automatically.',
+							},
+						},
+					},
 					tags: [
 						// ── Platform ──────────────────────────────────────────
 						{ name: 'Health', description: 'Health check endpoints' },
@@ -70,7 +82,7 @@ export const createApp = () => {
 						{
 							name: 'Companies',
 							description:
-								'Multi-tenancy company management. Each company represents a fleet of devices.',
+								'Multi-tenancy company management. Members: viewer | operator | admin | owner.',
 						},
 						{
 							name: 'Categories',
@@ -80,19 +92,9 @@ export const createApp = () => {
 
 						// ── Devices (company-scoped) ───────────────────────────
 						{
-							name: 'Device Claims',
-							description:
-								'Assign ("claim") a pre-provisioned device to a company. Any company member can claim an unclaimed device by providing its serial number. The device becomes visible in the company dashboard.',
-						},
-						{
 							name: 'Devices',
 							description:
-								'Company device management — list, get, update, remove, categories. Devices are scoped to a company.',
-						},
-						{
-							name: 'Device hawkBit',
-							description:
-								'hawkBit operations on a linked device — attributes, actions, cancel deployment. Requires the device to be linked to a hawkBit target.',
+								'Company device management — CRUD, categories, claim, hawkBit operations (attributes, actions, cancel). All routes require company membership with role-based access control.',
 						},
 
 						// ── OTA ───────────────────────────────────────────────
@@ -115,6 +117,9 @@ export const createApp = () => {
 					],
 				},
 				scalarConfig: {
+					spec: {
+						url: '/docs/json',
+					},
 					// @ts-ignore - fastify might not be in the local elysia scalar types yet
 					theme: 'fastify',
 					defaultOpenAllTags: false,
@@ -124,7 +129,7 @@ export const createApp = () => {
 					showDeveloperTools: 'localhost',
 					showToolbar: 'localhost',
 					operationTitleSource: 'summary',
-					persistAuth: false,
+					persistAuth: true,
 					telemetry: true,
 					externalUrls: {
 						dashboardUrl: 'https://dashboard.scalar.com',

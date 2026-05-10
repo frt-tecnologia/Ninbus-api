@@ -4,18 +4,20 @@
  * These routes create hawkBit targets BEFORE any company claims the device.
  * Done at the factory or warehouse with serialNumber + deviceKey from the device label.
  * The device starts polling hawkBit immediately but has no company assignment.
+ *
+ * Role requirements:
+ * - POST /provision   → any authenticated user (factory operator)
+ * - GET /unclaimed    → any authenticated user (warehouse/inventory view)
  */
-import { hawkbitConfig } from '@common/config/hawkbit';
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	DeviceCreateResponseSchema,
 	DeviceListResponseSchema,
 	ErrorResponseSchema,
 	provisionDeviceSchema,
-	selectDeviceSchema,
 } from '@modules/devices/schemas';
-import { Elysia, t } from 'elysia';
-import { provisionDevice, listUnclaimedDevices, claimDevice } from './provisioning';
+import { Elysia } from 'elysia';
+import { provisionDevice, listUnclaimedDevices } from './provisioning';
 
 export const provisioningRoutes = withAuth(
 	new Elysia({ prefix: '/api/devices' }),
@@ -45,9 +47,16 @@ export const provisioningRoutes = withAuth(
 			detail: {
 				tags: ['Provisioning'],
 				summary: 'Pre-register device in hawkBit (factory/warehouse)',
+				security: [{ cookieAuth: [] }],
 				description:
 					'Creates a hawkBit target with the factory deviceKey as securityToken and registers the device locally with status "unclaimed". ' +
-					'The device can start polling hawkBit immediately. No company is assigned until a user claims it via POST /api/companies/:id/devices.',
+					'The device can start polling hawkBit immediately. No company is assigned until a user claims it via POST /api/companies/:id/devices.\n\n' +
+					'**Serial number formats accepted:**\n' +
+					'- Hex: `255FFFFFFF123456` (same as hawkBit controllerId)\n' +
+					'- Dotted: `25.5F.FF.FF.FF.12.34.56` (from device label)\n\n' +
+					'The API normalizes to uppercase hex internally. The response includes both `serialNumber` (hex) and `serialDisplay` (dotted).\n\n' +
+					'**⚠️ Authentication required:** You must first sign in via `POST /api/auth/sign-in/email` and use the session cookie. ' +
+					'This is a platform-level route (no company context needed).',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -60,7 +69,7 @@ export const provisioningRoutes = withAuth(
 	// GET /api/devices/unclaimed — List devices without a company
 	.get(
 		'/unclaimed',
-		async ({ user, set }) => {
+		async () => {
 			const devices = await listUnclaimedDevices();
 			return { data: devices, total: devices.length };
 		},
@@ -68,10 +77,10 @@ export const provisioningRoutes = withAuth(
 			auth: true,
 			detail: {
 				tags: ['Provisioning'],
+				security: [{ cookieAuth: [] }],
 				summary: 'List unclaimed devices (no company)',
 				description:
-					'Returns all devices that have been provisioned but not yet claimed by any company. ' +
-					'These devices are polling hawkBit but have no company assignment.',
+					'Returns all devices that have been provisioned but not yet claimed by any company.',
 			},
 			response: {
 				200: DeviceListResponseSchema,

@@ -5,30 +5,24 @@ import {
 	HawkbitAttributesResponseSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { checkMembership, loadDevice, requireHawkbitLink } from './auth';
+import { loadDevice, requireHawkbitLink } from './auth';
 import * as service from './service';
 
 /**
  * Device hawkBit operations — attributes, actions, cancel.
  *
- * Simplified from Mender model. hawkBit eliminates:
- * - No approve/reject (targets created directly, no auth flow)
- * - No check-update (hawkBit manages device polling automatically)
- * - No separate connection endpoint (pollStatus is on the target object)
- * - No decommission endpoint (DELETE on the device itself handles it)
+ * Role requirements:
+ * - GET /:deviceId/attributes          → viewer (read-only data from hawkBit)
+ * - GET /:deviceId/actions             → viewer (deployment history)
+ * - DELETE /:deviceId/actions/:actionId → operator (cancel deployment)
  */
 export const deviceHawkbitRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/devices' }),
 )
-	// GET /:deviceId/attributes — Target attributes (replaces Mender inventory)
+	// GET /:deviceId/attributes — Target attributes
 	.get(
 		'/:deviceId/attributes',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }: any) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
@@ -44,13 +38,14 @@ export const deviceHawkbitRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
 			}),
 			response: { 200: HawkbitAttributesResponseSchema, 403: ErrorResponseSchema },
 			detail: {
-				tags: ['Device hawkBit'],
+				tags: ['Devices'],
 				summary: 'Get device attributes',
 				description: 'Target attributes from hawkBit (hardware, software, custom properties)',
 			},
@@ -60,12 +55,7 @@ export const deviceHawkbitRoutes = withAuth(
 	// GET /:deviceId/actions — Deployment actions for this target
 	.get(
 		'/:deviceId/actions',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }: any) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
@@ -81,15 +71,16 @@ export const deviceHawkbitRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
 			}),
 			response: { 200: HawkbitActionsResponseSchema, 403: ErrorResponseSchema },
 			detail: {
-				tags: ['Device hawkBit'],
+				tags: ['Devices'],
 				summary: 'Get deployment actions for device',
-				description: 'Lists all deployment actions for this target. Includes active and completed.',
+				description: 'Lists all deployment actions for this target.',
 			},
 		},
 	)
@@ -97,12 +88,7 @@ export const deviceHawkbitRoutes = withAuth(
 	// DELETE /:deviceId/actions/:actionId — Cancel a deployment action
 	.delete(
 		'/:deviceId/actions/:actionId',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }: any) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
@@ -126,6 +112,7 @@ export const deviceHawkbitRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
@@ -137,8 +124,9 @@ export const deviceHawkbitRoutes = withAuth(
 				404: ErrorResponseSchema,
 			},
 			detail: {
-				tags: ['Device hawkBit'],
+				tags: ['Devices'],
 				summary: 'Cancel deployment action',
+				description: 'Cancels an active deployment action. Requires operator role or above.',
 			},
 		},
 	);

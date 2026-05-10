@@ -3,8 +3,9 @@ import { createApp } from '../src/app';
 
 describe('Devices Module', () => {
 	const app = createApp();
-	const ownerEmail = `dev-owner-${Date.now()}@example.com`;
-	const otherEmail = `dev-other-${Date.now()}@example.com`;
+	const ts = Date.now();
+	const ownerEmail = `dev-owner-${ts}@example.com`;
+	const otherEmail = `dev-other-${ts}@example.com`;
 	const password = 'TestPassword123!';
 	let ownerCookie: string;
 	let otherCookie: string;
@@ -102,7 +103,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'Ninbus Bus #001', serialNumber: 'SN-001-AABB' }),
+					body: JSON.stringify({ name: 'Ninbus Bus #001', serialNumber: `SN-${ts}-001` }),
 				}),
 			);
 			expect(response.status).toBe(201);
@@ -149,7 +150,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'To Delete', serialNumber: 'SN-DELETE-001' }),
+					body: JSON.stringify({ name: 'To Delete', serialNumber: `SN-${ts}-DEL` }),
 				}),
 			);
 			const deleteId = (await createRes.json()).data.id;
@@ -248,7 +249,7 @@ describe('Devices Module', () => {
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
 						name: 'Claimed Device',
-						serialNumber: 'SN-CLAIM-001',
+						serialNumber: `SN-CLAIM-${ts}`,
 					}),
 				}),
 			);
@@ -265,7 +266,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ serialNumber: 'SN-DUP-001' }),
+					body: JSON.stringify({ serialNumber: `SN-DUP-${ts}` }),
 				}),
 			);
 			// Claim again same company
@@ -273,7 +274,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ serialNumber: 'SN-DUP-001' }),
+					body: JSON.stringify({ serialNumber: `SN-DUP-${ts}` }),
 				}),
 			);
 			expect(response.status).toBe(409);
@@ -305,9 +306,10 @@ describe('Devices Module', () => {
 		});
 
 		it('PUT /:deviceId/link without auth returns 401', async () => {
+			// Use a fixed valid UUID that won't exist — test is about auth, not device lookup
 			const response = await app.handle(
 				new Request(
-					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
+					`http://localhost/api/companies/${companyId}/devices/00000000-0000-0000-0000-000000000099/link`,
 					{
 						method: 'PUT',
 						headers: { 'Content-Type': 'application/json' },
@@ -343,6 +345,53 @@ describe('Devices Module', () => {
 				),
 			);
 			expect(response.status).toBe(400);
+		});
+	});
+
+	describe('Serial Number Normalization', () => {
+		it('POST claim with hex serial stores hex in serialNumber', async () => {
+			const hexSerial = `AABBCCDD${ts.toString(16).toUpperCase().padStart(8, '0')}`;
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: hexSerial }),
+				}),
+			);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.serialNumber).toBe(hexSerial.toUpperCase());
+			expect(body.data.serialDisplay).toContain('.');
+		});
+
+		it('POST claim with dotted serial normalizes to hex', async () => {
+			const hexPart = ((ts + 1) & 0xFFFFFFFF).toString(16).toUpperCase().padStart(8, '0');
+			const dottedSerial = `${hexPart.slice(0,2)}.${hexPart.slice(2,4)}.${hexPart.slice(4,6)}.${hexPart.slice(6,8)}`;
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: dottedSerial }),
+				}),
+			);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.serialNumber).toBe(hexPart);
+		});
+
+		it('POST claim with mixed-case hex normalizes to uppercase', async () => {
+			const hexPart = ((ts + 2) & 0xFFFFFFFF).toString(16).padStart(8, '0').toLowerCase();
+			const mixedSerial = hexPart;
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: mixedSerial }),
+				}),
+			);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.serialNumber).toBe(hexPart.toUpperCase());
 		});
 	});
 });

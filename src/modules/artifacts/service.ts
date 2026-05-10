@@ -146,6 +146,9 @@ export async function listArtifacts(params?: {
 	offset?: number;
 	limit?: number;
 }): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
+	if (!hawkbitConfig.enabled) {
+		return { data: [], total: 0 };
+	}
 	const result = await hawkbitSoftwareModules.list(params);
 	const enriched = result.content.map(enrichSoftwareModule);
 	return { data: enriched, total: result.total };
@@ -153,16 +156,25 @@ export async function listArtifacts(params?: {
 
 /** Get single software module with enrichment. */
 export async function getArtifact(smId: number): Promise<EnrichedSoftwareModule> {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
 	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId));
 }
 
 /** Delete a software module. */
 export async function deleteArtifact(smId: number): Promise<void> {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
 	return hawkbitSoftwareModules.delete(smId);
 }
 
 /** Update artifact description. */
 export async function updateArtifact(smId: number, description: string): Promise<void> {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
 	return hawkbitSoftwareModules.update(smId, { description });
 }
 
@@ -177,8 +189,11 @@ export async function getArtifactDownloadUrl(
 	size?: number;
 	downloadUrl: string;
 }> {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
 	const artifact = await hawkbitSoftwareModules.getArtifact(smId, artifactId);
-	const baseUrl = process.env['HAWKBIT_URL'] ?? 'http://localhost:8080';
+	const baseUrl = hawkbitConfig.baseUrl;
 	return {
 		smId,
 		artifactId: artifact.id,

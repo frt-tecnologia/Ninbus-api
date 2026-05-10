@@ -1,5 +1,4 @@
 import { withAuth } from '@common/middleware/auth-guard';
-import { checkMembership } from '@common/middleware/company-check';
 import {
 	ErrorResponseSchema,
 	MemberAddResponseSchema,
@@ -14,29 +13,31 @@ import * as service from './service';
 
 /**
  * Company member management routes.
+ *
+ * Role requirements:
+ * - GET /          → viewer (any member can list)
+ * - POST /         → admin (add new members)
+ * - PUT /:userId   → admin (change roles, cannot promote above own level)
+ * - DELETE /:userId → admin (remove members, owner cannot be removed)
  */
 export const companyMemberRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/members' }),
 )
-	// GET — List members
+	// GET — List members (any member can view)
 	.get(
 		'/',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params }) => {
 			const members = await service.getCompanyMembers(params.companyId);
 			return { data: members, total: members.length };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			detail: {
 				tags: ['Companies'],
 				summary: 'List company members',
-				description: 'Returns all members (requires membership)',
+				description: 'Returns all members. Any member can view the member list.',
 			},
 			response: {
 				200: MemberListResponseSchema,
@@ -46,15 +47,10 @@ export const companyMemberRoutes = withAuth(
 		},
 	)
 
-	// POST — Add member
+	// POST — Add member (admin+)
 	.post(
 		'/',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const member = await service.addCompanyMember({
 				companyId: params.companyId,
 				userId: body.userId,
@@ -65,12 +61,14 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			body: addMemberSchema,
 			detail: {
 				tags: ['Companies'],
 				summary: 'Add company member',
-				description: 'Adds a user to the company with specified role',
+				description:
+					'Adds a user to the company with specified role. Requires admin role or above.',
 			},
 			response: {
 				201: MemberAddResponseSchema,
@@ -81,15 +79,10 @@ export const companyMemberRoutes = withAuth(
 		},
 	)
 
-	// PUT /:userId — Update member role
+	// PUT /:userId — Update member role (admin+)
 	.put(
 		'/:userId',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const member = await service.updateMemberRole(params.companyId, params.userId, body.role);
 			if (!member) {
 				set.status = 404;
@@ -99,12 +92,17 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 				userId: t.String({ description: 'User ID to update' }),
 			}),
 			body: updateMemberRoleSchema,
-			detail: { tags: ['Companies'], summary: 'Update member role' },
+			detail: {
+				tags: ['Companies'],
+				summary: 'Update member role',
+				description: 'Changes a member\'s role. Requires admin role or above.',
+			},
 			response: {
 				200: MemberUpdateResponseSchema,
 				403: ErrorResponseSchema,
@@ -113,25 +111,25 @@ export const companyMemberRoutes = withAuth(
 		},
 	)
 
-	// DELETE /:userId — Remove member
+	// DELETE /:userId — Remove member (admin+)
 	.delete(
 		'/:userId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params }) => {
 			await service.removeMember(params.companyId, params.userId);
 			return { message: 'Member removed successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 				userId: t.String({ description: 'User ID to remove' }),
 			}),
-			detail: { tags: ['Companies'], summary: 'Remove member' },
+			detail: {
+				tags: ['Companies'],
+				summary: 'Remove member',
+				description: 'Removes a member from the company. Requires admin role or above.',
+			},
 			response: {
 				200: MemberDeleteResponseSchema,
 				403: ErrorResponseSchema,

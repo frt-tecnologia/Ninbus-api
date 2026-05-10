@@ -1,7 +1,6 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import { assignCategoriesSchema } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { checkMembership } from './auth';
 import * as service from './service';
 
 const deviceParams = t.Object({
@@ -11,6 +10,10 @@ const deviceParams = t.Object({
 
 /**
  * Device category assignment routes — N:N relationship.
+ *
+ * Role requirements:
+ * - GET /:deviceId/categories  → viewer (read)
+ * - PUT /:deviceId/categories  → operator (assign)
  */
 export const deviceCategoryRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/devices' }),
@@ -18,17 +21,13 @@ export const deviceCategoryRoutes = withAuth(
 	// GET /:deviceId/categories — List device categories
 	.get(
 		'/:deviceId/categories',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params }: any) => {
 			const cats = await service.getDeviceCategories(params.deviceId);
 			return { data: cats, total: cats.length };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deviceParams,
 			detail: { tags: ['Devices'], summary: 'List device categories' },
 		},
@@ -37,23 +36,20 @@ export const deviceCategoryRoutes = withAuth(
 	// PUT /:deviceId/categories — Assign categories to device
 	.put(
 		'/:deviceId/categories',
-		async ({ params, body, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body }: any) => {
 			await service.assignCategories(params.deviceId, body.categoryIds);
 			return { message: 'Categories assigned successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deviceParams,
 			body: assignCategoriesSchema,
 			detail: {
 				tags: ['Devices'],
 				summary: 'Assign categories to device',
-				description: 'Replaces all category assignments for a device (N:N relationship)',
+				description:
+					'Replaces all category assignments for a device (N:N). Requires operator role or above.',
 			},
 		},
 	);

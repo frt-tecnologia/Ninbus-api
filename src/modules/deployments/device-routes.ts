@@ -1,6 +1,5 @@
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { withAuth } from '@common/middleware/auth-guard';
-import { checkMembership } from '@common/middleware/company-check';
 import {
 	ActionStatusListResponseSchema,
 	DeploymentStatisticsResponseSchema,
@@ -20,10 +19,12 @@ const deviceParams = t.Object({
 /**
  * Deployment detail routes — statistics, targets, action management.
  *
- * Simplified from Mender model:
- * - No PUT /status with {status: "aborted"} — use DELETE action directly
- * - No DELETE /devices/:menderDeviceId/deployments — use per-action cancel
- * - No GET device log — use action status messages
+ * Role requirements:
+ * - GET /:id/statistics              → viewer (read stats)
+ * - GET /:id/targets                 → viewer (read targets)
+ * - GET /:id/targets/:t/actions/:a/status → viewer (read action history)
+ * - DELETE /:id/targets/:t/actions/:a     → operator (cancel action)
+ * - GET /devices/:id/actions         → viewer (read device actions)
  */
 export const deploymentDeviceRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/deployments' }),
@@ -31,12 +32,7 @@ export const deploymentDeviceRoutes = withAuth(
 	// GET /:deploymentId/statistics
 	.get(
 		'/:deploymentId/statistics',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			try {
 				const stats = await service.getDeploymentStatistics(Number(params.deploymentId));
 				return { data: stats };
@@ -47,6 +43,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deploymentParams,
 			detail: {
 				tags: ['Deployments'],
@@ -64,12 +61,7 @@ export const deploymentDeviceRoutes = withAuth(
 	// GET /:deploymentId/targets — Targets assigned to this DS
 	.get(
 		'/:deploymentId/targets',
-		async ({ params, query, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, query }) => {
 			const result = await service.getDeploymentTargets(Number(params.deploymentId), {
 				offset: query?.offset,
 				limit: query?.limit,
@@ -78,6 +70,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deploymentParams,
 			query: t.Object({
 				offset: t.Optional(t.Number()),
@@ -94,12 +87,7 @@ export const deploymentDeviceRoutes = withAuth(
 	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Action history
 	.get(
 		'/:deploymentId/targets/:targetId/actions/:actionId/status',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			try {
 				const statusList = await hawkbitTargets.getActionStatus(
 					params.targetId,
@@ -113,6 +101,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deploymentActionParams,
 			detail: {
 				tags: ['Deployments'],
@@ -130,12 +119,7 @@ export const deploymentDeviceRoutes = withAuth(
 	// DELETE /:deploymentId/targets/:targetId/actions/:actionId — Cancel action
 	.delete(
 		'/:deploymentId/targets/:targetId/actions/:actionId',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			try {
 				await hawkbitTargets.cancelAction(params.targetId, Number(params.actionId), true);
 				return { message: 'Action cancelled successfully' };
@@ -146,8 +130,13 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deploymentActionParams,
-			detail: { tags: ['Deployments'], summary: 'Cancel deployment action' },
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Cancel deployment action',
+				description: 'Cancels an active deployment action. Requires operator role or above.',
+			},
 			response: {
 				200: GenericActionResponseSchema,
 				403: ErrorResponseSchema,
@@ -159,12 +148,7 @@ export const deploymentDeviceRoutes = withAuth(
 	// GET /devices/:deviceId/actions — Device deployment history
 	.get(
 		'/devices/:deviceId/actions',
-		async ({ params, query, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, query, set }) => {
 			const { getDeviceById } = await import('@modules/devices/service');
 			const device = await getDeviceById(params.deviceId, params.companyId);
 			if (!device?.hawkbitTargetId) {
@@ -179,6 +163,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deviceParams,
 			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },

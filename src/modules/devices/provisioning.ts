@@ -1,17 +1,6 @@
 /**
  * Device Provisioning — factory pre-registration and company claim.
  *
- * Flow:
- *   1. Factory/warehouse admin: POST /api/devices/provision
- *      → Creates hawkBit target (securityToken = deviceKey)
- *      → Inserts device in DB with status "unclaimed", companyId = null
- *      → Device starts polling hawkBit immediately
- *
- *   2. Company member: POST /api/companies/:id/devices
- *      → Finds existing device by serialNumber
- *      → Sets companyId + status "accepted"
- *      → Device becomes visible in company dashboard
- *
  * The deviceKey is NEVER stored in our DB and NEVER returned in API responses.
  * It is only passed to hawkBit as the target's securityToken.
  */
@@ -20,6 +9,7 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
+import { normalizeSerial, isValidSerialLength } from '@common/utils/serial-number';
 import { and, eq, isNull } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
@@ -32,54 +22,45 @@ export async function provisionDevice(data: {
 	name?: string;
 	userId: string;
 }): Promise<{ success: boolean; device: any; error?: string }> {
-	const displayName = data.name || data.serialNumber;
+	// Normalize serial number: dotted/hex → canonical hex + display
+	const normalized = normalizeSerial(data.serialNumber);
+	if (!normalized) {
+		return { success: false, device: null, error: 'Invalid serial number format. Expected hex string (e.g. 255FFFFFFF123456) or dotted format (e.g. 25.5F.FF.FFF.FFFFF.F)' };
+	}
+	if (!isValidSerialLength(normalized.hex)) {
+		return { success: false, device: null, error: `Serial number must be 4-32 hex chars (2-16 bytes). Got ${normalized.hex.length} chars.` };
+	}
 
-	// 1. Check if serial number is already registered
-	const [existing] = await db
-		.select()
-		.from(devices)
-		.where(eq(devices.serialNumber, data.serialNumber));
+	const serialHex = normalized.hex;
+	const serialDisplay = normalized.display;
+	const displayName = data.name || serialDisplay;
 
+	appLogger.info(`[PROVISION] Normalized serial: "${data.serialNumber}" → hex=${serialHex}, display=${serialDisplay}`);
+
+	// Check if serial number is already registered (by hex format)
+	const [existing] = await db.select().from(devices).where(eq(devices.serialNumber, serialHex));
 	if (existing) {
 		return { success: false, device: existing, error: 'Serial number already registered' };
 	}
 
-	// 2. Create hawkBit target with factory deviceKey
+	// Create hawkBit target with factory deviceKey — controllerId MUST be hex format
 	if (hawkbitConfig.enabled) {
 		try {
-			await hawkbitTargets.create({
-				controllerId: data.serialNumber,
-				name: displayName,
-				securityToken: data.deviceKey,
-			});
-			appLogger.info(
-				`[PROVISION] Created hawkBit target: ${data.serialNumber}`,
-			);
+			await hawkbitTargets.create({ controllerId: serialHex, name: displayName, securityToken: data.deviceKey });
+			appLogger.info(`[PROVISION] Created hawkBit target: ${serialHex}`);
 		} catch (error: any) {
 			// Target might already exist in hawkBit (e.g. device already polled)
-			appLogger.warn(
-				`[PROVISION] hawkBit target creation for ${data.serialNumber}: ${error?.message ?? error}. Continuing with local registration.`,
-			);
+			appLogger.warn(`[PROVISION] hawkBit target creation for ${serialHex}: ${error?.message ?? error}. Continuing.`);
 		}
 	}
 
-	// 3. Insert into local DB — unclaimed, no company
-	const [device] = await db
-		.insert(devices)
-		.values({
-			companyId: null,
-			name: displayName,
-			serialNumber: data.serialNumber,
-			hawkbitTargetId: data.serialNumber,
-			status: 'unclaimed',
-			createdBy: data.userId,
-		})
-		.returning();
+	// Insert into local DB — unclaimed, no company
+	const [device] = await db.insert(devices).values({
+		companyId: null, name: displayName, serialNumber: serialHex, serialDisplay: serialDisplay,
+		hawkbitTargetId: serialHex, status: 'unclaimed', createdBy: data.userId,
+	}).returning();
 
-	if (!device) {
-		return { success: false, device: null, error: 'Failed to create device' };
-	}
-
+	if (!device) return { success: false, device: null, error: 'Failed to create device' };
 	return { success: true, device };
 }
 
@@ -105,60 +86,39 @@ export async function claimDevice(data: {
 	name?: string;
 	userId: string;
 }): Promise<{ success: boolean; device: any; error?: string }> {
-	// 1. Find existing device by serial number
-	const [existing] = await db
-		.select()
-		.from(devices)
-		.where(eq(devices.serialNumber, data.serialNumber));
+	// Normalize serial: hex-based serials get converted, non-hex stored as-is
+	const normalized = normalizeSerial(data.serialNumber);
+	const serialHex = normalized?.hex || data.serialNumber;
+	const serialDisplay = normalized?.display || data.serialNumber;
+
+	// Find existing device by serial number
+	const [existing] = await db.select().from(devices).where(eq(devices.serialNumber, serialHex));
 
 	if (!existing) {
 		// Device not provisioned yet — create local entry as pending
-		const [device] = await db
-			.insert(devices)
-			.values({
-				companyId: data.companyId,
-				name: data.name || data.serialNumber,
-				serialNumber: data.serialNumber,
-				hawkbitTargetId: null,
-				status: 'pending',
-				createdBy: data.userId,
-			})
-			.returning();
-
-		return {
-			success: true,
-			device,
-			error: 'Device not yet provisioned in hawkBit. Registered locally as pending.',
-		};
+		const [device] = await db.insert(devices).values({
+			companyId: data.companyId, name: data.name || serialDisplay,
+			serialNumber: serialHex, serialDisplay: serialDisplay,
+			hawkbitTargetId: null, status: 'pending', createdBy: data.userId,
+		}).returning();
+		return { success: true, device, error: 'Device not yet provisioned in hawkBit. Registered locally as pending.' };
 	}
 
-	// 2. Device already belongs to another company
 	if (existing.companyId && existing.companyId !== data.companyId) {
 		return { success: false, device: existing, error: 'Device already claimed by another company' };
 	}
-
-	// 3. Device already in this company
 	if (existing.companyId === data.companyId) {
 		return { success: false, device: existing, error: 'Device already in this company' };
 	}
 
-	// 4. Claim the unclaimed device
+	// Claim the unclaimed device
 	const displayName = data.name || existing.name;
-	const [claimed] = await db
-		.update(devices)
-		.set({
-			companyId: data.companyId,
-			name: displayName,
-			status: existing.hawkbitTargetId ? 'accepted' : 'pending',
-			updatedAt: new Date(),
-		})
-		.where(eq(devices.id, existing.id))
-		.returning();
+	const [claimed] = await db.update(devices).set({
+		companyId: data.companyId, name: displayName,
+		status: existing.hawkbitTargetId ? 'accepted' : 'pending', updatedAt: new Date(),
+	}).where(eq(devices.id, existing.id)).returning();
 
-	appLogger.info(
-		`[CLAIM] Device ${data.serialNumber} claimed by company ${data.companyId}`,
-	);
-
+	appLogger.info(`[CLAIM] Device ${serialHex} (${serialDisplay}) claimed by company ${data.companyId}`);
 	return { success: true, device: claimed };
 }
 
@@ -192,20 +152,24 @@ export async function linkDevice(
 		};
 	}
 
+	// Normalize serial for hawkBit controllerId
+	const normalized = normalizeSerial(device.serialNumber);
+	const controllerId = normalized?.hex || device.serialNumber;
+
 	// Create hawkBit target with the factory deviceKey
 	if (hawkbitConfig.enabled) {
 		try {
 			await hawkbitTargets.create({
-				controllerId: device.serialNumber,
+				controllerId,
 				name: device.name,
 				securityToken: deviceKey,
 			});
 			appLogger.info(
-				`[PROVISION] Linked device ${device.id} → hawkBit target ${device.serialNumber}`,
+				`[PROVISION] Linked device ${device.id} → hawkBit target ${controllerId}`,
 			);
 		} catch (error: any) {
 			appLogger.error(
-				`[PROVISION] hawkBit target creation failed for ${device.serialNumber}: ${error?.message ?? error}`,
+				`[PROVISION] hawkBit target creation failed for ${controllerId}: ${error?.message ?? error}`,
 			);
 			return {
 				success: false,
@@ -218,7 +182,9 @@ export async function linkDevice(
 	const [updated] = await db
 		.update(devices)
 		.set({
-			hawkbitTargetId: device.serialNumber,
+			hawkbitTargetId: controllerId,
+			serialNumber: normalized?.hex || device.serialNumber,
+			serialDisplay: normalized?.display || device.serialDisplay,
 			status: 'accepted',
 			updatedAt: new Date(),
 		})

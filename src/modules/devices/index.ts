@@ -65,6 +65,10 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				userId: user.id,
 			});
 			if (!result.success) {
+				if (result.error?.includes('not found')) {
+					set.status = 404;
+					return { error: 'Not Found', message: result.error };
+				}
 				if (result.error === 'Device already claimed by another company') {
 					set.status = 409;
 					return { error: 'Conflict', message: result.error };

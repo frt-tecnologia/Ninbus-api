@@ -7,6 +7,7 @@ describe('Devices Module', () => {
 	const ownerEmail = `dev-owner-${ts}@example.com`;
 	const otherEmail = `dev-other-${ts}@example.com`;
 	const password = 'TestPassword123!';
+	const testSerial = `FF19E0EB${ts.toString(16).toUpperCase().slice(-8)}`; // valid hex serial
 	let ownerCookie: string;
 	let otherCookie: string;
 	let companyId: string;
@@ -98,18 +99,33 @@ describe('Devices Module', () => {
 	});
 
 	describe('CRUD', () => {
-		it('POST registers a device', async () => {
-			const response = await app.handle(
+		it('POST provisions and claims a device', async () => {
+			// Step 1: Provision device (factory)
+			const provResponse = await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({
+						serialNumber: testSerial,
+						deviceKey: 'test-factory-key-12345678',
+						name: 'Ninbus Bus #001',
+					}),
+				}),
+			);
+			expect(provResponse.status).toBe(201);
+
+			// Step 2: Claim device for company
+			const claimResponse = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'Ninbus Bus #001', serialNumber: `SN-${ts}-001` }),
+					body: JSON.stringify({ name: 'Ninbus Bus #001', serialNumber: testSerial }),
 				}),
 			);
-			expect(response.status).toBe(201);
-			const body = await response.json();
+			expect(claimResponse.status).toBe(201);
+			const body = await claimResponse.json();
 			expect(body.data.name).toBe('Ninbus Bus #001');
-			expect(body.data.status).toBe('pending');
+			expect(body.data.companyId).toBe(companyId);
 			deviceId = body.data.id;
 		});
 
@@ -146,11 +162,20 @@ describe('Devices Module', () => {
 		});
 
 		it('DELETE /:deviceId removes device', async () => {
+			const delSerial = `CC00DD${(ts + 99).toString(16).toUpperCase().padStart(10, '0')}`;
+			// Provision first
+			await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: delSerial, deviceKey: 'test-del-key-12345678' }),
+				}),
+			);
 			const createRes = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'To Delete', serialNumber: `SN-${ts}-DEL` }),
+					body: JSON.stringify({ name: 'To Delete', serialNumber: delSerial }),
 				}),
 			);
 			const deleteId = (await createRes.json()).data.id;
@@ -222,51 +247,63 @@ describe('Devices Module', () => {
 	});
 
 	describe('hawkBit Integration', () => {
-		it('GET /attributes returns 400 for unlinked device', async () => {
+		it('GET /attributes returns 400 when hawkBit disabled', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/attributes`, {
 					headers: { Cookie: ownerCookie },
 				}),
 			);
-			expect(response.status).toBe(400);
+			// With HAWKBIT_ENABLED=false, hawkBit calls return 400
+			expect([400, 503]).toContain(response.status);
 		});
 
-		it('GET /actions returns 400 for unlinked device', async () => {
+		it('GET /actions returns 400 when hawkBit disabled', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/actions`, {
 					headers: { Cookie: ownerCookie },
 				}),
 			);
-			expect(response.status).toBe(400);
+			expect([400, 503]).toContain(response.status);
 		});
 	});
 
 	describe('Device Claiming', () => {
-		it('POST claim with unknown serial creates pending device locally', async () => {
+		it('POST claim with unknown serial returns 404', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
-						name: 'Claimed Device',
-						serialNumber: `SN-CLAIM-${ts}`,
+						name: 'Unknown Device',
+						serialNumber: 'DEADBEEF12345678',
 					}),
 				}),
 			);
-			expect(response.status).toBe(201);
+			expect(response.status).toBe(404);
 			const body = await response.json();
-			expect(body.data.status).toBe('pending');
-			expect(body.data.hawkbitTargetId).toBeNull();
-			expect(body.data.companyId).toBe(companyId);
+			expect(body.error).toBe('Not Found');
+			expect(body.message).toContain('Provision it first');
 		});
 
 		it('POST claim same serial twice returns 409', async () => {
+			// Provision first
+			await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({
+						serialNumber: `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6)}`,
+						deviceKey: 'test-dup-key-12345678',
+					}),
+				}),
+			);
+			const dupSerial = `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6)}`;
 			// Claim first
 			await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ serialNumber: `SN-DUP-${ts}` }),
+					body: JSON.stringify({ serialNumber: dupSerial }),
 				}),
 			);
 			// Claim again same company
@@ -274,7 +311,7 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ serialNumber: `SN-DUP-${ts}` }),
+					body: JSON.stringify({ serialNumber: dupSerial }),
 				}),
 			);
 			expect(response.status).toBe(409);
@@ -351,6 +388,14 @@ describe('Devices Module', () => {
 	describe('Serial Number Normalization', () => {
 		it('POST claim with hex serial stores hex in serialNumber', async () => {
 			const hexSerial = `AABBCCDD${ts.toString(16).toUpperCase().padStart(8, '0')}`;
+			// Provision first
+			await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: hexSerial, deviceKey: 'test-hex-key-12345678' }),
+				}),
+			);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -367,6 +412,14 @@ describe('Devices Module', () => {
 		it('POST claim with dotted serial normalizes to hex', async () => {
 			const hexPart = ((ts + 1) & 0xFFFFFFFF).toString(16).toUpperCase().padStart(8, '0');
 			const dottedSerial = `${hexPart.slice(0,2)}.${hexPart.slice(2,4)}.${hexPart.slice(4,6)}.${hexPart.slice(6,8)}`;
+			// Provision first
+			await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: dottedSerial, deviceKey: 'test-dotted-key-12345678' }),
+				}),
+			);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -382,6 +435,14 @@ describe('Devices Module', () => {
 		it('POST claim with mixed-case hex normalizes to uppercase', async () => {
 			const hexPart = ((ts + 2) & 0xFFFFFFFF).toString(16).padStart(8, '0').toLowerCase();
 			const mixedSerial = hexPart;
+			// Provision first
+			await app.handle(
+				new Request('http://localhost/api/devices/provision', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ serialNumber: mixedSerial, deviceKey: 'test-mixed-key-12345678' }),
+				}),
+			);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',

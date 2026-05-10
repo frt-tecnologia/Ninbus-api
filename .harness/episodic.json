@@ -188,6 +188,13 @@
       "type": "evaluation",
       "summary": "Iteration 31: 8/8 criteria passed. Root cause found and fixed: hawkBit DDI TargetToken authentication was DISABLED (authentication.targettoken.enabled=false). This caused ALL DDI polls to return 401 regardless of correct securityToken. Fixed by: (1) enabling via hawkBit Management API PUT /rest/v1/system/configs/authentication.targettoken.enabled=true, (2) adding HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED=true to docker-compose.yml, (3) adding HAWKBIT_DDI_TARGET_TOKEN_AUTH=true to .env.example. After fix: DDI returns 200 with polling config. 139 tests pass.",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-32-1778383145182",
+      "timestamp": 1778383145182,
+      "type": "evaluation",
+      "summary": "Iteration 32: 8/8 criteria passed. Secured auto-provisioning with HAWKBIT_AUTOPROVISIONING flag (default false). Fixed 500 on GET /devices/ by removing sync calls from read operations. Added admin search endpoint and protected sync endpoint with the flag. 137 tests pass.",
+      "allTestsPassed": true
     }
   ]
 }

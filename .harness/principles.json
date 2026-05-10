@@ -271,6 +271,14 @@
       "category": "security",
       "learnedAt": "2026-05-10T01:16:05.244Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-sync-in-read-endpoints",
+      "rule": "NEVER call hawkBit sync in read endpoints (GET /devices, GET /devices/:id). Sync is a network operation that can fail (connection refused) and cause 500 errors on simple list queries. Instead, make sync opt-in via a dedicated POST /sync endpoint that the frontend calls explicitly (e.g., on dashboard refresh button).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-10T03:19:17.058Z",
+      "reinforcementCount": 1
     }
   ]
 }

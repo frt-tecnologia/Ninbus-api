@@ -91,17 +91,15 @@ export async function claimDevice(data: {
 	const serialHex = normalized?.hex || data.serialNumber;
 	const serialDisplay = normalized?.display || data.serialNumber;
 
-	// Find existing device by serial number
+	// Find existing device by serial number — MUST have been provisioned first
 	const [existing] = await db.select().from(devices).where(eq(devices.serialNumber, serialHex));
 
 	if (!existing) {
-		// Device not provisioned yet — create local entry as pending
-		const [device] = await db.insert(devices).values({
-			companyId: data.companyId, name: data.name || serialDisplay,
-			serialNumber: serialHex, serialDisplay: serialDisplay,
-			hawkbitTargetId: null, status: 'pending', createdBy: data.userId,
-		}).returning();
-		return { success: true, device, error: 'Device not yet provisioned in hawkBit. Registered locally as pending.' };
+		return {
+			success: false,
+			device: null,
+			error: `Device with serial "${data.serialNumber}" not found. Provision it first via POST /api/devices/provision`,
+		};
 	}
 
 	if (existing.companyId && existing.companyId !== data.companyId) {

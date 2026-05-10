@@ -88,6 +88,14 @@ const EnvSchema = Type.Object({
 		description: 'Skip TLS certificate verification for hawkBit',
 	}),
 
+	// ── hawkBit DDI Auto-Provisioning ──────────────────────────
+	HAWKBIT_AUTOPROVISIONING: Type.Boolean({
+		default: false,
+		description:
+			'When true, unknown devices can auto-provision on first DDI poll. ' +
+			'SET TO FALSE IN PRODUCTION — only pre-registered devices (via POST /api/devices/provision) should connect.',
+	}),
+
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
 	RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
@@ -132,6 +140,7 @@ export function validateEnv(): Env {
 			? Number(process.env['HAWKBIT_TIMEOUT_MS'])
 			: undefined,
 		HAWKBIT_SKIP_TLS: process.env['HAWKBIT_SKIP_TLS'] === 'true',
+		HAWKBIT_AUTOPROVISIONING: process.env['HAWKBIT_AUTOPROVISIONING'] === 'true',
 		ENABLE_RATE_LIMITER: process.env['ENABLE_RATE_LIMITER'] !== 'false',
 		RATE_LIMIT_WINDOW_MS: process.env['RATE_LIMIT_WINDOW_MS']
 			? Number(process.env['RATE_LIMIT_WINDOW_MS'])

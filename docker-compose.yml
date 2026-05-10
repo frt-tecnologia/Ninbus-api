@@ -112,8 +112,10 @@ services:
       HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED: ${HAWKBIT_DDI_TARGET_TOKEN_AUTH:-true}
 
       # Auto-provisioning: auto-creates target on first DDI poll.
-      # The device must still send the correct securityToken to authenticate.
-      HAWKBIT_SERVER_DDI_AUTOPROVISIONING_ENABLED: ${HAWKBIT_AUTOPROVISIONING:-true}
+      # WARNING: When true, ANY device with any token can auto-provision.
+      # Set to false in production — only pre-registered devices should connect.
+      # When false, devices MUST be provisioned via POST /api/devices/provision first.
+      HAWKBIT_SERVER_DDI_AUTOPROVISIONING_ENABLED: ${HAWKBIT_AUTOPROVISIONING:-false}
 
       # ── S3 Artifact Storage ──
       # Set HAWKBIT_S3_ENABLED=true to activate (overrides filesystem storage)

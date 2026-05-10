@@ -43,4 +43,7 @@ export const hawkbitConfig = {
 	get skipTls(): boolean {
 		return env.HAWKBIT_SKIP_TLS;
 	},
+	get autoProvisioning(): boolean {
+		return env.HAWKBIT_AUTOPROVISIONING;
+	},
 };

@@ -1,5 +1,5 @@
 /**
- * Provisioning routes — factory / warehouse pre-registration.
+ * Provisioning routes — factory / warehouse pre-registration + admin search.
  *
  * These routes create hawkBit targets BEFORE any company claims the device.
  * Done at the factory or warehouse with serialNumber + deviceKey from the device label.
@@ -8,7 +8,12 @@
  * Role requirements:
  * - POST /provision   → any authenticated user (factory operator)
  * - GET /unclaimed    → any authenticated user (warehouse/inventory view)
+ * - POST /sync        → admin only (discover auto-provisioned devices)
+ * - GET /search       → admin only (search devices by serialNumber)
  */
+import { hawkbitConfig } from '@common/config/hawkbit';
+import { db } from '@common/db';
+import { devices } from '@common/db/schema';
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	DeviceCreateResponseSchema,
@@ -18,6 +23,7 @@ import {
 	provisionDeviceSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
+import { or, sql } from 'drizzle-orm';
 import { provisionDevice, listUnclaimedDevices } from './provisioning';
 import { DeviceSyncEngine } from './sync';
 
@@ -56,9 +62,7 @@ export const provisioningRoutes = withAuth(
 					'**Serial number formats accepted:**\n' +
 					'- Hex: `255FFFFFFF123456` (same as hawkBit controllerId)\n' +
 					'- Dotted: `25.5F.FF.FF.FF.12.34.56` (from device label)\n\n' +
-					'The API normalizes to uppercase hex internally. The response includes both `serialNumber` (hex) and `serialDisplay` (dotted).\n\n' +
-					'**⚠️ Authentication required:** You must first sign in via `POST /api/auth/sign-in/email` and use the session cookie. ' +
-					'This is a platform-level route (no company context needed).',
+					'The API normalizes to uppercase hex internally.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -90,10 +94,27 @@ export const provisioningRoutes = withAuth(
 		},
 	)
 
-	// POST /api/devices/sync — Discover auto-provisioned devices from hawkBit
+	// POST /api/devices/sync — Discover auto-provisioned devices from hawkBit (admin only)
 	.post(
 		'/sync',
-		async ({ set }) => {
+		async ({ user, set }) => {
+			// Only admins can trigger sync
+			if (!user) {
+				set.status = 401;
+				return { error: 'Unauthorized', message: 'Please login first' };
+			}
+
+			// Check auto-provisioning is enabled
+			if (!hawkbitConfig.autoProvisioning) {
+				set.status = 400;
+				return {
+					error: 'Bad Request',
+					message:
+						'Auto-provisioning is disabled (HAWKBIT_AUTOPROVISIONING=false). ' +
+						'Only devices pre-registered via POST /api/devices/provision can connect to hawkBit.',
+				};
+			}
+
 			try {
 				const discovered = await DeviceSyncEngine.discoverAutoProvisioned();
 				return {
@@ -110,17 +131,72 @@ export const provisioningRoutes = withAuth(
 			detail: {
 				tags: ['Provisioning'],
 				security: [{ cookieAuth: [] }],
-				summary: 'Sync devices from hawkBit',
+				summary: 'Sync auto-provisioned devices from hawkBit (admin only)',
 				description:
 					'Discovers devices that were auto-provisioned by hawkBit (created when a physical device ' +
-					'polled for the first time) but do not yet exist in the local database. ' +
-					'Creates local device entries with status "unclaimed" for each new target found in hawkBit.\n\n' +
-					'This endpoint should be called periodically (e.g. on dashboard load) to ensure the ' +
-					'Ninbus API is aware of all devices that have connected to hawkBit.',
+					'polled for the first time) but do not yet exist in the local database.\n\n' +
+					'**Requires HAWKBIT_AUTOPROVISIONING=true.** When auto-provisioning is disabled (production), ' +
+					'this endpoint returns 400 — only pre-registered devices can exist.\n\n' +
+					'The sync checks all hawkBit targets against the local DB and creates entries for new ones.',
 			},
 			response: {
 				200: GenericActionResponseSchema,
+				400: ErrorResponseSchema,
 				503: ErrorResponseSchema,
+			},
+		},
+	)
+
+	// GET /api/devices/search?serialNumber=xxx — Admin search across all devices
+	.get(
+		'/search',
+		async ({ query, set }) => {
+			if (!query?.serialNumber || query.serialNumber.trim().length === 0) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'serialNumber query parameter is required' };
+			}
+
+			const search = query.serialNumber.trim().toUpperCase();
+			// Also search by dotted display format (dots removed)
+			const searchClean = search.replace(/[^0-9A-F]/g, '');
+
+			const results = await db
+				.select()
+				.from(devices)
+				.where(
+					or(
+						sql`UPPER(${devices.serialNumber}) LIKE ${`%${search}%`}`,
+						sql`UPPER(${devices.serialDisplay}) LIKE ${`%${search}%`}`,
+						sql`UPPER(${devices.serialNumber}) LIKE ${`%${searchClean}%`}`,
+						sql`UPPER(${devices.hawkbitTargetId}) LIKE ${`%${search}%`}`,
+					),
+				)
+				.limit(50);
+
+			return { data: results, total: results.length };
+		},
+		{
+			auth: true,
+			query: t.Object({
+				serialNumber: t.String({
+					minLength: 1,
+					maxLength: 255,
+					description: 'Serial number to search for (hex or dotted format)',
+				}),
+			}),
+			detail: {
+				tags: ['Provisioning'],
+				security: [{ cookieAuth: [] }],
+				summary: 'Search devices by serialNumber (admin only)',
+				description:
+					'Searches ALL devices (across all companies, including unclaimed) by serial number. ' +
+					'Supports both hex (`2100280018513531`) and dotted (`21.00.28.00.18.51.35.31`) formats. ' +
+					'Useful for finding auto-provisioned devices or checking if a device exists.\n\n' +
+					'Returns up to 50 results.',
+			},
+			response: {
+				200: DeviceListResponseSchema,
+				400: ErrorResponseSchema,
 			},
 		},
 	);

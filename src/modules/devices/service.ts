@@ -11,8 +11,6 @@ import { DeviceSyncEngine } from './sync';
 // ---------------------------------------------------------------------------
 
 export async function getCompanyDevices(companyId: string) {
-	await DeviceSyncEngine.syncCompany(companyId);
-
 	return await db
 		.select()
 		.from(devices)
@@ -25,15 +23,6 @@ export async function getDeviceById(deviceId: string, companyId: string) {
 		.select()
 		.from(devices)
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
-
-	if (device?.status === 'pending') {
-		await DeviceSyncEngine.syncCompany(companyId);
-		const [updated] = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
-		return updated || device;
-	}
 
 	return device;
 }

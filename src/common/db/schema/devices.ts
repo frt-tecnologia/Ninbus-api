@@ -27,8 +27,7 @@ export const devices = pgTable('devices', {
 	serialDisplay: text('serial_display'),
 	status: deviceStatusEnum('status').notNull().default('pending'),
 	lastSeenAt: timestamp('last_seen_at'),
-	createdBy: text('created_by')
-		.references(() => user.id, { onDelete: 'cascade' }),
+	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

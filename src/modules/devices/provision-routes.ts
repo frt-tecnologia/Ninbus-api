@@ -14,10 +14,12 @@ import {
 	DeviceCreateResponseSchema,
 	DeviceListResponseSchema,
 	ErrorResponseSchema,
+	GenericActionResponseSchema,
 	provisionDeviceSchema,
 } from '@modules/devices/schemas';
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { provisionDevice, listUnclaimedDevices } from './provisioning';
+import { DeviceSyncEngine } from './sync';
 
 export const provisioningRoutes = withAuth(
 	new Elysia({ prefix: '/api/devices' }),
@@ -84,6 +86,41 @@ export const provisioningRoutes = withAuth(
 			},
 			response: {
 				200: DeviceListResponseSchema,
+			},
+		},
+	)
+
+	// POST /api/devices/sync — Discover auto-provisioned devices from hawkBit
+	.post(
+		'/sync',
+		async ({ set }) => {
+			try {
+				const discovered = await DeviceSyncEngine.discoverAutoProvisioned();
+				return {
+					message: `Sync complete. ${discovered} new device(s) discovered from hawkBit.`,
+					data: { discovered },
+				};
+			} catch (error: any) {
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is not available' };
+			}
+		},
+		{
+			auth: true,
+			detail: {
+				tags: ['Provisioning'],
+				security: [{ cookieAuth: [] }],
+				summary: 'Sync devices from hawkBit',
+				description:
+					'Discovers devices that were auto-provisioned by hawkBit (created when a physical device ' +
+					'polled for the first time) but do not yet exist in the local database. ' +
+					'Creates local device entries with status "unclaimed" for each new target found in hawkBit.\n\n' +
+					'This endpoint should be called periodically (e.g. on dashboard load) to ensure the ' +
+					'Ninbus API is aware of all devices that have connected to hawkBit.',
+			},
+			response: {
+				200: GenericActionResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	);

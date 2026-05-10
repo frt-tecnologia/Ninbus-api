@@ -3,6 +3,7 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
+import { normalizeSerial } from '@common/utils/serial-number';
 import { and, eq } from 'drizzle-orm';
 
 /**
@@ -15,6 +16,67 @@ import { and, eq } from 'drizzle-orm';
  * - No check-update (hawkBit manages polling)
  */
 export const DeviceSyncEngine = {
+	/**
+	 * Discover auto-provisioned targets in hawkBit that don't exist in the local DB.
+	 * hawkBit auto-provisioning creates targets when a device polls for the first time,
+	 * but the Ninbus API doesn't know about them until this sync runs.
+	 *
+	 * Creates local device entries with status='unclaimed' for each new target found.
+	 * Returns the number of new devices discovered.
+	 */
+	async discoverAutoProvisioned(): Promise<number> {
+		if (!hawkbitConfig.enabled) return 0;
+
+		// 1. Get all targets from hawkBit
+		const hawkbitResponse = await hawkbitTargets.list({ limit: 1000 });
+		const hawkbitTargets_list = hawkbitResponse.content;
+		if (hawkbitTargets_list.length === 0) return 0;
+
+		// 2. Get all local device hawkbitTargetIds
+		const localDevices = await db.select({ hawkbitTargetId: devices.hawkbitTargetId }).from(devices);
+		const localTargetIds = new Set(localDevices.map((d) => d.hawkbitTargetId).filter(Boolean));
+
+		// 3. Find targets in hawkBit that don't exist locally
+		const newTargets = hawkbitTargets_list.filter((t) => !localTargetIds.has(t.controllerId));
+
+		if (newTargets.length === 0) return 0;
+
+		appLogger.info(`[SYNC] Discovered ${newTargets.length} auto-provisioned target(s) in hawkBit`);
+
+		// 4. Create local device entries for each new target
+		let created = 0;
+		for (const target of newTargets) {
+			const normalized = normalizeSerial(target.controllerId);
+			if (!normalized) {
+				appLogger.warn(`[SYNC] Skipping target ${target.controllerId} — not a valid hex serial`);
+				continue;
+			}
+
+			try {
+				await db.insert(devices).values({
+					companyId: null,
+					hawkbitTargetId: target.controllerId,
+					serialNumber: normalized.hex,
+					serialDisplay: normalized.display,
+					name: target.name || normalized.display,
+					status: 'unclaimed',
+					createdBy: null, // auto-provisioned
+				});
+				created++;
+				appLogger.info(`[SYNC] Created local device for auto-provisioned target ${target.controllerId}`);
+			} catch (error: any) {
+				// Race condition: might have been created by another process
+				if (error?.code === '23505') {
+					appLogger.debug(`[SYNC] Target ${target.controllerId} already exists locally`);
+				} else {
+					appLogger.error(`[SYNC] Failed to create device for ${target.controllerId}: ${error?.message}`);
+				}
+			}
+		}
+
+		return created;
+	},
+
 	async syncCompany(companyId: string) {
 		if (!hawkbitConfig.enabled) return;
 		appLogger.debug(`[SYNC] Syncing company ${companyId}`);

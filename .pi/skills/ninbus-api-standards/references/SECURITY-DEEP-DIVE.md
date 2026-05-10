@@ -17,8 +17,8 @@ Este documento complementa o SKILL.md com análises de segurança específicas d
 | Cookies | httpOnly, secure, sameSite=lax | ✅ |
 | CORS | Whitelist de origins configurável | ✅ |
 | Artifact Type | `t.Union([t.Literal(...)])` — whitelist de 3 tipos | ✅ |
-| Artifact Compatibility | Pre-flight check contra `ninbus-wifi-v3` | ✅ |
-| Artifact Generate | Raw file extension whitelist + size limit (100MB) | ✅ |
+| Serial Number | Normalização + validação de formato hex | ✅ |
+| File Upload | Extensão whitelist + size limit (100MB) | ✅ |
 
 ### 1.2 Vulnerabilidades Endereçadas
 
@@ -30,40 +30,44 @@ Este documento complementa o SKILL.md com análises de segurança específicas d
 | Security Misconfiguration | A05:2021 | Strict cookies, CORS whitelist, fail-fast env |
 | Rate Limiting | A07:2021 | LRU Cache per IP, auth-specific limits |
 | Mass Assignment | A08:2021 | Body schemas explícitos (whitelist de campos) |
-| Insecure OTA | A08:2021 | Artifact type whitelist + device_type compatibility |
-| Broken Access Control | A01:2021 | Company membership check em todas as rotas scoped |
+| Broken Access Control | A01:2021 | Company membership + super admin check |
+| Insecure OTA | A08:2021 | Artifact type whitelist + hawkBit securityToken |
 
-### 1.3 Segurança OTA — Tipos de Artefato
+### 1.3 Segurança — hawkBit TargetToken
 
-A validação de tipo de artefato é uma camada crítica de segurança:
+O DDI (Device Direct Integration) usa autenticação TargetToken:
 
-1. **Type whitelist**: Apenas 3 tipos são aceitos (`firmware-ninbus`, `firmware-controller`, `configuration-nfx`). Qualquer outro tipo → 400.
-2. **Device type compatibility**: `validateArtifactForDeployment()` verifica `device_types_compatible` inclui `ninbus-wifi-v3`.
-3. **Risk level enforcement**: `firmware-ninbus` tem risco HIGH e causa reboot. O frontend pode usar `riskLevel` para solicitar confirmação extra.
-4. **Pre-validation**: Antes de criar o deployment no Mender, o serviço valida que o artefato existe e é do tipo correto.
-5. **422 específico**: Erros claros para artifact not found / not compatible / no eligible devices.
+1. **TargetToken auth obrigatório**: hawkBit 1.0.3 vem com `authentication.targettoken.enabled=false`. **DEVE ser habilitado** via env var ou Management API.
+2. **SecurityToken único por target**: Cada dispositivo tem seu token (gravado na E2PROM). O hawkBit compara o header `Authorization: TargetToken <valor>` com o campo `securityToken` do target.
+3. **deviceKey nunca armazenado**: O Ninbus API passa o deviceKey como securityToken ao hawkBit mas NÃO armazena no DB local. Nunca é retornado em API responses.
+4. **Auto-provisioning seguro**: Mesmo com auto-provisioning habilitado, o dispositivo deve enviar o securityToken correto. hawkBit não aceita conexões anônimas.
 
-### 1.4 Segurança — Mender PAT
+### 1.4 Segurança — hawkBit Basic Auth (Management API)
 
-O PAT (Personal Access Token) do Mender é a credencial mais sensível do sistema:
+O Management API usa HTTP Basic Auth (username:password):
 
-- **Armazenamento**: Via `MENDER_PAT` env var ou secret manager. NUNCA no código.
-- **Rotação**: A cada 6-12 meses em produção.
-- **Privilégios**: O PAT tem `mender.*` (full access ao tenant). Não há granularidade por endpoint.
-- **Isolamento**: O PAT é por tenant. Cada empresa deve ter seu próprio tenant e PAT no Mender.
-- **Timeout**: Chamadas Mender têm timeout de 30s (configurável via `MENDER_TIMEOUT_MS`).
+- **Armazenamento**: Via `HAWKBIT_USERNAME` e `HAWKBIT_PASSWORD` env vars
+- **Comunicação**: Header `Authorization: Basic <base64(user:pass)>`
+- **Isolamento**: O Ninbus API é o único cliente do Management API — dispositivos nunca acessam diretamente
+- **TLS**: Em produção, hawkBit deve estar atrás de reverse proxy com TLS
 
 ### 1.5 Segurança — Company Isolation
 
 O isolamento multi-tenant funciona em duas camadas:
 
 1. **Ninbus API layer**: `isCompanyMember(companyId, userId)` verifica membership.
-2. **Mender Gateway layer**: O PAT é scoped por tenant. O Mender filtra automaticamente por `mender.tenant`.
+2. **Super admin bypass**: Emails em `SUPER_ADMIN_EMAILS` bypassam checks de company.
 
-**⚠️ Gap conhecido**: Se duas empresas compartilham o mesmo PAT/tenant, o Ninbus API layer é o único isolamento.
-**Recomendação**: Um PAT por tenant (empresa) no Mender.
+### 1.6 Segurança — Platform Routes vs Company Routes
 
-### 1.6 Pontos de Atenção
+| Tipo | Prefixo | Auth | Exemplo |
+|------|---------|------|---------|
+| Platform | `/api/devices/provision` | `auth: true` | Provisionamento (sem company) |
+| Company | `/api/companies/:companyId/devices` | `companyRole: 'operator'` | CRUD de devices |
+
+**Regra**: Rotas sem `:companyId` no path usam APENAS `auth: true`. Nunca `companyRole` — causa "Company ID is required" porque o macro procura `params.companyId`.
+
+### 1.7 Pontos de Atenção
 
 1. **Rate limiting em memória** — Não funciona em ambientes multi-instância.
    **Recomendação**: Para produção com múltiplas réplicas, usar Redis-backed rate limiter.
@@ -71,90 +75,122 @@ O isolamento multi-tenant funciona em duas camadas:
 2. **Session storage** — Better Auth usa database-backed sessions.
    **Recomendação**: Para alta escala, considerar Redis.
 
-3. **Email template injection** — Templates de email usam interpolação direta de URL.
-   **Recomendação**: Sanitizar URLs em templates.
-
-4. **Secret rotation** — `BETTER_AUTH_SECRET` e `MENDER_PAT` não têm mecanismo de rotação automática.
+3. **Secret rotation** — `BETTER_AUTH_SECRET` e hawkBit credentials não têm mecanismo de rotação automática.
    **Recomendação**: Documentar processo de rotação e usar vault.
 
-5. **Mender device decommission** — `DELETE /devices/:id` no Ninbus API remove do DB local mas não descomissiona automaticamente do Mender.
-   **Recomendação**: Implementar cascade decommission no Mender ao remover device local.
+---
+
+## 2. hawkBit DDI — Detalhes de Segurança
+
+### 2.1 Fluxo de Autenticação DDI
+
+```
+Device → GET /{tenant}/controller/v1/{controllerId}
+         Authorization: TargetToken {securityToken}
+         
+hawkBit → Verifica authentication.targettoken.enabled == true
+       → Busca target by controllerId
+       → Compara securityToken do target com header
+       → 200 se confere, 401 se não
+```
+
+### 2.2 Configurações Críticas do hawkBit
+
+| Config | Default | Obrigatório | Descrição |
+|--------|---------|-------------|-----------|
+| `authentication.targettoken.enabled` | `false` | **true** | Habilita TargetToken auth |
+| `authentication.gatewaytoken.enabled` | `false` | false | Gateway token (não usado) |
+| `hawkbit.server.ddi.autoprovisioning.enabled` | `false` | true | Auto-cria target no primeiro poll |
+
+### 2.3 Verificação via Management API
+
+```bash
+# Verificar se TargetToken auth está habilitado
+curl http://localhost:8080/rest/v1/system/configs/authentication.targettoken.enabled \
+  -H "Authorization: Basic $(echo -n admin:admin | base64)"
+
+# Verificar security token de um target
+curl http://localhost:8080/rest/v1/targets/{controllerId} \
+  -H "Authorization: Basic $(echo -n admin:admin | base64)"
+# → {"securityToken": "key-test", ...}
+```
 
 ---
 
-## 2. Headers de Segurança Recomendados
+## 3. Super Admin — Controle via Env Var
 
-Adicionar ao app via middleware ou reverse proxy:
+### 3.1 Mecanismo
 
+```typescript
+// env.ts
+SUPER_ADMIN_EMAILS: Type.Optional(Type.String())
+
+// Uso
+const superAdmins = env.SUPER_ADMIN_EMAILS?.split(',').map(e => e.trim()) ?? [];
+function isSuperAdmin(email: string): boolean {
+  return superAdmins.includes(email);
+}
 ```
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 0
-Content-Security-Policy: default-src 'none'
-Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-Referrer-Policy: no-referrer
-Permissions-Policy: camera=(), microphone=(), geolocation=()
-```
+
+### 3.2 O que o super admin pode fazer
+
+- Criar companies sem ser owner
+- Acessar qualquer company sem ser membro
+- Ver todos os devices
+- Provisionar devices
+
+### 3.3 O que o super admin NÃO pode fazer
+
+- Auto-promover (emails são fixos no env)
+- Promover outros a super admin (apenas via env var + restart)
 
 ---
 
-## 3. Logs & Auditoria
+## 4. Logs & Auditoria
 
 ### O que é logado:
 - Toda request (método, path, status, duração) via `requestLogger`
 - Erros com code e message via `onError`
-- Emails enviados/falharam
+- hawkBit API errors (status, endpoint, method, error body)
+- Provisionamento: serial normalization, target creation
 - Rate limit blocks (em dev)
-- Mender API errors (status, endpoint, method, error body)
 
 ### O que NÃO deve ser logado:
 - Passwords
-- Tokens de sessão
-- API keys (Mender PAT, Resend API key)
+- Session tokens
+- hawkBit credentials
+- deviceKey / securityToken
 - PII desnecessário
-
-### Recomendação:
-Implementar audit log para operações sensíveis registrando:
-`userId`, `companyId`, `ação` (create/update/delete), `resourceType`, `resourceId`, `timestamp`, `ip`, `artifactType` (para deployments).
-
----
-
-## 4. CI/CD Security
-
-- **Dependabot** habilitado (`.github/dependabot.yml`)
-- **CI** roda lint + test + migration (GitHub Actions)
-- **Docker** usa non-root user (`USER bun`)
-- **Secrets** via environment, não hardcoded
-- **Test env** isolado (`.env.test` com secret dedicado)
 
 ---
 
 ## 5. Threat Model — Cenários Específicos
 
-### 5.1 Unauthorized OTA Deploy
+### 5.1 Unauthorized Device Provisioning
 
-**Ameaça**: Usuário cria deployment para devices de outra empresa.
-**Mitigação**: `isCompanyMember()` + `resolveMenderDeviceIds()` filtra por `companyId`.
+**Ameaça**: Dispositivo não autorizado se provisiona no hawkBit.
+**Mitigação**: Auto-provisioning exige securityToken correto. hawkBit rejeita tokens inválidos (401).
 
-### 5.2 Malicious Artifact Type
+### 5.2 Cross-Company Device Access
 
-**Ameaça**: Atacante envia `artifactType: 'rootfs-image'` para injetar firmware arbitrário.
-**Mitigação**: `t.Union([t.Literal('firmware-ninbus'), ...])` — whitelist de 3 valores.
+**Ameaça**: Operações em devices de outra empresa.
+**Mitigação**: `checkMembership()` verifica company. `resolveTargetIds()` filtra por companyId.
 
-### 5.3 Cross-Company Device Access
+### 5.3 Token Compromise
 
-**Ameaça**: Operações Mender via device ID de outra empresa.
-**Mitigação**: Device IDs são resolvidos a partir da tabela `devices` filtrada por `companyId`.
+**Ameaça**: deviceKey/securityToken vazou.
+**Mitigação**: Re-provisionar via API com novo token. Gravar novo token na E2PROM via serial.
+**Impacto**: Apenas o device afetado.
 
-### 5.4 PAT Compromise
+### 5.4 hawkBit Management API Exposure
 
-**Ameaça**: Mender PAT vazou.
-**Mitigação**: Rotacionar PAT via `DELETE /settings/tokens/:id` + criar novo.
-**Impacto**: Acesso completo ao tenant Mender até rotação.
+**Ameaça**: Acesso não autorizado ao Management API do hawkBit.
+**Mitigação**: hawkBit não exposto publicamente — apenas Ninbus API acessa (Docker network). Basic Auth forte.
+**Recomendação**: Em produção, usar reverse proxy + TLS + IP whitelist.
 
-### 5.5 Firmware Supply Chain
+### 5.5 Malicious Firmware Upload
 
-**Ameaça**: Artefato malicioso uploaded via Mender.
-**Mitigação**: O Mender valida integridade do artefato (checksum). O dispositivo verifica hash antes de instalar.
-**Gap**: Não há assinatura digital do artefato.
+**Ameaça**: Artefato malicioso uploaded.
+**Mitigação**: hawkBit valida integridade (checksum). O dispositivo verifica hash antes de instalar.
+**Gap**: Assinatura digital do artefato.
 **Recomendação**: Implementar signing de artefatos no pipeline de build.

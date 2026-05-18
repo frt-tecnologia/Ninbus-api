@@ -195,6 +195,33 @@ export interface HawkbitActionStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Distribution Set Statistics (Deployment Progress)
+// ---------------------------------------------------------------------------
+
+/**
+ * hawkBit DS statistics response — maps action status type (UPPERCASE)
+ * to count of targets in that status.
+ *
+ * Example (live):
+ *   { "actions": { "RETRIEVED": 1, "total": 1 }, "rollouts": { "total": 0 }, "totalAutoAssignments": 0 }
+ *
+ * Action status values observed in hawkBit 1.0.3:
+ *   RUNNING, RETRIEVED, DOWNLOAD, DOWNLOADED, FINISHED,
+ *   ERROR, WARNING, CANCELED, CANCELING, SCHEDULED,
+ *   WAIT_FOR_CONFIRMATION
+ */
+export interface HawkbitDSStatistics {
+	actions: {
+		total: number;
+		[statusType: string]: number;
+	};
+	rollouts: {
+		total: number;
+	};
+	totalAutoAssignments: number;
+}
+
+// ---------------------------------------------------------------------------
 // Paginated Response & Misc
 // ---------------------------------------------------------------------------
 

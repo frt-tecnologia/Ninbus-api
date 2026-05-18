@@ -100,10 +100,13 @@ export async function hawkbitRequest<T>(options: HawkbitRequestOptions): Promise
 		return (await response.json()) as T;
 	} catch (error) {
 		if (error instanceof HawkbitApiError) throw error;
-		if ((error as Error).name === 'AbortError') {
-			throw new HawkbitApiError(408, { error: 'Request timeout' }, path);
-		}
-		throw error;
+		// Wrap ALL network errors (connection refused, DNS failure, timeout)
+		// in HawkbitApiError so route handlers can catch them consistently.
+		// Bun fetch throws TypeError with "Unable to connect" on network failures.
+		const message = error instanceof Error ? error.message : String(error);
+		const status = (error as Error).name === 'AbortError' ? 408 : 503;
+		appLogger.warn(`[HAWKBIT] Network error on ${method} ${path}: ${message}`);
+		throw new HawkbitApiError(status, { error: message }, path);
 	} finally {
 		clearTimeout(timer);
 	}

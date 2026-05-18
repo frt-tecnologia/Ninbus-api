@@ -6,6 +6,7 @@ import { hawkbitRequest } from './http';
 import type {
 	HawkbitDistributionSet,
 	HawkbitDistributionSetType,
+	HawkbitDSStatistics,
 	HawkbitPagedResponse,
 	HawkbitTarget,
 } from './types';
@@ -64,7 +65,7 @@ export const hawkbitDistributionSets = {
 		});
 	},
 
-	getStatistics(dsId: number): Promise<unknown> {
+	getStatistics(dsId: number): Promise<HawkbitDSStatistics> {
 		return hawkbitRequest({ method: 'GET', path: `/rest/v1/distributionsets/${dsId}/statistics` });
 	},
 };
@@ -82,11 +83,22 @@ export const hawkbitDistributionSetTypes = {
 		key: string;
 		name: string;
 		description?: string;
+		modules?: Array<{ id: number }>;
 	}): Promise<HawkbitDistributionSetType> {
 		return hawkbitRequest<HawkbitDistributionSetType[]>({
 			method: 'POST',
 			path: '/rest/v1/distributionsettypes',
 			body: [data],
 		}).then((arr) => arr[0]);
+	},
+
+	/** Assign a mandatory SM type to a DS type. hawkBit expects raw ID (not JSON object). */
+	assignMandatorySMType(dsTypeId: number, smTypeId: number): Promise<void> {
+		return hawkbitRequest({
+			method: 'POST',
+			path: `/rest/v1/distributionsettypes/${dsTypeId}/mandatorymoduletypes`,
+			body: smTypeId,
+			headers: { 'Content-Type': 'application/json' },
+		});
 	},
 };

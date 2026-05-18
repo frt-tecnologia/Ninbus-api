@@ -1,151 +1,272 @@
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
-import { devices } from '@common/db/schema';
+import { devices, session, companyMembers } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { normalizeSerial } from '@common/utils/serial-number';
-import { and, eq } from 'drizzle-orm';
+import { sseEmitter } from '@common/sse';
+import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
+import {
+	type SyncState,
+	batchUpdateDevicesFromTargets,
+	extractTargetData,
+	fetchAllHawkBitTargets,
+	fetchModifiedTargets,
+	fetchTargetsByIds,
+	syncCompanyOnDemand,
+	syncNewTargets,
+	syncPendingDevices,
+	syncSingleDeviceSwr,
+} from './sync-helpers';
 
-/**
- * Sync Engine for hawkBit ↔ Ninbus.
- *
- * hawkBit simplifies the Mender model:
- * - No approval flow (targets created directly)
- * - No separate inventory API (attributes on target)
- * - No separate connection API (pollStatus on target)
- * - No check-update (hawkBit manages polling)
- */
-export const DeviceSyncEngine = {
-	/**
-	 * Discover auto-provisioned targets in hawkBit that don't exist in the local DB.
-	 * hawkBit auto-provisioning creates targets when a device polls for the first time,
-	 * but the Ninbus API doesn't know about them until this sync runs.
-	 *
-	 * Creates local device entries with status='unclaimed' for each new target found.
-	 * Returns the number of new devices discovered.
-	 */
-	async discoverAutoProvisioned(): Promise<number> {
-		if (!hawkbitConfig.enabled) return 0;
+/** Sync Engine for hawkBit ↔ Ninbus — 3 modes + SSE push. */
 
-		// 1. Get all targets from hawkBit
-		const hawkbitResponse = await hawkbitTargets.list({ limit: 1000 });
-		const hawkbitTargets_list = hawkbitResponse.content;
-		if (hawkbitTargets_list.length === 0) return 0;
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
-		// 2. Get all local device hawkbitTargetIds
-		const localDevices = await db.select({ hawkbitTargetId: devices.hawkbitTargetId }).from(devices);
-		const localTargetIds = new Set(localDevices.map((d) => d.hawkbitTargetId).filter(Boolean));
+const state: SyncState = {
+	lastFullSyncAt: null,
+	isRunning: false,
+	totalSynced: 0,
+	lastDurationMs: 0,
+	errors: 0,
+	mode: hawkbitConfig.syncMode,
+	lastIncrementalTimestamp: null,
+};
 
-		// 3. Find targets in hawkBit that don't exist locally
-		const newTargets = hawkbitTargets_list.filter((t) => !localTargetIds.has(t.controllerId));
+let syncTimer: ReturnType<typeof setInterval> | null = null;
 
-		if (newTargets.length === 0) return 0;
+// ---------------------------------------------------------------------------
+// Active company detection (hybrid mode)
+// ---------------------------------------------------------------------------
 
-		appLogger.info(`[SYNC] Discovered ${newTargets.length} auto-provisioned target(s) in hawkBit`);
+/** Find company IDs with active user sessions within the configured window. */
+async function getActiveCompanyIds(): Promise<Set<string>> {
+	const cutoff = new Date(Date.now() - hawkbitConfig.syncActiveWindowSec * 1000);
 
-		// 4. Create local device entries for each new target
-		let created = 0;
-		for (const target of newTargets) {
-			const normalized = normalizeSerial(target.controllerId);
-			if (!normalized) {
-				appLogger.warn(`[SYNC] Skipping target ${target.controllerId} — not a valid hex serial`);
-				continue;
-			}
+	try {
+		const rows = await db
+			.selectDistinct({ companyId: companyMembers.companyId })
+			.from(session)
+			.innerJoin(companyMembers, eq(session.userId, companyMembers.userId))
+			.where(gt(session.updatedAt, cutoff));
 
-			try {
-				await db.insert(devices).values({
-					companyId: null,
-					hawkbitTargetId: target.controllerId,
-					serialNumber: normalized.hex,
-					serialDisplay: normalized.display,
-					name: target.name || normalized.display,
-					status: 'unclaimed',
-					createdBy: null, // auto-provisioned
-				});
-				created++;
-				appLogger.info(`[SYNC] Created local device for auto-provisioned target ${target.controllerId}`);
-			} catch (error: any) {
-				// Race condition: might have been created by another process
-				if (error?.code === '23505') {
-					appLogger.debug(`[SYNC] Target ${target.controllerId} already exists locally`);
-				} else {
-					appLogger.error(`[SYNC] Failed to create device for ${target.controllerId}: ${error?.message}`);
+		return new Set(rows.map((r) => r.companyId).filter(Boolean));
+	} catch {
+		return new Set();
+	}
+}
+
+/** Get hawkbit target IDs for a set of companies (with companyId field). */
+async function getTargetIdsForCompanies(companyIds: Set<string>) {
+	if (companyIds.size === 0) return [];
+	return db
+		.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId, companyId: devices.companyId })
+		.from(devices)
+		.where(
+			and(
+				inArray(devices.companyId, [...companyIds]),
+				eq(devices.status, 'accepted'),
+				isNotNull(devices.hawkbitTargetId),
+			),
+		);
+}
+
+// ---------------------------------------------------------------------------
+// SSE emission helpers
+// ---------------------------------------------------------------------------
+
+/** Emit SSE events for each company with device updates. */
+function emitSseBatchUpdates(
+	companyUpdates: Map<string, number>,
+	changedDevices?: { deviceId: string; companyId: string; connectionStatus: string; hawkbitUpdateStatus: string; lastPollAt: Date | null; ipAddress: string | null }[],
+): void {
+	for (const [companyId, count] of companyUpdates) {
+		if (changedDevices) {
+			for (const d of changedDevices) {
+				if (d.companyId === companyId) {
+					sseEmitter.emit(companyId, 'device.status', {
+						deviceId: d.deviceId,
+						connectionStatus: d.connectionStatus,
+						hawkbitUpdateStatus: d.hawkbitUpdateStatus,
+						lastPollAt: d.lastPollAt?.toISOString() ?? null,
+						ipAddress: d.ipAddress,
+					});
 				}
 			}
 		}
+		sseEmitter.emit(companyId, 'devices.batch', { count });
+	}
+}
 
-		return created;
+// ---------------------------------------------------------------------------
+// Sync Strategies
+// ---------------------------------------------------------------------------
+
+/** Periodic: sync ALL targets (legacy behavior). */
+async function syncPeriodic() {
+	const targetMap = await fetchAllHawkBitTargets();
+	await syncNewTargets(targetMap);
+
+	// Fetch with companyId for SSE
+	const allAccepted = await db
+		.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId, companyId: devices.companyId })
+		.from(devices)
+		.where(eq(devices.status, 'accepted'));
+
+	const withTargetId = allAccepted.filter(
+		(d): d is { id: string; hawkbitTargetId: string; companyId: string | null } =>
+			d.hawkbitTargetId !== null,
+	);
+	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(withTargetId, targetMap);
+	await syncPendingDevices(targetMap);
+
+	// SSE: push updates to connected clients
+	emitSseBatchUpdates(companyUpdates, changedDevices);
+
+	let total = 0;
+	for (const count of companyUpdates.values()) total += count;
+	state.totalSynced = total;
+}
+
+/** Hybrid: sync ONLY targets belonging to active companies + incremental. */
+async function syncHybrid() {
+	const activeCompanyIds = await getActiveCompanyIds();
+
+	if (activeCompanyIds.size === 0) {
+		appLogger.debug('[SYNC] Hybrid: no active companies — skipping');
+		return;
+	}
+
+	const companyDevices = await getTargetIdsForCompanies(activeCompanyIds);
+	if (companyDevices.length === 0) return;
+
+	const controllerIds = companyDevices
+		.map((d) => d.hawkbitTargetId)
+		.filter((id): id is string => id !== null);
+
+	let targetMap: Map<string, any>;
+
+	if (state.lastIncrementalTimestamp) {
+		targetMap = await fetchModifiedTargets(state.lastIncrementalTimestamp);
+		const companyMap = await fetchTargetsByIds(controllerIds);
+		for (const [id, target] of companyMap) {
+			if (!targetMap.has(id)) targetMap.set(id, target);
+		}
+	} else {
+		targetMap = await fetchTargetsByIds(controllerIds);
+	}
+
+	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(companyDevices, targetMap);
+
+	// SSE: push updates to connected clients
+	emitSseBatchUpdates(companyUpdates, changedDevices);
+
+	state.lastIncrementalTimestamp = Date.now();
+
+	let total = 0;
+	for (const count of companyUpdates.values()) total += count;
+	state.totalSynced = total;
+
+	if (total > 0) {
+		appLogger.info(
+			`[SYNC] Hybrid: ${total} devices updated for ${activeCompanyIds.size} companies`,
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export const DeviceSyncEngine = {
+	/** Start sync engine based on HAWKBIT_SYNC_MODE. Called at app startup. */
+	startBackgroundSync() {
+		if (!hawkbitConfig.enabled) {
+			appLogger.info('[SYNC] hawkBit disabled — sync not started');
+			return;
+		}
+
+		const mode = hawkbitConfig.syncMode;
+		const intervalSec = hawkbitConfig.syncIntervalSec;
+
+		appLogger.info(
+			`[SYNC] Mode: ${mode}` +
+			(mode !== 'on_demand' ? `, interval: ${intervalSec}s` : ', no background') +
+			(mode === 'hybrid' ? `, active window: ${hawkbitConfig.syncActiveWindowSec}s` : ''),
+		);
+
+		// Start SSE heartbeat
+		sseEmitter.startHeartbeat();
+
+		if (mode === 'on_demand' || intervalSec <= 0) return;
+
+		setTimeout(() => this.runSyncCycle(), 5000);
+
+		syncTimer = setInterval(() => {
+			this.runSyncCycle().catch((err) => {
+				appLogger.error(`[SYNC] Error: ${err?.message}`);
+				state.errors++;
+			});
+		}, intervalSec * 1000);
 	},
 
-	async syncCompany(companyId: string) {
-		if (!hawkbitConfig.enabled) return;
-		appLogger.debug(`[SYNC] Syncing company ${companyId}`);
-		await this.syncPendingDevices(companyId);
-		await this.syncAcceptedStatus(companyId);
+	stopBackgroundSync() {
+		if (syncTimer) {
+			clearInterval(syncTimer);
+			syncTimer = null;
+			appLogger.info('[SYNC] Background sync stopped');
+		}
+		sseEmitter.stopHeartbeat();
 	},
 
-	/** Match local pending devices to hawkBit targets by serial/name. */
-	async syncPendingDevices(companyId: string) {
-		const localPending = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.companyId, companyId), eq(devices.status, 'pending')));
+	getState(): SyncState {
+		return { ...state };
+	},
 
-		if (localPending.length === 0) return;
+	/** Main sync cycle — dispatches to periodic or hybrid strategy. */
+	async runSyncCycle() {
+		if (state.isRunning) return;
+		state.isRunning = true;
+		const startTime = Date.now();
 
-		const hawkbitResponse = await hawkbitTargets.list({ limit: 1000 });
-		if (hawkbitResponse.content.length === 0) return;
-
-		for (const local of localPending) {
-			const match = local.serialNumber
-				? hawkbitResponse.content.find(
-						(t) =>
-							t.controllerId === local.serialNumber ||
-							t.name === local.serialNumber ||
-							t.controllerId === local.name,
-					)
-				: null;
-
-			if (match) {
-				await db
-					.update(devices)
-					.set({
-						hawkbitTargetId: match.controllerId,
-						status: 'accepted',
-						updatedAt: new Date(),
-					})
-					.where(eq(devices.id, local.id));
-
-				appLogger.info(`[SYNC] Linked ${local.name} → hawkBit ${match.controllerId}`);
+		try {
+			switch (hawkbitConfig.syncMode) {
+				case 'periodic': await syncPeriodic(); break;
+				case 'hybrid': await syncHybrid(); break;
 			}
+			state.lastFullSyncAt = new Date();
+			state.lastDurationMs = Date.now() - startTime;
+		} catch (error: any) {
+			state.errors++;
+			appLogger.error(`[SYNC] Cycle failed: ${error?.message}`);
+		} finally {
+			state.isRunning = false;
 		}
 	},
 
-	/** Update lastSeenAt from hawkBit pollStatus for accepted devices. */
-	async syncAcceptedStatus(companyId: string) {
-		const localAccepted = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.companyId, companyId), eq(devices.status, 'accepted')));
+	/** Discover auto-provisioned targets. Public API for admin endpoint. */
+	async discoverAutoProvisioned(): Promise<number> {
+		if (!hawkbitConfig.enabled) return 0;
+		const targetMap = await fetchAllHawkBitTargets();
+		await syncNewTargets(targetMap);
+		const localDevices = await db.select({ hawkbitTargetId: devices.hawkbitTargetId }).from(devices);
+		return localDevices.length;
+	},
 
-		if (localAccepted.length === 0) return;
+	/** Legacy — kept for backward compatibility. */
+	async syncCompany(_companyId: string) { /* no-op */ },
 
-		for (const local of localAccepted) {
-			if (!local.hawkbitTargetId) continue;
-			try {
-				const target = await hawkbitTargets.get(local.hawkbitTargetId);
-				const lastSeen = target.pollStatus?.lastRequestAt
-					? new Date(target.pollStatus.lastRequestAt)
-					: local.lastSeenAt;
+	/** Single-device stale-while-revalidate (used by all modes). */
+	async syncSingleDevice(targetId: string): Promise<{
+		updateStatus: string; connectionStatus: string; lastSeen: string | null; ipAddress: string | null;
+	} | null> {
+		return syncSingleDeviceSwr(targetId);
+	},
 
-				await db
-					.update(devices)
-					.set({ lastSeenAt: lastSeen, updatedAt: new Date() })
-					.where(eq(devices.id, local.id));
-			} catch {
-				appLogger.debug(`[SYNC] Failed for ${local.name}`);
-			}
-		}
+	/** Company-scoped on-demand sync (fire-and-forget on GET /devices). */
+	async syncCompanyDevices(companyId: string): Promise<number> {
+		return syncCompanyOnDemand(companyId);
 	},
 
 	/** Delete a target from hawkBit. */

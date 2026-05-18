@@ -9,7 +9,7 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { normalizeSerial, isValidSerialLength } from '@common/utils/serial-number';
+import { normalizeSerial, isNinbusSerial } from '@common/utils/serial-number';
 import { and, eq, isNull } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
@@ -25,10 +25,10 @@ export async function provisionDevice(data: {
 	// Normalize serial number: dotted/hex → canonical hex + display
 	const normalized = normalizeSerial(data.serialNumber);
 	if (!normalized) {
-		return { success: false, device: null, error: 'Invalid serial number format. Expected hex string (e.g. 255FFFFFFF123456) or dotted format (e.g. 25.5F.FF.FFF.FFFFF.F)' };
+		return { success: false, device: null, error: 'Invalid serial number format. Expected 16-char uppercase hex (e.g. 255FFFFFFFFFFFF) or dotted byte pairs (e.g. 25.5F.FF.FF.FF.FF.FF.FF)' };
 	}
-	if (!isValidSerialLength(normalized.hex)) {
-		return { success: false, device: null, error: `Serial number must be 4-32 hex chars (2-16 bytes). Got ${normalized.hex.length} chars.` };
+	if (!isNinbusSerial(normalized.hex)) {
+		return { success: false, device: null, error: `Serial number must be exactly 16 hex chars (8 bytes). Got ${normalized.hex.length} chars: "${normalized.hex}". Ninbus serials are always 8 bytes from EEPROM or STM32 UID fallback.` };
 	}
 
 	const serialHex = normalized.hex;

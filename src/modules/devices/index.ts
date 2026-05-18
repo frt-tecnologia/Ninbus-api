@@ -13,6 +13,7 @@ import {
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
 import { loadDevice } from './auth';
+import { DeviceSyncEngine } from './sync';
 import * as service from './service';
 
 /** Params with companyId only */
@@ -26,6 +27,10 @@ const deviceParams = t.Object({
 /**
  * Devices Module — Ninbus device management with hawkBit integration.
  *
+ * Architecture: Background sync worker keeps local DB fresh with hawkBit data.
+ * API routes ONLY read from local DB — zero hawkBit calls on list/detail.
+ * Single-device detail uses stale-while-revalidate if data is old.
+ *
  * Role requirements:
  * - GET /              → viewer (list devices)
  * - POST /             → operator (register/claim device)
@@ -35,10 +40,15 @@ const deviceParams = t.Object({
  * - PUT /:deviceId/link → operator (link to hawkBit)
  */
 export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId/devices' }))
-	// GET / — List company devices
+	// GET / — List company devices (reads from local DB, synced by background worker)
 	.get(
 		'/',
 		async ({ params }) => {
+			// Trigger company-scoped sync in hybrid/on_demand modes (stale-while-revalidate).
+			// The sync is fire-and-forget — the current request returns local DB data.
+			// Next request will have fresh data.
+			DeviceSyncEngine.syncCompanyDevices(params.companyId).catch(() => {});
+
 			const deviceList = await service.getCompanyDevices(params.companyId);
 			return { data: deviceList, total: deviceList.length };
 		},
@@ -79,6 +89,16 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				}
 			}
 			set.status = 201;
+
+			// SSE: notify connected clients that device was claimed
+			try {
+				const { sseEmitter } = await import('@common/sse');
+				sseEmitter.emit(params.companyId, 'device.claimed', {
+					deviceId: result.device?.id,
+					action: 'claimed',
+				});
+			} catch { /* SSE emission failure is non-critical */ }
+
 			return {
 				message: result.error || 'Device claimed successfully',
 				data: result.device,
@@ -105,7 +125,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 	)
 
-	// GET /:deviceId — Get device details
+	// GET /:deviceId — Get device details (stale-while-revalidate from local DB)
 	.get(
 		'/:deviceId',
 		async ({ params, set }) => {
@@ -114,15 +134,9 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				set.status = result.status;
 				return result.body;
 			}
-			let hawkbitInfo = null;
-			if (result.device.hawkbitTargetId) {
-				try {
-					hawkbitInfo = await service.syncDeviceStatusFromHawkbit(result.device.hawkbitTargetId);
-				} catch {
-					/* hawkBit unavailable */
-				}
-			}
-			return { data: result.device, hawkbit: hawkbitInfo };
+			// Return device from local DB immediately
+			// Background worker keeps data fresh. No on-request hawkBit call.
+			return { data: result.device };
 		},
 		{
 			auth: true,
@@ -172,6 +186,16 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 				return result.body;
 			}
 			await service.deleteDevice(params.deviceId, params.companyId);
+
+			// SSE: notify connected clients that device was unclaimed
+			try {
+				const { sseEmitter } = await import('@common/sse');
+				sseEmitter.emit(params.companyId, 'device.unclaimed', {
+					deviceId: params.deviceId,
+					action: 'unclaimed',
+				});
+			} catch { /* SSE emission failure is non-critical */ }
+
 			return { message: 'Device removed successfully' };
 		},
 		{
@@ -181,7 +205,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			detail: {
 				tags: ['Devices'],
 				summary: 'Remove device',
-				description: 'Removes a device from the company. Requires admin role or above.',
+				description: 'Removes (unclaims) a device from the company. The device stays provisioned in hawkBit and reverts to "unclaimed" status, available for re-claim by any company. To permanently remove from hawkBit, use DELETE /api/devices/deprovision/:serialNumber (super admin only).',
 			},
 			response: {
 				200: DeviceDeleteResponseSchema,

@@ -14,25 +14,27 @@ export const provisionDeviceSchema = t.Object(
 			minLength: 1,
 			maxLength: 255,
 			description:
-				'Device serial number. Accepts hex format (255FFFFFFF123456) or dotted display format (25.5F.FF.FFF.FFFFF.F). ' +
-				'Stored as uppercase hex — same format used as hawkBit controllerId.',
+				'Device serial number. Accepts hex format (255FFFFFFFFFFFF) or dotted display format (25.5F.FF.FF.FF.FF.FF.FF). ' +
+				'Must be exactly 16 hex chars (8 bytes from EEPROM). Stored as uppercase hex — same as hawkBit controllerId. ' +
+				'If all EEPROM bytes are 0xFF, firmware falls back to STM32 UID (also 16 hex chars).',
 		}),
 		deviceKey: t.String({
 			minLength: 8,
 			maxLength: 256,
 			description:
-				'Factory security token. Will be set as the hawkBit target securityToken so the device can authenticate via DDI.',
+				'Factory security token (TargetToken). Set as the hawkBit target securityToken so the device ' +
+				'can authenticate via DDI header: Authorization: TargetToken {deviceKey}.',
 		}),
 		name: t.Optional(
 			t.String({
 				maxLength: 255,
-				description: 'Optional display name. Defaults to dotted serial format if not provided.',
+				description: 'Optional display name. Defaults to dotted serial format (e.g. 25.5F.FF.FF.FF.FF.FF.FF) if not provided.',
 			}),
 		),
 	},
 	{
 		default: {
-			serialNumber: '255FFFFFFF123456',
+			serialNumber: '255FFFFFFFFFFFF',
 			deviceKey: 'factory-device-key-from-label',
 			name: 'Ninbus-veiculo-06',
 		},
@@ -46,11 +48,11 @@ export const registerDeviceSchema = t.Object(
 			minLength: 1,
 			maxLength: 255,
 			description:
-				'Device serial number. Accepts hex (255FFFFFFF123456) or dotted format (25.5F.FF.FFF.FFFFF.F). ' +
+				'Device serial number. Accepts hex (255FFFFFFFFFFFF) or dotted format (25.5F.FF.FF.FF.FF.FF.FF). ' +
 				'Used to match with a pre-provisioned device in hawkBit.',
 		}),
 	},
-	{ default: { serialNumber: '255FFFFFFF123456' } },
+	{ default: { serialNumber: '255FFFFFFFFFFFF' } },
 );
 
 export const linkDeviceSchema = t.Object(
@@ -74,7 +76,7 @@ export const updateDeviceSchema = t.Object(
 		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
 		serialNumber: t.Optional(t.String({ maxLength: 255 })),
 	},
-	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '255FFFFFFF123456' } },
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '255FFFFFFFFFFFF' } },
 );
 
 export const assignCategoriesSchema = t.Object(
@@ -91,6 +93,8 @@ export const selectDeviceSchema = createSelectSchema(devices, {
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
 	lastSeenAt: nullableDateTimeString,
+	lastPollAt: nullableDateTimeString,
+	nextExpectedPollAt: nullableDateTimeString,
 });
 
 export const LinkDeviceResponseSchema = t.Object({

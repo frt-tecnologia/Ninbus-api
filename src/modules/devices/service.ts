@@ -3,8 +3,7 @@ import { categories, deviceCategoryAssignments, devices } from '@common/db/schem
 import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { provisionDevice, listUnclaimedDevices, claimDevice } from './provisioning';
-import { DeviceSyncEngine } from './sync';
+import { claimDevice } from './provisioning';
 
 // ---------------------------------------------------------------------------
 // Device CRUD (local DB)
@@ -54,18 +53,30 @@ export async function updateDevice(
 	return device;
 }
 
+/**
+ * Remove device from company (unclaim).
+ * The device stays provisioned in hawkBit — it reverts to "unclaimed" status.
+ * Only a super admin can permanently deprovision via DELETE /api/devices/deprovision/:serialNumber.
+ */
 export async function deleteDevice(deviceId: string, companyId: string) {
 	const [device] = await db
 		.select()
 		.from(devices)
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
 
-	if (device?.hawkbitTargetId) {
-		appLogger.info(`[DEVICES] Removing device ${deviceId}. Triggering hawkBit target deletion...`);
-		await DeviceSyncEngine.deleteTarget(device.hawkbitTargetId);
-	}
+	if (!device) return;
 
-	await db.delete(devices).where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
+	// Unclaim: set company to null, revert to unclaimed status
+	// Device stays in local DB and hawkBit — can be re-claimed by another company
+	await db
+		.update(devices)
+		.set({ companyId: null, status: 'unclaimed', updatedAt: new Date() })
+		.where(eq(devices.id, deviceId));
+
+	appLogger.info(
+		`[DEVICES] Device ${deviceId} (${device.serialNumber}) unclaimed from company ${companyId}. ` +
+		`hawkBit target ${device.hawkbitTargetId ?? 'none'} preserved.`,
+	);
 }
 
 export async function updateDeviceStatus(deviceId: string, status: string) {

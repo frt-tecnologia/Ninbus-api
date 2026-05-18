@@ -1,36 +1,28 @@
 /**
- * Provisioning routes — factory / warehouse pre-registration + admin search.
+ * Provisioning routes — factory/warehouse pre-registration + admin management.
  *
- * These routes create hawkBit targets BEFORE any company claims the device.
- * Done at the factory or warehouse with serialNumber + deviceKey from the device label.
- * The device starts polling hawkBit immediately but has no company assignment.
- *
- * Role requirements:
- * - POST /provision   → any authenticated user (factory operator)
- * - GET /unclaimed    → any authenticated user (warehouse/inventory view)
- * - POST /sync        → admin only (discover auto-provisioned devices)
- * - GET /search       → admin only (search devices by serialNumber)
- */
-import { hawkbitConfig } from '@common/config/hawkbit';
+ * - POST /provision     → super admin only
+ * - GET /unclaimed      → super admin only
+ * - POST /sync          → super admin only
+ * - GET /search         → super admin only
+ * - DELETE /deprovision → super admin only
+ */import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { withAuth } from '@common/middleware/auth-guard';
-import {
-	DeviceCreateResponseSchema,
-	DeviceListResponseSchema,
-	ErrorResponseSchema,
-	GenericActionResponseSchema,
-	provisionDeviceSchema,
-} from '@modules/devices/schemas';
+import { DeviceCreateResponseSchema, DeviceListResponseSchema, ErrorResponseSchema, GenericActionResponseSchema, provisionDeviceSchema } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { or, sql } from 'drizzle-orm';
+import { or, sql, eq } from 'drizzle-orm';
 import { provisionDevice, listUnclaimedDevices } from './provisioning';
 import { DeviceSyncEngine } from './sync';
+import { normalizeSerial } from '@common/utils/serial-number';
+import { appLogger } from '@common/logger';
+import { hawkbitTargets } from '@common/hawkbit/client';
 
 export const provisioningRoutes = withAuth(
 	new Elysia({ prefix: '/api/devices' }),
 )
-	// POST /api/devices/provision — Pre-register device (factory/warehouse)
+	// POST /api/devices/provision — Pre-register device (super admin only)
 	.post(
 		'/provision',
 		async ({ body, user, set }) => {
@@ -51,28 +43,24 @@ export const provisioningRoutes = withAuth(
 		},
 		{
 			auth: true,
+			superAdmin: true,
 			body: provisionDeviceSchema,
 			detail: {
 				tags: ['Provisioning'],
-				summary: 'Pre-register device in hawkBit (factory/warehouse)',
+				summary: 'Pre-register device in hawkBit (super admin only)',
 				security: [{ cookieAuth: [] }],
-				description:
-					'Creates a hawkBit target with the factory deviceKey as securityToken and registers the device locally with status "unclaimed". ' +
-					'The device can start polling hawkBit immediately. No company is assigned until a user claims it via POST /api/companies/:id/devices.\n\n' +
-					'**Serial number formats accepted:**\n' +
-					'- Hex: `255FFFFFFF123456` (same as hawkBit controllerId)\n' +
-					'- Dotted: `25.5F.FF.FF.FF.12.34.56` (from device label)\n\n' +
-					'The API normalizes to uppercase hex internally.',
+				description: 'Creates hawkBit target + local device as "unclaimed". Serial formats: hex or dotted (e.g. 25.5F.FF.FF.FF.FF.FF.FF). API normalizes to uppercase hex. Super admin only.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
 				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
 				409: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// GET /api/devices/unclaimed — List devices without a company
+	// GET /api/devices/unclaimed — List devices without a company (super admin only)
 	.get(
 		'/unclaimed',
 		async () => {
@@ -81,30 +69,24 @@ export const provisioningRoutes = withAuth(
 		},
 		{
 			auth: true,
+			superAdmin: true,
 			detail: {
 				tags: ['Provisioning'],
 				security: [{ cookieAuth: [] }],
-				summary: 'List unclaimed devices (no company)',
-				description:
-					'Returns all devices that have been provisioned but not yet claimed by any company.',
+				summary: 'List unclaimed devices (super admin only)',
+				description: 'All provisioned devices not yet claimed by any company. Super admin only.',
 			},
 			response: {
 				200: DeviceListResponseSchema,
+				403: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// POST /api/devices/sync — Discover auto-provisioned devices from hawkBit (admin only)
+	// POST /api/devices/sync — Discover auto-provisioned devices (super admin only)
 	.post(
 		'/sync',
-		async ({ user, set }) => {
-			// Only admins can trigger sync
-			if (!user) {
-				set.status = 401;
-				return { error: 'Unauthorized', message: 'Please login first' };
-			}
-
-			// Check auto-provisioning is enabled
+		async ({ set }) => {
 			if (!hawkbitConfig.autoProvisioning) {
 				set.status = 400;
 				return {
@@ -128,26 +110,25 @@ export const provisioningRoutes = withAuth(
 		},
 		{
 			auth: true,
+			superAdmin: true,
 			detail: {
 				tags: ['Provisioning'],
 				security: [{ cookieAuth: [] }],
-				summary: 'Sync auto-provisioned devices from hawkBit (admin only)',
+				summary: 'Sync auto-provisioned devices from hawkBit (super admin only)',
 				description:
-					'Discovers devices that were auto-provisioned by hawkBit (created when a physical device ' +
-					'polled for the first time) but do not yet exist in the local database.\n\n' +
-					'**Requires HAWKBIT_AUTOPROVISIONING=true.** When auto-provisioning is disabled (production), ' +
-					'this endpoint returns 400 — only pre-registered devices can exist.\n\n' +
-					'The sync checks all hawkBit targets against the local DB and creates entries for new ones.',
+					'Discovers auto-provisioned hawkBit targets not yet in local DB. ' +
+					'Requires HAWKBIT_AUTOPROVISIONING=true. Super admin only.',
 			},
 			response: {
 				200: GenericActionResponseSchema,
 				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// GET /api/devices/search?serialNumber=xxx — Admin search across all devices
+	// GET /api/devices/search?serialNumber=xxx — Super admin search
 	.get(
 		'/search',
 		async ({ query, set }) => {
@@ -157,7 +138,6 @@ export const provisioningRoutes = withAuth(
 			}
 
 			const search = query.serialNumber.trim().toUpperCase();
-			// Also search by dotted display format (dots removed)
 			const searchClean = search.replace(/[^0-9A-F]/g, '');
 
 			const results = await db
@@ -177,6 +157,7 @@ export const provisioningRoutes = withAuth(
 		},
 		{
 			auth: true,
+			superAdmin: true,
 			query: t.Object({
 				serialNumber: t.String({
 					minLength: 1,
@@ -187,16 +168,82 @@ export const provisioningRoutes = withAuth(
 			detail: {
 				tags: ['Provisioning'],
 				security: [{ cookieAuth: [] }],
-				summary: 'Search devices by serialNumber (admin only)',
+				summary: 'Search devices by serialNumber (super admin only)',
 				description:
-					'Searches ALL devices (across all companies, including unclaimed) by serial number. ' +
-					'Supports both hex (`2100280018513531`) and dotted (`21.00.28.00.18.51.35.31`) formats. ' +
-					'Useful for finding auto-provisioned devices or checking if a device exists.\n\n' +
-					'Returns up to 50 results.',
+					'Search ALL devices (all companies + unclaimed) by serial number. ' +
+					'Supports hex and dotted formats. Super admin only. Returns up to 50 results.',
 			},
 			response: {
 				200: DeviceListResponseSchema,
 				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+			},
+		},
+	)
+
+	// DELETE /api/devices/deprovision/:serialNumber — Remove from hawkBit (super admin only)
+	.delete(
+		'/deprovision/:serialNumber',
+		async ({ params, set }) => {
+			if (!hawkbitConfig.enabled) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'hawkBit integration is disabled' };
+			}
+
+			const normalized = normalizeSerial(params.serialNumber);
+			if (!normalized) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'Invalid serial number format' };
+			}
+
+			const serialHex = normalized.hex;
+
+			// Delete from hawkBit
+			try {
+				await hawkbitTargets.delete(serialHex);
+			} catch {
+				appLogger.debug(`[DEPROVISION] hawkBit target ${serialHex} not found or already deleted`);
+			}
+
+			// Delete from local DB
+			const [deleted] = await db
+				.delete(devices)
+				.where(eq(devices.serialNumber, serialHex))
+				.returning();
+
+			appLogger.info(
+				`[DEPROVISION] Device ${serialHex} removed from hawkBit and local DB. ` +
+				`${deleted ? 'Local record deleted.' : 'No local record found.'}`,
+			);
+
+			return {
+				message: `Device ${serialHex} deprovisioned successfully`,
+				data: { serialNumber: serialHex, localDeleted: !!deleted },
+			};
+		},
+		{
+			auth: true,
+			superAdmin: true,
+			params: t.Object({
+				serialNumber: t.String({
+					minLength: 1,
+					maxLength: 255,
+					description: 'Device serial number (hex or dotted format)',
+				}),
+			}),
+			detail: {
+				tags: ['Provisioning'],
+				security: [{ cookieAuth: [] }],
+				summary: 'Deprovision device from hawkBit (super admin only)',
+				description:
+					'Permanently removes device from hawkBit + local DB. The ONLY way to delete a hawkBit target. ' +
+					'Removing from a company (DELETE /companies/:id/devices/:deviceId) only unclaims — target preserved. ' +
+					'Super admin only. Deprovisioned devices need re-provisioning via POST /devices/provision.',
+			},
+			response: {
+				200: GenericActionResponseSchema,
+				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
 			},
 		},
 	);

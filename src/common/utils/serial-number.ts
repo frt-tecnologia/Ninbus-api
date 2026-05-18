@@ -3,23 +3,35 @@
  *
  * The device serial number exists in 3 representations:
  *
- * ┌────────────────────────┬──────────────────────────────────────────────────┐
- * │ Format                 │ Example                                          │
- * ├────────────────────────┼──────────────────────────────────────────────────┤
- * │ Raw bytes (E2PROM)     │ [0x25, 0x5F, 0xFF, 0xFF, 0xFF, 0x12, 0x34, 0x56] │
- * │ Hex string (hawkBit)   │ 255FFFFFFF123456                                 │
- * │ Display (human-readable)│ 25.5F.FF.FFF.FFFFF.F                            │
- * └────────────────────────┴──────────────────────────────────────────────────┘
+ * ┌─────────────────────────┬──────────────────────────────────────────────────┐
+ * │ Format                  │ Example                                          │
+ * ├─────────────────────────┼──────────────────────────────────────────────────┤
+ * │ Raw bytes (EEPROM)      │ [0x25, 0x5F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] │
+ * │ Hex string (hawkBit)    │ 255FFFFFFFFFFFF                                  │
+ * │ Display (human-readable)│ 25.5F.FF.FF.FF.FF.FF.FF                          │
+ * └─────────────────────────┴──────────────────────────────────────────────────┘
+ *
+ * How the serial arrives at hawkBit:
+ *   1. EEPROM stores 8 raw bytes (written via //II command)
+ *   2. Firmware converts each byte → 2-char uppercase hex: 0x25→"25", 0x5F→"5F", ...
+ *   3. Result: 16-char uppercase hex string, no prefix/separators (e.g. "255FFFFFFFFFFFF")
+ *   4. Device uses this as controllerId in DDI: GET /DEFAULT/controller/v1/255FFFFFFFFFFFF
+ *
+ * Fallback: if all 8 bytes are 0xFF (serial not programmed), firmware uses STM32 UID,
+ * also 16 hex chars (e.g. "2100280018513531").
  *
  * Conventions:
- * - hawkBit controllerId = uppercase hex, no separators (e.g. 255FFFFFFF123456)
- * - Display format = dotted uppercase with grouping (e.g. 25.5F.FF.FFF.FFFFF.F)
+ * - hawkBit controllerId = 16-char uppercase hex, no separators (e.g. 255FFFFFFFFFFFF)
+ * - Display format = byte pairs separated by dots (e.g. 25.5F.FF.FF.FF.FF.FF.FF)
  * - API accepts any of: hex, dotted, or mixed case → normalizes internally
  *
  * The DB stores:
  * - serialNumber  → the hex format (same as hawkBit controllerId)
  * - serialDisplay → the dotted format (human-readable)
  */
+
+/** Expected length for Ninbus device serial numbers (8 bytes = 16 hex chars). */
+export const NINBUS_SERIAL_HEX_LENGTH = 16;
 
 /**
  * Check if a string is pure hex (0-9, A-F, a-f).
@@ -29,7 +41,7 @@ export function isHexString(s: string): boolean {
 }
 
 /**
- * Check if a string is dotted hex display format (e.g. "25.5F.FF.FFF.FFFFF.F").
+ * Check if a string is dotted hex display format (e.g. "25.5F.FF.FF.FF.FF.FF.FF").
  * Allows mixed case with dots as separators.
  */
 export function isDottedFormat(s: string): boolean {
@@ -40,10 +52,10 @@ export function isDottedFormat(s: string): boolean {
  * Normalize any serial number input to uppercase hex without separators.
  *
  * Accepts:
- *   - "255FFFFFFF123456"       → "255FFFFFFF123456" (already hex)
- *   - "25.5F.FF.FFF.FFFFF.F"  → "255FFFFFFFFFFFFF" (dotted → hex)
- *   - "255fffFFF123456"        → "255FFFFFFF123456" (mixed case → upper)
- *   - "25:5F:FF:FF:FF:12:34:56"→ "255FFFFFFF123456" (colon-separated)
+ *   - "255FFFFFFFFFFFF"          → "255FFFFFFFFFFFF" (already hex)
+ *   - "25.5F.FF.FF.FF.FF.FF.FF"  → "255FFFFFFFFFFFF" (dotted → hex)
+ *   - "255fffFFF123456"           → "255FFFFFFF123456" (mixed case → upper)
+ *   - "25:5F:FF:FF:FF:12:34:56"   → "255FFFFFFF123456" (colon-separated)
  *
  * Returns null if the input is not a recognizable hex serial format.
  */
@@ -84,7 +96,7 @@ export function hexToDisplay(hex: string): string {
 /**
  * Convert dotted display format back to hex.
  *
- * "25.5F.FF.FFF.FFFFF.F6" → "255FFFFFFFFFFF6"
+ * "25.5F.FF.FF.FF.FF.FF.F6" → "255FFFFFFFFFFFF6"
  *
  * Also works for any separator (dots, colons, dashes).
  */
@@ -106,8 +118,17 @@ export function normalizeSerial(input: string): { hex: string; display: string }
 }
 
 /**
- * Validate that a hex serial number has a reasonable length for a device serial.
- * Typical: 8 bytes = 16 hex chars. Min 4 hex chars (2 bytes), max 32 hex chars (16 bytes).
+ * Validate that a hex serial number has the exact expected length for a Ninbus device.
+ * Ninbus serials are always 8 bytes = 16 hex chars.
+ * STM32 UID fallback is also 16 hex chars.
+ */
+export function isNinbusSerial(hex: string): boolean {
+	return hex.length === NINBUS_SERIAL_HEX_LENGTH && isHexString(hex);
+}
+
+/**
+ * Validate that a hex serial number has a reasonable length (lenient).
+ * Accepts 4–32 hex chars for backward compatibility with non-Ninbus devices.
  */
 export function isValidSerialLength(hex: string): boolean {
 	return hex.length >= 4 && hex.length <= 32;

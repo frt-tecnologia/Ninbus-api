@@ -2,6 +2,7 @@ import { db } from '@common/db';
 import { companyMembers } from '@common/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@common/config/auth';
+import { env } from '@common/config/env';
 import type { Elysia } from 'elysia';
 
 /**
@@ -16,6 +17,16 @@ const ROLE_HIERARCHY: Record<string, number> = {
 } as const;
 
 type CompanyRole = keyof typeof ROLE_HIERARCHY;
+
+/**
+ * Checks if a user email is in the SUPER_ADMIN_EMAILS env list.
+ * Platform-level admin — can manage ALL companies, devices, and users.
+ * This is NOT a company-scoped role; it's a system-wide privilege.
+ */
+export function isSuperAdmin(email: string | null | undefined): boolean {
+	if (!email) return false;
+	return env.SUPER_ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(email.toLowerCase());
+}
 
 /**
  * Derives user and session from Better Auth.
@@ -50,6 +61,34 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 							return {
 								error: 'Unauthorized',
 								message: 'Please login first',
+							};
+						}
+					},
+				};
+			},
+			/**
+			 * Platform-level super admin check.
+			 * Requires `auth: true` alongside this.
+			 * Checks if user.email is in SUPER_ADMIN_EMAILS env list.
+			 * Returns 403 if user is not a platform super admin.
+			 *
+			 * Usage:
+			 *   { auth: true, superAdmin: true }
+			 */
+			superAdmin(enabled: boolean) {
+				if (!enabled) return;
+
+				return {
+					beforeHandle: async ({ user, set }: any) => {
+						if (!user) {
+							set.status = 401;
+							return { error: 'Unauthorized', message: 'Please login first' };
+						}
+						if (!isSuperAdmin(user.email)) {
+							set.status = 403;
+							return {
+								error: 'Forbidden',
+								message: 'Platform admin access required',
 							};
 						}
 					},

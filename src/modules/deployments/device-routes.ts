@@ -1,10 +1,16 @@
+/**
+ * Deployment detail routes — statistics, targets, action management, status trail.
+ */
 import { hawkbitTargets } from '@common/hawkbit/client';
+import { appLogger } from '@common/logger';
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ActionStatusListResponseSchema,
 	DeploymentStatisticsResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
+	TargetStatusTrailResponseSchema,
+	TargetStatusesResponseSchema,
 	deploymentActionParams,
 	deploymentParams,
 } from '@modules/deployments/schemas';
@@ -16,16 +22,6 @@ const deviceParams = t.Object({
 	deviceId: t.String({ format: 'uuid' }),
 });
 
-/**
- * Deployment detail routes — statistics, targets, action management.
- *
- * Role requirements:
- * - GET /:id/statistics              → viewer (read stats)
- * - GET /:id/targets                 → viewer (read targets)
- * - GET /:id/targets/:t/actions/:a/status → viewer (read action history)
- * - DELETE /:id/targets/:t/actions/:a     → operator (cancel action)
- * - GET /devices/:id/actions         → viewer (read device actions)
- */
 export const deploymentDeviceRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/deployments' }),
 )
@@ -34,65 +30,110 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/statistics',
 		async ({ params, set }) => {
 			try {
-				const stats = await service.getDeploymentStatistics(Number(params.deploymentId));
-				return { data: stats };
+				const result = await service.getDeploymentStatistics(Number(params.deploymentId));
+				return { data: result };
 			} catch {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Deployment not found' };
 			}
 		},
 		{
-			auth: true,
-			companyRole: 'viewer',
-			params: deploymentParams,
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Get deployment statistics',
-				description: 'Action counts by status from hawkBit',
-			},
-			response: {
-				200: DeploymentStatisticsResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-			},
+			auth: true, companyRole: 'viewer', params: deploymentParams,
+			detail: { tags: ['Deployments'], summary: 'Get deployment statistics' },
+			response: { 200: DeploymentStatisticsResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
-	// GET /:deploymentId/targets — Targets assigned to this DS
+	// GET /:deploymentId/target-statuses — All targets with enriched phase/progress
 	.get(
-		'/:deploymentId/targets',
-		async ({ params, query }) => {
-			const result = await service.getDeploymentTargets(Number(params.deploymentId), {
-				offset: query?.offset,
-				limit: query?.limit,
-			});
-			return { data: result.content, total: result.total };
+		'/:deploymentId/target-statuses',
+		async ({ params, query, set }) => {
+			try {
+				const result = await service.getDeploymentTargetStatuses(
+					Number(params.deploymentId),
+					{ offset: query?.offset, limit: query?.limit },
+				);
+				return { data: result.content, total: result.total };
+			} catch (error) {
+				appLogger.warn('[DEPLOYMENTS] target-statuses failed: %s', error instanceof Error ? error.message : String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
 		},
 		{
-			auth: true,
-			companyRole: 'viewer',
-			params: deploymentParams,
-			query: t.Object({
-				offset: t.Optional(t.Number()),
-				limit: t.Optional(t.Number({ maximum: 500 })),
-			}),
-			detail: { tags: ['Deployments'], summary: 'List targets in deployment' },
-			response: {
-				200: t.Object({ data: t.Array(t.Any()), total: t.Number() }),
-				403: ErrorResponseSchema,
+			auth: true, companyRole: 'viewer', params: deploymentParams,
+			query: t.Object({ offset: t.Optional(t.Number()), limit: t.Optional(t.Number({ maximum: 500 })) }),
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Get all target statuses with phase and progress',
+				description: 'Each target includes semantic phase (downloading, installing...) and download progress (0-100%).',
 			},
+			response: { 200: TargetStatusesResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
-	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Action history
+	// GET /:deploymentId/targets/:targetId/status-trail — Full timeline
+	.get(
+		'/:deploymentId/targets/:targetId/status-trail',
+		async ({ params, set }) => {
+			try {
+				const trail = await service.getTargetStatusTrail(params.targetId);
+				if (!trail) {
+					set.status = 404;
+					return { error: 'Not Found', message: 'No deployment action found for this target' };
+				}
+				return { data: trail };
+			} catch (error) {
+				appLogger.warn('[DEPLOYMENTS] status-trail failed: %s', error instanceof Error ? error.message : String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
+		},
+		{
+			auth: true, companyRole: 'viewer',
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				deploymentId: t.String({ description: 'hawkBit DS ID' }),
+				targetId: t.String({ description: 'hawkBit controllerId (e.g. FF32FF51FFF1FFFF)' }),
+			}),
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Get full status trail (timeline) for a target',
+				description: 'Complete timeline of status entries (oldest→newest) with phase, progress, and display message.',
+			},
+			response: { 200: TargetStatusTrailResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+		},
+	)
+
+	// GET /:deploymentId/targets — Raw targets assigned to this DS
+	.get(
+		'/:deploymentId/targets',
+		async ({ params, query, set }) => {
+			try {
+				const result = await service.getDeploymentTargets(Number(params.deploymentId), {
+					offset: query?.offset, limit: query?.limit,
+				});
+				return { data: result.content, total: result.total };
+			} catch (error) {
+				appLogger.warn('[DEPLOYMENTS] list targets failed: %s', error instanceof Error ? error.message : String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
+		},
+		{
+			auth: true, companyRole: 'viewer', params: deploymentParams,
+			query: t.Object({ offset: t.Optional(t.Number()), limit: t.Optional(t.Number({ maximum: 500 })) }),
+			detail: { tags: ['Deployments'], summary: 'List targets in deployment' },
+			response: { 200: t.Object({ data: t.Array(t.Any()), total: t.Number() }), 403: ErrorResponseSchema, 503: ErrorResponseSchema },
+		},
+	)
+
+	// GET /:deploymentId/targets/:targetId/actions/:actionId/status — Raw action status history
 	.get(
 		'/:deploymentId/targets/:targetId/actions/:actionId/status',
 		async ({ params, set }) => {
 			try {
-				const statusList = await hawkbitTargets.getActionStatus(
-					params.targetId,
-					Number(params.actionId),
-				);
+				const statusList = await hawkbitTargets.getActionStatus(params.targetId, Number(params.actionId));
 				return { data: statusList.content, total: statusList.total };
 			} catch {
 				set.status = 404;
@@ -100,19 +141,9 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 		},
 		{
-			auth: true,
-			companyRole: 'viewer',
-			params: deploymentActionParams,
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Get action status history',
-				description: 'Status updates for an action: running, downloaded, finished, error, etc.',
-			},
-			response: {
-				200: ActionStatusListResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-			},
+			auth: true, companyRole: 'viewer', params: deploymentActionParams,
+			detail: { tags: ['Deployments'], summary: 'Get raw action status history' },
+			response: { 200: ActionStatusListResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
@@ -129,19 +160,9 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 		},
 		{
-			auth: true,
-			companyRole: 'operator',
-			params: deploymentActionParams,
-			detail: {
-				tags: ['Deployments'],
-				summary: 'Cancel deployment action',
-				description: 'Cancels an active deployment action. Requires operator role or above.',
-			},
-			response: {
-				200: GenericActionResponseSchema,
-				403: ErrorResponseSchema,
-				422: ErrorResponseSchema,
-			},
+			auth: true, companyRole: 'operator', params: deploymentActionParams,
+			detail: { tags: ['Deployments'], summary: 'Cancel deployment action' },
+			response: { 200: GenericActionResponseSchema, 403: ErrorResponseSchema, 422: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
@@ -155,22 +176,21 @@ export const deploymentDeviceRoutes = withAuth(
 				set.status = 404;
 				return { error: 'Not Found', message: 'Device not found or not linked to hawkBit' };
 			}
-			const actions = await hawkbitTargets.getActions(device.hawkbitTargetId, {
-				limit: query?.limit ?? 50,
-				sort: 'id:DESC',
-			});
-			return { data: actions.content, total: actions.total };
+			try {
+				const actions = await hawkbitTargets.getActions(device.hawkbitTargetId, {
+					limit: query?.limit ?? 50, sort: 'id:DESC',
+				});
+				return { data: actions.content, total: actions.total };
+			} catch (error) {
+				appLogger.warn('[DEPLOYMENTS] device actions failed: %s', error instanceof Error ? error.message : String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
 		},
 		{
-			auth: true,
-			companyRole: 'viewer',
-			params: deviceParams,
+			auth: true, companyRole: 'viewer', params: deviceParams,
 			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },
-			response: {
-				200: t.Object({ data: t.Array(t.Any()), total: t.Number() }),
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-			},
+			response: { 200: t.Object({ data: t.Array(t.Any()), total: t.Number() }), 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	);

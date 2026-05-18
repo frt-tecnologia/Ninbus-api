@@ -20,91 +20,85 @@ export const NINBUS_ARTIFACT_TYPE_VALUES = [
 	ARTIFACT_TYPE_NFX_CONFIGURATION,
 ] as const;
 
-export const createOtaDeploymentSchema = t.Object(
-	{
-		name: t.String({ minLength: 1, maxLength: 255, description: 'Deployment name' }),
-		artifactName: t.String({
-			minLength: 1,
-			description: 'Artifact name to deploy (e.g. ninbus-firmware-3.3.0)',
-		}),
-		/** Artifact type — determines the update destination on the device */
-		artifactType: t.Union(
-			[
-				t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, {
-					description: 'Firmware Ninbus (STM32F407) → NAND → Bootloader → Reboot',
-				}),
-				t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, {
-					description: 'Firmware Controlador LightDot → CAN Bus',
-				}),
-				t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, {
-					description: 'Configuração NFX/FRZ → NAND NFX → CAN → LightDot',
-				}),
-			],
-			{
-				description:
-					'Type of artifact being deployed. Determines the update path on the embedded device.',
-			},
-		),
-		version: t.Optional(
-			t.String({
-				maxLength: 64,
-				description: 'Distribution set version (default: derived from artifactName)',
-			}),
-		),
-		deviceIds: t.Optional(
-			t.Array(t.String({ format: 'uuid' }), {
-				description: 'Specific Ninbus device IDs to deploy to',
-			}),
-		),
-		categoryIds: t.Optional(
-			t.Array(t.String({ format: 'uuid' }), {
-				description: 'Deploy to all devices in these categories',
-			}),
-		),
-		allDevices: t.Optional(
-			t.Boolean({
-				description: 'Deploy to all accepted devices in the company',
-			}),
-		),
-	},
-	{
-		default: {
-			name: 'Atualização de Firmware Q3',
-			artifactName: 'ninbus-firmware-v3.1.2',
-			artifactType: 'firmware-ninbus',
-			allDevices: true,
-		},
-	},
+export const createOtaDeploymentSchema = t.Object({
+	name: t.String({ minLength: 1, maxLength: 255 }),
+	artifactName: t.String({ minLength: 1, description: 'Artifact name or numeric SM ID' }),
+	artifactType: t.Union(
+		[
+			t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, { description: 'STM32F407 → NAND → Reboot' }),
+			t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, { description: 'LightDot → CAN Bus' }),
+			t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, { description: 'NFX/FRZ → CAN → LightDot' }),
+		],
+		{ description: 'Determines the update path on the embedded device.' },
+	),
+	version: t.Optional(t.String({ maxLength: 64 })),
+	deviceIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+	categoryIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+	allDevices: t.Optional(t.Boolean()),
+}, {
+	default: { name: 'Deployment', artifactName: 'sm-1', artifactType: 'firmware-ninbus', allDevices: true },
+});
+
+export const abortActionSchema = t.Object({
+	force: t.Optional(t.Boolean({ default: true })),
+}, { default: { force: true } });
+
+// ── Deployment Status (computed from hawkBit action statistics) ─────
+
+/**
+ * Deployment status computed from hawkBit action statistics.
+ *
+ * Mapping from hawkBit action statuses:
+ *   RUNNING, SCHEDULED          → 'pending'
+ *   RETRIEVED, DOWNLOAD,
+ *   DOWNLOADED                  → 'in_progress'
+ *   FINISHED (all targets)      → 'completed'
+ *   ERROR, WARNING              → 'failed'
+ *   CANCELED, CANCELING         → 'canceled'
+ *   (no targets assigned)       → 'no_targets'
+ */
+export const DEPLOYMENT_STATUS_VALUES = [
+	'pending',
+	'in_progress',
+	'completed',
+	'failed',
+	'canceled',
+	'no_targets',
+] as const;
+export type DeploymentStatusType = (typeof DEPLOYMENT_STATUS_VALUES)[number];
+
+export const DeploymentStatusSchema = t.Union(
+	DEPLOYMENT_STATUS_VALUES.map((s) => t.Literal(s)),
 );
 
-export const abortActionSchema = t.Object(
-	{
-		force: t.Optional(
-			t.Boolean({
-				default: true,
-				description: 'Force cancel even if action is in progress',
-			}),
-		),
-	},
-	{
-		default: {
-			force: true,
-		},
-	},
-);
+export const DeploymentStatisticsSummarySchema = t.Object({
+	totalTargets: t.Number(),
+	finished: t.Number(),
+	failed: t.Number(),
+	inProgress: t.Number(),
+	pending: t.Number(),
+	canceled: t.Number(),
+});
 
-// ── hawkBit Distribution Set Schema ──────────────────────────────────
+export const DSMetadataSchema = t.Object({
+	locked: t.Boolean(),
+	complete: t.Boolean(),
+	valid: t.Boolean(),
+});
 
-export const DistributionSetSchema = t.Object({
+/** Enriched distribution set with real deployment status. */
+export const EnrichedDistributionSetSchema = t.Object({
 	id: t.Number(),
 	name: t.String(),
 	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
 	typeName: t.Optional(t.String()),
 	description: t.Optional(t.String()),
-	locked: t.Optional(t.Boolean()),
-	complete: t.Optional(t.Boolean()),
-	valid: t.Optional(t.Boolean()),
+	createdAt: t.Optional(t.Number()),
+	lastModifiedAt: t.Optional(t.Number()),
+	status: DeploymentStatusSchema,
+	statistics: DeploymentStatisticsSummarySchema,
+	dsMetadata: DSMetadataSchema,
 });
 
 // ── hawkBit Action Schema ────────────────────────────────────────────
@@ -132,11 +126,11 @@ export const ActionStatusSchema = t.Object({
 // ── Response Schemas ─────────────────────────────────────────────────
 
 export const DeploymentResponseSchema = t.Object({
-	data: DistributionSetSchema,
+	data: EnrichedDistributionSetSchema,
 });
 
 export const DeploymentListResponseSchema = t.Object({
-	data: t.Array(DistributionSetSchema),
+	data: t.Array(EnrichedDistributionSetSchema),
 	total: t.Number(),
 });
 
@@ -148,11 +142,16 @@ export const DeploymentCreateResponseSchema = t.Object({
 		version: t.Optional(t.String()),
 		targetsAssigned: t.Number(),
 		artifactType: t.String(),
+		smId: t.Optional(t.Number()),
 	}),
 });
 
 export const DeploymentStatisticsResponseSchema = t.Object({
-	data: t.Any(),
+	data: t.Object({
+		raw: t.Any({ description: 'Raw hawkBit statistics response' }),
+		summary: DeploymentStatisticsSummarySchema,
+		status: DeploymentStatusSchema,
+	}),
 });
 
 export const DeviceActionsResponseSchema = t.Object({
@@ -183,6 +182,17 @@ export const ArtifactTypeListResponseSchema = t.Object({
 	data: t.Array(ArtifactTypeItemSchema),
 });
 
+// ── Target Status Schemas (enriched with phase + progress) ───────────
+// (moved to trail-schemas.ts to keep this file under 250 lines)
+export {
+	TargetActionStatusSchema,
+	TargetDeploymentStatusSchema,
+	EnrichedActionStatusEntrySchema,
+	TargetStatusTrailDataSchema,
+	TargetStatusesResponseSchema,
+	TargetStatusTrailResponseSchema,
+} from './trail-schemas';
+
 // ── Params ────────────────────────────────────────────────────────────
 
 export const companyParams = t.Object({ companyId: t.String({ format: 'uuid' }) });
@@ -192,6 +202,7 @@ export const deploymentParams = t.Object({
 });
 export const deploymentActionParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
+	deploymentId: t.String({ description: 'hawkBit Distribution Set ID' }),
 	targetId: t.String(),
 	actionId: t.String(),
 });

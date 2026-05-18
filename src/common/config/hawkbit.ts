@@ -46,4 +46,20 @@ export const hawkbitConfig = {
 	get autoProvisioning(): boolean {
 		return env.HAWKBIT_AUTOPROVISIONING;
 	},
+	/** Sync mode: 'periodic', 'on_demand', or 'hybrid'. */
+	get syncMode(): 'periodic' | 'on_demand' | 'hybrid' {
+		return env.HAWKBIT_SYNC_MODE;
+	},
+	/** Background sync interval in seconds. */
+	get syncIntervalSec(): number {
+		return env.HAWKBIT_SYNC_INTERVAL_SEC ?? 10;
+	},
+	/** Stale threshold in seconds for on-demand single-device sync. */
+	get syncStaleSec(): number {
+		return env.HAWKBIT_SYNC_STALE_SEC ?? 60;
+	},
+	/** Window in seconds to consider a company "active" (has sessions). */
+	get syncActiveWindowSec(): number {
+		return env.HAWKBIT_SYNC_ACTIVE_WINDOW_SEC ?? 300;
+	},
 };

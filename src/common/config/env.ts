@@ -96,6 +96,75 @@ const EnvSchema = Type.Object({
 			'SET TO FALSE IN PRODUCTION — only pre-registered devices (via POST /api/devices/provision) should connect.',
 	}),
 
+	// ── hawkBit Background Sync ────────────────────────────────
+	HAWKBIT_SYNC_MODE: Type.Union(
+		[Type.Literal('periodic'), Type.Literal('on_demand'), Type.Literal('hybrid')],
+		{
+			default: 'hybrid',
+			description:
+				'Sync strategy for hawkBit → local DB. ' +
+				'"periodic": background sync of ALL targets every N seconds (good for <1k devices). ' +
+				'"on_demand": zero background sync — each API request fetches from hawkBit with stale-while-revalidate cache. ' +
+				'"hybrid" (recommended): background sync ONLY for companies with active user sessions + on-demand for single device detail. Scales to 50k+ devices.',
+		},
+	),
+	HAWKBIT_SYNC_INTERVAL_SEC: Type.Optional(
+		Type.Number({
+			default: 30,
+			minimum: 5,
+			description:
+				'Background sync interval in seconds (used by periodic and hybrid modes). ' +
+				'Set to 0 to disable background sync entirely (forces on_demand behavior).',
+		}),
+	),
+	HAWKBIT_SYNC_STALE_SEC: Type.Optional(
+		Type.Number({
+			default: 60,
+			minimum: 5,
+			description:
+				'Stale threshold in seconds for on-demand single-device sync. ' +
+				'If local data is older than this, triggers a hawkBit API call to refresh.',
+		}),
+	),
+	HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: Type.Optional(
+		Type.Number({
+			default: 300,
+			minimum: 30,
+			description:
+				'Window in seconds to consider a company "active" (has user sessions within this time). ' +
+				'Only active companies are synced in hybrid mode. Default 300s (5 min).',
+		}),
+	),
+
+	// ── SSE (Server-Sent Events) ──────────────────────────────
+	SSE_ENABLED: Type.Boolean({
+		default: true,
+		description: 'Enable SSE endpoint for real-time event push to Flutter clients.',
+	}),
+	SSE_HEARTBEAT_SEC: Type.Optional(
+		Type.Number({
+			default: 30,
+			minimum: 10,
+			description: 'Heartbeat interval in seconds for SSE connections. Keeps connections alive through proxies.',
+		}),
+	),
+	SSE_MAX_CONNECTIONS_PER_COMPANY: Type.Optional(
+		Type.Number({
+			default: 50,
+			minimum: 1,
+			description: 'Maximum concurrent SSE connections per company. Oldest evicted when exceeded.',
+		}),
+	),
+
+	// ── Platform Super Admin ───────────────────────────────────
+	SUPER_ADMIN_EMAILS: Type.Array(Type.String(), {
+		default: [],
+		description:
+			'Comma-separated list of emails with platform-level super admin access. ' +
+			'Super admins can manage ALL companies, devices, users, and provisioning. ' +
+			'This is NOT a database role — controlled solely via environment variable to prevent privilege escalation.',
+	}),
+
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
 	RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
@@ -110,13 +179,16 @@ export type Env = Static<typeof EnvSchema>;
 // Validation
 // ---------------------------------------------------------------------------
 
-function parseCors(raw: string | undefined): string[] {
+function parseStringArray(raw: string | undefined): string[] {
 	if (!raw) return [];
 	return raw
 		.split(',')
-		.map((o) => o.trim())
+		.map((s) => s.trim())
 		.filter(Boolean);
 }
+
+/** @deprecated Use parseStringArray instead */
+const parseCors = parseStringArray;
 
 export function validateEnv(): Env {
 	const rawEnv = {
@@ -141,6 +213,24 @@ export function validateEnv(): Env {
 			: undefined,
 		HAWKBIT_SKIP_TLS: process.env['HAWKBIT_SKIP_TLS'] === 'true',
 		HAWKBIT_AUTOPROVISIONING: process.env['HAWKBIT_AUTOPROVISIONING'] === 'true',
+		HAWKBIT_SYNC_MODE: (process.env['HAWKBIT_SYNC_MODE'] as 'periodic' | 'on_demand' | 'hybrid') || 'hybrid',
+		HAWKBIT_SYNC_INTERVAL_SEC: process.env['HAWKBIT_SYNC_INTERVAL_SEC']
+			? Number(process.env['HAWKBIT_SYNC_INTERVAL_SEC'])
+			: undefined,
+		HAWKBIT_SYNC_STALE_SEC: process.env['HAWKBIT_SYNC_STALE_SEC']
+			? Number(process.env['HAWKBIT_SYNC_STALE_SEC'])
+			: undefined,
+		HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC']
+			? Number(process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC'])
+			: undefined,
+		SUPER_ADMIN_EMAILS: parseStringArray(process.env['SUPER_ADMIN_EMAILS']),
+		SSE_ENABLED: process.env['SSE_ENABLED'] !== 'false',
+		SSE_HEARTBEAT_SEC: process.env['SSE_HEARTBEAT_SEC']
+			? Number(process.env['SSE_HEARTBEAT_SEC'])
+			: undefined,
+		SSE_MAX_CONNECTIONS_PER_COMPANY: process.env['SSE_MAX_CONNECTIONS_PER_COMPANY']
+			? Number(process.env['SSE_MAX_CONNECTIONS_PER_COMPANY'])
+			: undefined,
 		ENABLE_RATE_LIMITER: process.env['ENABLE_RATE_LIMITER'] !== 'false',
 		RATE_LIMIT_WINDOW_MS: process.env['RATE_LIMIT_WINDOW_MS']
 			? Number(process.env['RATE_LIMIT_WINDOW_MS'])

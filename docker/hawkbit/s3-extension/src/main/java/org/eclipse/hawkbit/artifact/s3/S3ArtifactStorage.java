@@ -66,9 +66,27 @@ public class S3ArtifactStorage extends AbstractArtifactStorage {
             if (s3Object == null) {
                 return null;
             }
-            return s3Object.getObjectContent();
+
+            // Read the entire S3 object into memory before returning.
+            // This prevents the "Not all bytes were read from S3ObjectInputStream, aborting"
+            // WARN that occurs when hawkBit's DDI response stream is closed before the
+            // S3 stream is fully consumed (device finishes download → HTTP connection closes
+            // → S3 stream has remaining bytes → AWS SDK aborts the connection).
+            //
+            // For firmware artifacts (< 50MB), this is fine and eliminates the
+            // connection abort overhead that slows down sequential downloads.
+            try (S3Object obj = s3Object) {
+                final InputStream content = obj.getObjectContent();
+                final byte[] bytes = content.readAllBytes();
+                LOG.debug("Loaded S3 artifact {}/{} ({} bytes) into memory",
+                        properties.getBucketName(), key, bytes.length);
+                return new java.io.ByteArrayInputStream(bytes);
+            }
         } catch (final AmazonClientException e) {
             LOG.error("Could not retrieve S3 object {}/{}", properties.getBucketName(), key, e);
+            return null;
+        } catch (final IOException e) {
+            LOG.error("Failed to read S3 object {}/{}", properties.getBucketName(), key, e);
             return null;
         }
     }

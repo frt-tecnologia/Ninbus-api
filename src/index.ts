@@ -1,6 +1,7 @@
 import { env } from '@common/config/env';
 import { closeDatabase } from '@common/db';
 import { appLogger } from '@common/logger';
+import { DeviceSyncEngine } from './modules/devices/sync';
 import { createApp } from './app';
 import { runStartupMigrations } from './scripts/migrate';
 
@@ -31,6 +32,7 @@ const shutdown = async (signal: string) => {
 
 	try {
 		await Promise.resolve(server.stop());
+		DeviceSyncEngine.stopBackgroundSync();
 		await closeDatabase();
 		appLogger.info('Server closed successfully');
 		process.exit(0);

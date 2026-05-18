@@ -202,7 +202,34 @@ O device faz polling e recebe:
 
 ---
 
-## 5. Ciclo de Vida do Dispositivo
+## 5. Background Sync & Device Status
+
+O Ninbus API usa um **background sync worker** que atualiza o DB local com dados do hawkBit periodicamente (a cada 30s por padrão). Isto significa:
+
+- **GET /devices** retorna dados hawkBit atualizados SEM fazer chamadas hawkBit na hora
+- O background worker busca TODOS os targets do hawkBit (com paginação correta)
+- Dados sincronizados: `connectionStatus`, `hawkbitUpdateStatus`, `ipAddress`, `lastPollAt`
+
+### Colunas de Sync no DB Local
+
+| Coluna | Tipo | Origem hawkBit |
+|--------|------|---------------|
+| `connectionStatus` | varchar(20) | `!target.pollStatus.overdue` → connected/disconnected |
+| `hawkbitUpdateStatus` | enum | `target.updateStatus` |
+| `ipAddress` | text | `target.ipAddress` |
+| `lastPollAt` | timestamp | `target.pollStatus.lastRequestAt` |
+| `nextExpectedPollAt` | timestamp | `target.pollStatus.nextExpectedRequestAt` |
+
+### Verificação via Health Check
+
+```bash
+curl http://localhost:8081/health
+# → {"sync":{"lastSyncAt":"...","devicesSynced":1,"errors":0}}
+```
+
+---
+
+## 6. Ciclo de Vida do Dispositivo
 
 ```
 ┌─────────────┐     ┌────────────┐     ┌──────────┐     ┌───────────┐
@@ -226,7 +253,7 @@ O device faz polling e recebe:
 
 ---
 
-## 6. Variáveis de Ambiente — hawkBit DDI
+## 7. Variáveis de Ambiente — hawkBit DDI
 
 | Variável | Default | Obrigatória | Descrição |
 |----------|---------|-------------|-----------|
@@ -236,7 +263,9 @@ O device faz polling e recebe:
 | `HAWKBIT_PASSWORD` | — | Sim (quando enabled) | Basic Auth password |
 | `HAWKBIT_TIMEOUT_MS` | `30000` | — | Timeout das requisições |
 | `HAWKBIT_SKIP_TLS` | `false` | — | Ignora cert TLS (dev) |
-| `HAWKBIT_AUTOPROVISIONING` | `true` | — | Auto-criar target no primeiro DDI poll |
+| `HAWKBIT_AUTOPROVISIONING` | `false` | — | Auto-criar target no primeiro DDI poll (OFF por padrão em produção) |
+| `HAWKBIT_SYNC_INTERVAL_SEC` | `30` | — | Background sync interval em segundos |
+| `HAWKBIT_SYNC_STALE_SEC` | `60` | — | Stale threshold para on-demand refresh (segundos) |
 | `HAWKBIT_DDI_TARGET_TOKEN_AUTH` | `true` | **Sim** | Habilita TargetToken auth no DDI |
 
 > **⚠️ CRÍTICO**: `HAWKBIT_DDI_TARGET_TOKEN_AUTH=true` é obrigatório para dispositivos
@@ -244,7 +273,7 @@ O device faz polling e recebe:
 
 ---
 
-## 7. Troubleshooting DDI 401
+## 8. Troubleshooting DDI 401
 
 ### Diagnóstico em 4 passos:
 
@@ -276,7 +305,7 @@ O device faz polling e recebe:
 
 ---
 
-## 8. Comandos Seriais do Dispositivo
+## 9. Comandos Seriais do Dispositivo
 
 | Comando | Descrição | Exemplo |
 |---------|-----------|---------|

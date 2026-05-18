@@ -1,141 +1,276 @@
 # Ninbus API
 
-Backend da plataforma IoT Ninbus — gerenciamento de dispositivos, deployments OTA e orquestração de frotas.
+Backend IoT — gerenciamento de dispositivos, deployments OTA e orquestração de frotas.
 
-Construído com **Bun** + **Elysia** + **Better Auth** + **Drizzle ORM** + **Eclipse hawkBit 1.0.3**.
+**Stack:** Bun + Elysia + Better Auth + Drizzle ORM + Eclipse hawkBit 1.0.3
 
 ---
 
-## Visão Geral
+## Arquitetura
 
 ```
-Frontend ──▶ Ninbus API ──▶ Eclipse hawkBit (1.0.3)
-   │             │                    │
-   │             │              ┌─────┴─────┐
-   │             │              │ Management API (Basic Auth)
-   │             │              │ Targets, Distribution Sets,
-   │             │              │ Software Modules, Artifacts
-   │             │              ├───────────┤
-   │             │              │ DDI API (TargetToken Auth)
-   │             │              │ Device polling, deployments
-   │             │              └───────────┘
-   │             │
-   │        PostgreSQL (Neon)
-   │     (dispositivos, empresas,
-   │      categorias, sessões)
-   │
-   └── Dispositivos IoT (Ninbus WiFi v3)
-       GET /DEFAULT/controller/v1/{controllerId}
-       Authorization: TargetToken {securityToken}
-       ────────────────────────────────────────
-       firmware-ninbus | firmware-controller | configuration-nfx
+Flutter App ──▶ Ninbus API (:8081) ──▶ hawkBit (:8080)
+                     │                       │
+                     │                       ├── Management API (Basic Auth)
+                     │                       │   Targets · Distribution Sets · Artifacts
+                     │                       │
+                     │                       └── DDI API (TargetToken Auth)
+                     │                           Device polling · Deployments
+                     │
+                     └── PostgreSQL (Neon)
+                         Devices · Companies · Sessions
+
+Dispositivos IoT (ESP32)
+  GET /DEFAULT/controller/v1/{controllerId}
+  Authorization: TargetToken {key}
 ```
 
-O Ninbus API é a camada de negócio entre o frontend e o hawkBit. Ele gerencia:
-
-- **Multi-tenancy** — empresas, membros, RBAC (owner/admin/operator/viewer)
-- **Provisioning** — pré-registro na fábrica com deviceKey → hawkBit target
-- **Dispositivos** — registro, claim por empresa, categorização, atributos hawkBit
-- **Deployments OTA** — criação de Distribution Sets, atribuição a targets, monitoramento
-- **Artefatos** — upload de firmware raw (.fir/.frz/.bin) via Software Modules hawkBit
-- **Sincronização** — sync bidirecional hawkBit ↔ DB local
-- **DDI** — dispositivos fazem polling com TargetToken auth
+**O que a API faz:**
+- Multi-tenancy com RBAC (owner > admin > operator > viewer)
+- Provisioning na fábrica (deviceKey → hawkBit target)
+- Upload de firmware (.fir/.frz/.bin/.nfx) → hawkBit Software Modules
+- Deployments OTA → hawkBit Distribution Sets
+- Background sync hawkBit → DB local (50k+ dispositivos, zero hawkBit calls em GET)
 
 ---
 
 ## Quick Start
 
-### Pré-requisitos
-
-- [Bun](https://bun.sh) >= 1.3
-- [PostgreSQL](https://www.postgresql.org/) >= 16
-- [Docker](https://www.docker.com/) (para hawkBit + MinIO)
-
-### Instalação
-
 ```bash
-git clone https://github.com/ninbus/ninbus-api.git
-cd ninbus-api
-
 bun install
-
-cp .env.example .env
-# Edite o .env com seus valores
-
+cp .env.example .env        # editar com seus valores
 bun run db:migrate
-bun run dev
+bun run dev                  # http://localhost:8081
 ```
 
-O servidor inicia em `http://localhost:8081` (porta configurável via `PORT`).
-
-### Usando Docker (hawkBit + MinIO + API)
+### Docker (hawkBit + API)
 
 ```bash
-docker compose up -d
+docker compose build api --no-cache
+docker compose up -d api
 docker compose logs -f api
+```
+
+### Testes
+
+```bash
+bun test --env-file=.env.test              # todos
+bun test --env-file=.env.test tests/auth   # módulo específico
 ```
 
 ---
 
-## Documentação da API
+## Rotas da API
 
-Após iniciar o servidor, acesse a documentação interativa Scalar:
+> Docs interativos: `http://localhost:8081/docs`
+
+### RBAC
 
 ```
-http://localhost:8081/docs
+owner (4) > admin (3) > operator (2) > viewer (1)
 ```
 
-Documentação OpenAPI 3.0 gerada automaticamente a partir dos schemas TypeBox.
+| Role | Ler | Criar | Editar | Deletar |
+|------|------|-------|--------|---------|
+| owner | ✅ | ✅ | ✅ | ✅ |
+| admin | ✅ | ✅ | ✅ | ✅ |
+| operator | ✅ | ✅ | ✅ | ❌ |
+| viewer | ✅ | ❌ | ❌ | ❌ |
 
-### Health Check
+### Auth (`/api/auth/*`)
 
-```bash
-curl http://localhost:8081/health
+| Rota | Descrição |
+|------|-----------|
+| `POST /sign-up/email` | Registrar |
+| `POST /sign-in/email` | Login (cookie session) |
+| `POST /sign-out` | Logout |
+| `GET /get-session` | Sessão atual |
+
+### Provisioning (`/api/devices/*`) — Platform, auth only
+
+| Rota | Descrição |
+|------|-----------|
+| `POST /provision` | Pré-registrar + criar hawkBit target |
+| `GET /unclaimed` | Dispositivos sem empresa |
+| `POST /sync` | Descobrir auto-provisionados (super admin) |
+| `GET /search?serialNumber=` | Buscar por serial (super admin) |
+| `DELETE /deprovision/:sn` | Remover permanentemente (super admin) |
+
+### Empresas (`/api/companies/*`)
+
+| Rota | Role | Descrição |
+|------|------|-----------|
+| `GET /` | auth | Listar do usuário |
+| `POST /` | auth | Criar (user vira owner) |
+| `GET /:id` | viewer | Detalhes |
+| `PUT /:id` | admin | Atualizar |
+| `DELETE /:id` | owner | Remover |
+| `GET /:id/members` | viewer | Membros |
+| `POST /:id/members` | admin | Adicionar membro |
+| `PUT /:id/members/:uid` | admin | Alterar role |
+| `DELETE /:id/members/:uid` | admin | Remover membro |
+
+### Dispositivos (`/api/companies/:companyId/devices/*`)
+
+| Rota | Role | Descrição |
+|------|------|-----------|
+| `GET /` | viewer | Listar (DB local, zero hawkBit) |
+| `POST /` | operator | Claim dispositivo |
+| `GET /:id` | viewer | Detalhes (stale-while-revalidate 60s) |
+| `PUT /:id` | operator | Atualizar |
+| `DELETE /:id` | admin | Unclaim (hawkBit preservado) |
+| `PUT /:id/link` | operator | Vincular ao hawkBit |
+| `GET|PUT /:id/categories` | viewer\|operator | Categorias |
+| `GET /:id/attributes` | viewer | Atributos hawkBit |
+| `GET /:id/actions` | viewer | Ações de deployment |
+| `DELETE /:id/actions/:aid` | operator | Cancelar ação |
+
+### Deployments (`/api/companies/:companyId/deployments/*`)
+
+| Rota | Role | Descrição |
+|------|------|-----------|
+| `GET /artifact-types` | viewer | Tipos de artefato |
+| `POST /` | operator | Criar deployment OTA |
+| `GET /` | viewer | Listar (com status real) |
+| `GET /:id` | viewer | Detalhes (com status real) |
+| `DELETE /:id` | admin | Remover (cancela ações ativas) |
+| `GET /:id/statistics` | viewer | Estatísticas hawkBit |
+| `GET /:id/targets` | viewer | Targets do deployment |
+| **`GET /:id/target-statuses`** | **viewer** | **Targets com fase + progresso enriquecidos** |
+| **`GET /:id/targets/:t/status-trail`** | **viewer** | **Timeline completa de status do device** |
+| `GET /:id/targets/:t/actions/:a/status` | viewer | Histórico raw da ação |
+| `DELETE /:id/targets/:t/actions/:a` | operator | Cancelar ação por device |
+| `GET /devices/:id/actions` | viewer | Histórico de ações do device |
+
+### Artefatos (`/api/companies/:companyId/artifacts/*`)
+
+| Rota | Role | Descrição |
+|------|------|-----------|
+| `POST /` | operator | Upload firmware (409 se duplicado) |
+| `GET /types` | viewer | Tipos de artefato |
+| `GET /` | viewer | Listar (com size + hashes) |
+| `GET /:id` | viewer | Detalhes |
+| `GET /:id/download` | viewer | Download info |
+| `PUT /:id` | operator | Atualizar descrição |
+| `DELETE /:id` | admin | Remover |
+
+---
+
+## Tipos de Artefato
+
+| Tipo | Destino | Risco | Reboot | Extensões |
+|------|---------|-------|--------|-----------|
+| `firmware-ninbus` | NAND → STM32F407 | 🔴 HIGH | ✅ | `.fir` `.bin` |
+| `firmware-controller` | CAN → LightDot | 🟡 MED | ❌ | `.fir` `.bin` |
+| `configuration-nfx` | NAND NFX → CAN | 🟢 LOW | ❌ | `.frz` `.nfx` |
+
+---
+
+## hawkBit — Conceitos
+
+| hawkBit | Ninbus | Descrição |
+|---------|--------|-----------|
+| Target | Device | controllerId = serialNumber hex |
+| Software Module | Artifact | Container tipado (firmware-ninbus, etc.) |
+| Distribution Set | Deployment | Agrupa SMs, atribuído a targets |
+| Action | Deployment status | Status por target (running→retrieved→finished) |
+| DDI | Device polling | `GET /{tenant}/controller/v1/{controllerId}` |
+
+### Fluxo de Deployment
+
 ```
+1. POST /artifacts       → Upload firmware → hawkBit Software Module
+2. POST /deployments     → Cria DS + atribui targets
+3. Device DDI poll       → hawkBit oferece deploymentBase
+4. Device download       → Baixa binário → instala → envia feedback
+```
+
+### Cancel Flow (Two-Step)
+
+hawkBit requer duas etapas para cancelar:
+1. `DELETE /actions/{id}` → status = "canceling"
+2. `DELETE /actions/{id}?force=true` → status = "canceled" (só funciona após step 1)
+
+### Deployment Status (computado das estatísticas hawkBit)
+
+| Status | Significado |
+|--------|-------------|
+| `pending` | Atribuído, dispositivo não consultou |
+| `in_progress` | Dispositivo baixando/instalando |
+| `completed` | Todos finalizaram com sucesso |
+| `failed` | Pelo menos um erro |
+| `canceled` | Todos cancelados |
+| `no_targets` | Sem dispositivos |
+
+### Status Trail — Fase Semântica por Device
+
+O device embarcado envia feedbacks via DDI que o hawkBit armazena como histórico.
+As rotas `target-statuses` e `status-trail` enriquecem esse histórico com fases
+semânticas e progresso de download.
+
+**Ciclo completo (10 passos):**
+
+```
+ assigned    → Assignment initiated by admin      (servidor)
+ retrieved   → Target retrieved update action      (DDI poll)
+ installing  → deployment started                 (device)
+ downloading → downloading artifact                (0%)
+ downloading → downloading 25%                     (progress=25)
+ downloading → downloading 50%                     (progress=50)
+ downloading → downloading 75%                     (progress=75)
+ downloaded  → download complete                   (progress=100)
+ installing  → installing NFX to controller        (device)
+ rebooting   → installed successfully, rebooting   (fim)
+```
+
+**`GET /:id/target-statuses`** — Resumo por device (phase + progress + message)
+
+**`GET /:id/targets/:t/status-trail`** — Timeline cronológica completa (oldest→newest)
+
+**Fases:** `assigned` · `retrieved` · `downloading` · `downloaded` · `installing` · `rebooting` · `success` · `error` · `canceled` · `unknown`
 
 ---
 
 ## Configuração
 
-Todas as variáveis são validadas no startup via TypeBox. Copie `.env.example` para `.env`.
+Copie `.env.example` para `.env`. Todas validadas no startup via TypeBox (`src/common/config/env.ts`).
 
-### Variáveis Obrigatórias
+### Obrigatórias
 
-| Variável | Descrição | Exemplo |
-|----------|-----------|---------|
-| `DATABASE_URL` | Connection string PostgreSQL | `postgresql://postgres:postgres@localhost:5432/ninbus_db` |
-| `BETTER_AUTH_SECRET` | Secret para sessões (mín 32 chars) | `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | URL base da API (para callbacks) | `http://localhost:8081` |
-| `EMAIL_FROM` | Email sender address | `noreply@example.com` |
+| Variável | Descrição |
+|----------|-----------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_SECRET` | Secret sessões (mín 32 chars) |
+| `BETTER_AUTH_URL` | URL base da API |
 
-### Variáveis Opcionais
-
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `PORT` | `3000` | Porta do servidor |
-| `HOST` | `0.0.0.0` | Bind address |
-| `NODE_ENV` | `development` | `development` / `production` / `test` |
-| `LOG_LEVEL` | `info` | `fatal` / `error` / `warn` / `info` / `debug` / `trace` |
-| `CORS_ORIGIN` | — | Origins separados por vírgula |
-| `ENABLE_AUTH` | `true` | Desabilita autenticação |
-| `ENABLE_RATE_LIMITER` | `true` | Rate limiting global |
-| `SUPER_ADMIN_EMAILS` | — | Emails com acesso global (comma-separated) |
-
-### Eclipse hawkBit
+### hawkBit
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `HAWKBIT_ENABLED` | `false` | Habilita integração hawkBit |
-| `HAWKBIT_URL` | — | URL base do hawkBit Management API |
-| `HAWKBIT_USERNAME` | — | Basic Auth username |
-| `HAWKBIT_PASSWORD` | — | Basic Auth password |
-| `HAWKBIT_TIMEOUT_MS` | `30000` | Timeout das requisições |
-| `HAWKBIT_SKIP_TLS` | `false` | Ignora certificado TLS (dev) |
-| `HAWKBIT_AUTOPROVISIONING` | `true` | Auto-cria target no primeiro DDI poll |
-| `HAWKBIT_DDI_TARGET_TOKEN_AUTH` | `true` | **Obrigatório** — habilita TargetToken auth no DDI |
+| `HAWKBIT_ENABLED` | false | Habilita integração |
+| `HAWKBIT_URL` | — | Management API URL |
+| `HAWKBIT_USERNAME` | — | Basic Auth |
+| `HAWKBIT_PASSWORD` | — | Basic Auth |
+| `HAWKBIT_AUTOPROVISIONING` | false | Auto-cria target no DDI poll |
+| `HAWKBIT_SYNC_INTERVAL_SEC` | 10 | Intervalo do sync worker |
+| `HAWKBIT_SYNC_STALE_SEC` | 300 | Dados stale sem revalidação |
 
-> **⚠️ CRÍTICO**: `HAWKBIT_DDI_TARGET_TOKEN_AUTH=true` é obrigatório. Sem isso, TODOS os
-> polls DDI retornam 401. hawkBit 1.0.3 vem com TargetToken auth **desabilitado** por padrão.
+### SSE (Server-Sent Events)
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `SSE_ENABLED` | true | Habilita SSE |
+| `SSE_HEARTBEAT_SEC` | 30 | Intervalo heartbeat |
+| `SSE_MAX_CONNECTIONS_PER_COMPANY` | 50 | Limite por empresa |
+
+### Opcionais
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `PORT` | 3000 | Porta |
+| `LOG_LEVEL` | info | fatal/error/warn/info/debug |
+| `CORS_ORIGIN` | — | Origins (vírgula) |
+| `SUPER_ADMIN_EMAILS` | — | Platform admins (vírgula) |
 
 ---
 
@@ -143,291 +278,48 @@ Todas as variáveis são validadas no startup via TypeBox. Copie `.env.example` 
 
 ```
 src/
-├── index.ts                      # Entrypoint — migrations + server + graceful shutdown
-├── app.ts                        # Composition root — middleware + módulos + Swagger
-│
+├── index.ts                    # Entry + graceful shutdown
+├── app.ts                      # Composition root + hawkBit error handler
 ├── common/
-│   ├── config/
-│   │   ├── env.ts                # Fonte única da verdade — TypeBox validated
-│   │   ├── hawkbit.ts            # Thin accessor tipado sobre env (zero process.env)
-│   │   ├── auth.ts               # Better Auth config
-│   │   ├── auth-client.ts        # Better Auth client
-│   │   └── email.ts              # Resend email helper
-│   ├── db/
-│   │   ├── index.ts              # Drizzle client (pool max 10)
-│   │   └── schema/               # Drizzle table definitions
-│   │       ├── auth.ts           # Better Auth tables
-│   │       ├── companies.ts      # companies + company_members
-│   │       ├── categories.ts     # categories (bus_line, garage, yard, region, custom)
-│   │       ├── devices.ts        # devices (serial_number + serial_display) + N:N
-│   │       ├── posts.ts          # Posts (reference)
-│   │       └── index.ts          # Barrel exports
-│   ├── hawkbit/
-│   │   ├── client.ts             # Barrel re-export (<100 lines)
-│   │   ├── http.ts               # HTTP client — Basic Auth, timeout, TLS
-│   │   ├── targets.ts            # Target CRUD, attributes, actions, DS assignment
-│   │   ├── distribution-sets.ts  # Distribution Set CRUD, target assignment, stats
-│   │   ├── software-modules.ts   # Software Module CRUD, artifact upload/download
-│   │   ├── constants.ts          # Ninbus artifact types
-│   │   └── types.ts              # hawkBit API DTO interfaces
-│   ├── middleware/
-│   │   ├── auth-guard.ts         # withAuth() — macros auth + companyRole
-│   │   ├── company-check.ts      # checkMembership() shared helper
-│   │   ├── company-guard.ts      # hasCompanyRole() standalone middleware
-│   │   ├── rate-limiter.ts       # Rate limiting global + auth
-│   │   └── request-logger.ts     # Structured request logging
-│   ├── logger/index.ts           # Pino logger (JSON em produção)
-│   ├── schemas/index.ts          # ErrorResponseSchema + GenericActionResponseSchema
-│   └── utils/
-│       └── serial-number.ts      # Serial number normalization (hex ↔ dotted)
-│
+│   ├── config/                 # env.ts (fonte única), hawkbit.ts, auth.ts
+│   ├── db/schema/              # Drizzle tables (auth, companies, devices, categories)
+│   ├── hawkbit/                # Client: targets, distribution-sets, software-modules
+│   ├── middleware/             # Auth guard, RBAC, rate limiter, logger
+│   ├── schemas/                # ErrorResponse, GenericActionResponse
+│   ├── sse/                    # SSE emitter (W3C, company-scoped, heartbeat)
+│   ├── types/                  # Deployment status types + enrichment helpers
+│   └── utils/                  # Serial number normalization
 ├── modules/
-│   ├── auth/                     # Better Auth routes
-│   ├── companies/                # Multi-tenancy CRUD + members
-│   ├── categories/               # Device grouping
-│   ├── devices/                  # Device registry + hawkBit integration
-│   │   ├── index.ts              # CRUD + claim
-│   │   ├── schemas.ts            # Validation schemas
-│   │   ├── service.ts            # CRUD + hawkBit sync
-│   │   ├── provisioning.ts       # Factory provisioning (provision + claim + link)
-│   │   ├── provision-routes.ts   # Platform routes (POST /provision, GET /unclaimed)
-│   │   ├── hawkbit-routes.ts     # hawkBit operations (attributes, actions)
-│   │   ├── category-routes.ts    # Category N:N assignment
-│   │   ├── auth.ts               # loadDevice + requireHawkbitLink helpers
-│   │   └── sync.ts               # hawkBit ↔ Ninbus sync engine
-│   ├── deployments/              # OTA deployments via Distribution Sets
-│   ├── artifacts/                # Firmware management via Software Modules
-│   ├── health/                   # GET /health
-│   └── posts/                    # Reference CRUD module
-│
-└── scripts/
-    ├── migrate.ts                # Drizzle migrations runner
-    └── seed.ts                   # Database seeder
-
-tests/                            # 139 testes Bun
+│   ├── auth/                   # Better Auth routes
+│   ├── companies/              # Multi-tenancy + members
+│   ├── categories/             # Device grouping
+│   ├── devices/                # Registry + provisioning + hawkBit sync
+│   ├── deployments/            # OTA: actions, enrichment, service, trail
+│   ├── artifacts/              # Firmware upload + tar packaging + management
+│   ├── health/                 # Health + sync state
+│   └── posts/                  # Reference CRUD
+tests/                          # 160 testes Bun
 ```
-
----
-
-## Rotas da API
-
-### RBAC — Role Hierarchy
-
-```
-owner (4) > admin (3) > operator (2) > viewer (1)
-```
-
-| Role | List/Get | Create | Update | Delete | Members |
-|------|----------|--------|--------|--------|---------|
-| owner | ✅ | ✅ | ✅ | ✅ | ✅ |
-| admin | ✅ | ✅ | ✅ | ✅ | ✅ |
-| operator | ✅ | ✅ | ✅ | ❌ | ❌ |
-| viewer | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-### Autenticação (`/api/auth/*`)
-
-| Método | Rota | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | `/api/auth/sign-up/email` | ❌ | Registrar |
-| POST | `/api/auth/sign-in/email` | ❌ | Login |
-| POST | `/api/auth/sign-out` | ✅ | Encerrar sessão |
-| GET | `/api/auth/get-session` | ✅ | Sessão atual |
-| POST | `/api/auth/request-password-reset` | ❌ | Solicitar reset |
-| POST | `/api/auth/reset-password` | ❌ | Resetar com token |
-
-### Provisioning (`/api/devices/*`) — Platform Routes
-
-| Método | Rota | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | `/api/devices/provision` | ✅ | Pré-registrar dispositivo (cria hawkBit target) |
-| GET | `/api/devices/unclaimed` | ✅ | Listar dispositivos sem empresa |
-
-> Estas rotas são **platform-level** — usam `auth: true` apenas, sem `companyRole`.
-
-### Empresas (`/api/companies/*`)
-
-| Método | Rota | Role mín. | Descrição |
-|--------|------|-----------|-----------|
-| GET | `/api/companies` | auth | Listar empresas do usuário |
-| POST | `/api/companies` | auth | Criar empresa (user vira owner) |
-| GET | `/api/companies/:id` | viewer | Detalhes |
-| PUT | `/api/companies/:id` | admin | Atualizar |
-| DELETE | `/api/companies/:id` | owner | Remover |
-| GET | `/api/companies/:id/members` | viewer | Listar membros |
-| POST | `/api/companies/:id/members` | admin | Adicionar membro |
-| PUT | `/api/companies/:id/members/:userId` | admin | Alterar role |
-| DELETE | `/api/companies/:id/members/:userId` | admin | Remover membro |
-
-### Dispositivos (`/api/companies/:companyId/devices/*`)
-
-| Método | Rota | Role mín. | Descrição |
-|--------|------|-----------|-----------|
-| GET | `/` | viewer | Listar dispositivos |
-| POST | `/` | operator | Registrar/claim dispositivo |
-| GET | `/:deviceId` | viewer | Detalhes (com hawkBit sync) |
-| PUT | `/:deviceId` | operator | Atualizar |
-| DELETE | `/:deviceId` | admin | Remover |
-| PUT | `/:deviceId/link` | operator | Vincular ao hawkBit |
-| GET | `/:deviceId/categories` | viewer | Categorias do dispositivo |
-| PUT | `/:deviceId/categories` | operator | Atribuir categorias |
-| GET | `/:deviceId/attributes` | viewer | Atributos hawkBit do target |
-| GET | `/:deviceId/actions` | viewer | Ações de deployment hawkBit |
-| DELETE | `/:deviceId/actions/:actionId` | operator | Cancelar ação |
-
-### Categorias (`/api/companies/:companyId/categories/*`)
-
-| Método | Rota | Role mín. | Descrição |
-|--------|------|-----------|-----------|
-| GET | `/` | viewer | Listar |
-| POST | `/` | operator | Criar |
-| GET | `/:categoryId` | viewer | Detalhes |
-| PUT | `/:categoryId` | operator | Atualizar |
-| DELETE | `/:categoryId` | admin | Remover |
-
-### Deployments (`/api/companies/:companyId/deployments/*`)
-
-| Método | Rota | Role mín. | Descrição |
-|--------|------|-----------|-----------|
-| GET | `/artifact-types` | viewer | Tipos de artefato Ninbus |
-| POST | `/` | operator | Criar deployment OTA |
-| GET | `/` | viewer | Listar |
-| GET | `/:deploymentId` | viewer | Detalhes |
-| DELETE | `/:deploymentId` | admin | Remover |
-| GET | `/:deploymentId/statistics` | viewer | Estatísticas hawkBit |
-| GET | `/:deploymentId/targets` | viewer | Targets no deployment |
-
-### Artefatos (`/api/companies/:companyId/artifacts/*`)
-
-| Método | Rota | Role mín. | Descrição |
-|--------|------|-----------|-----------|
-| POST | `/` | operator | Upload firmware (.fir/.frz/.bin) |
-| GET | `/types` | viewer | Tipos de artefato |
-| GET | `/` | viewer | Listar artefatos |
-| GET | `/:artifactId` | viewer | Detalhes |
-| GET | `/:artifactId/download` | viewer | Download info |
-| PUT | `/:artifactId` | operator | Atualizar descrição |
-| DELETE | `/:artifactId` | admin | Remover |
-
-> Retorna 503 se hawkBit offline, 400 se hawkBit disabled.
-
----
-
-## Tipos de Artefato
-
-| Tipo | Destino | Risco | Reboot |
-|------|---------|-------|--------|
-| `firmware-ninbus` | NAND → Bootloader → STM32F407 | 🔴 HIGH | ✅ |
-| `firmware-controller` | CAN Bus → LightDot | 🟡 MEDIUM | ❌ |
-| `configuration-nfx` | NAND NFX → CAN → LightDot | 🟢 LOW | ❌ |
-
----
-
-## hawkBit Integration
-
-### Conceitos hawkBit ↔ Ninbus
-
-| hawkBit | Ninbus API | Descrição |
-|---------|-----------|-----------|
-| Target (controllerId) | Device | Dispositivo IoT com status de conexão |
-| Software Module | Artifact container | Container tipado (firmware-ninbus, etc.) |
-| Artifact | Binary file | Arquivo raw (.fir/.frz/.bin) |
-| Distribution Set | Deployment | Agrupa SMs e é atribuído a targets |
-| Target Attributes | Device inventory | Hardware/software info |
-| Action | Deployment status | Status por target |
-| DDI | Device polling | `GET /{tenant}/controller/v1/{controllerId}` |
-
-### Fluxo de Provisioning
-
-```
-POST /devices/provision {serialNumber, deviceKey}
-  → normalizeSerial() → hex + display
-  → hawkbitTargets.create({controllerId: hex, securityToken: deviceKey})
-  → db.insert({serialNumber: hex, serialDisplay: display, status: "unclaimed"})
-```
-
-### Fluxo de Deployment
-
-```
-POST /deployments {artifactType, targets}
-  → cria Software Module → upload binary
-  → cria Distribution Set → assigna targets
-  → hawkBit envia firmware via DDI polling
-```
-
-### Fluxo DDI (Dispositivo)
-
-```
-Device poll: GET /DEFAULT/controller/v1/{controllerId}
-             Authorization: TargetToken {securityToken}
-  → 200 OK (config + polling interval)
-  → hawkBit envia deployment action quando disponível
-  → device download binary → instala → reporta status
-```
-
-### API hawkBit Usada
-
-| Endpoint | Método | Uso |
-|----------|--------|-----|
-| `/rest/v1/targets` | GET/POST | Listar/criar targets |
-| `/rest/v1/targets/{id}` | GET/PUT/DELETE | CRUD de target |
-| `/rest/v1/targets/{id}/attributes` | GET | Atributos do device |
-| `/rest/v1/targets/{id}/actions` | GET/DELETE | Ações de deployment |
-| `/rest/v1/softwaremodules` | GET/POST | CRUD de SM |
-| `/rest/v1/softwaremodules/{id}/artifacts` | POST (multipart) | Upload de binário |
-| `/rest/v1/distributionsets` | GET/POST/DELETE | CRUD de DS |
-| `/rest/v1/distributionsets/{id}/assignedTargets` | GET/POST | Atribuir targets |
-| `/rest/v1/distributionsets/{id}/statistics` | GET | Estatísticas |
-| `/rest/v1/system/configs` | GET/PUT | Config do hawkBit (TargetToken auth) |
-
----
-
-## Testes
-
-```bash
-# Rode os testes (usa .env.test automaticamente)
-bun test
-
-# Com env override (CI)
-DATABASE_URL="..." HAWKBIT_ENABLED=false bun test
-
-# Módulo específico
-bun test tests/devices.test.ts
-```
-
-**139 testes** cobrindo: auth, CRUD de empresas/dispositivos/categorias, deployments, artefatos, health, RBAC, validação, autorização, hawkBit error guards.
 
 ---
 
 ## Scripts
 
-| Script | Descrição |
-|--------|-----------|
-| `bun run dev` | Servidor com hot reload |
-| `bun run build` | Build de produção (single bundle) |
-| `bun run start` | Iniciar build de produção |
-| `bun test` | Rodar testes |
-| `bun run lint` | Lint com Biome |
-| `bun run db:migrate` | Rodar migrations |
-| `bun run db:push` | Push schema direto (dev) |
+| Comando | Descrição |
+|---------|-----------|
+| `bun run dev` | Dev com hot reload |
+| `bun run build` | Build produção (single bundle) |
+| `bun run start` | Iniciar produção |
+| `bun test` | Testes |
+| `bun run db:migrate` | Migrations |
 | `bun run db:studio` | Drizzle Studio |
 
 ---
 
 ## Stack
 
-| Tecnologia | Uso |
-|------------|-----|
-| [Bun](https://bun.sh) | Runtime + bundler + test runner |
-| [Elysia.js](https://elysiajs.com) | Web framework (plugins, macros, OpenAPI) |
-| [Better Auth](https://better-auth.com) | Autenticação (email/password, sessões, cookies) |
-| [Drizzle ORM](https://orm.drizzle.team) | ORM PostgreSQL |
-| [TypeBox](https://github.com/sinclairtypebox/typebox) | Runtime type validation |
-| [Biome](https://biomejs.dev) | Linter + formatter |
-| [Scalar](https://scalar.com) | Documentação OpenAPI interativa |
-| [Eclipse hawkBit](https://eclipse.org/hawkbit/) | OTA deployment server (Management + DDI) |
-
----
+[Bun](https://bun.sh) · [Elysia](https://elysiajs.com) · [Better Auth](https://better-auth.com) · [Drizzle](https://orm.drizzle.team) · [TypeBox](https://github.com/sinclairtypebox) · [hawkBit](https://eclipse.org/hawkbit/) · [Scalar](https://scalar.com)
 
 ## Licença
 
-Projeto proprietário — Ninbus Tecnologia.
+Proprietário — Ninbus Tecnologia.

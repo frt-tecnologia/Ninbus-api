@@ -13,9 +13,12 @@ import { devicesModule } from '@modules/devices';
 import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { deviceCategoryRoutes } from '@modules/devices/category-routes';
 import { provisioningRoutes } from '@modules/devices/provision-routes';
+import { DeviceSyncEngine } from '@modules/devices/sync';
+import { sseModule } from '@modules/sse';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
 import { Elysia } from 'elysia';
+import { HawkbitApiError } from '@common/hawkbit/client';
 import { appLogger } from './common/logger';
 import { authRateLimit, globalRateLimit } from './common/middleware/rate-limiter';
 import { requestLogger } from './common/middleware/request-logger';
@@ -161,6 +164,34 @@ export const createApp = () => {
 		.onError(({ code, error, set }) => {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 
+			// Handle hawkBit API errors globally
+			if (error instanceof HawkbitApiError) {
+				appLogger.warn(`[HAWKBIT] API error ${error.status} on ${error.endpoint}: ${JSON.stringify(error.body)}`);
+
+				if (error.status === 409) {
+					set.status = 409;
+					// Parse hawkBit error for user-friendly message
+					const hbError = error.body as any;
+					const hbMessage = hbError?.message ?? 'Entity already exists';
+					return {
+						error: 'Conflict',
+						message: hbMessage,
+					};
+				}
+
+				if (error.status === 404) {
+					set.status = 404;
+					return { error: 'Not Found', message: 'Resource not found in hawkBit' };
+				}
+
+				// Other hawkBit errors → 502 (bad gateway)
+				set.status = 502;
+				return {
+					error: 'Upstream Error',
+					message: `hawkBit returned ${error.status}`,
+				};
+			}
+
 			if (code === 'NOT_FOUND') {
 				set.status = 404;
 				return { error: 'Route not found' };
@@ -233,7 +264,8 @@ export const createApp = () => {
 		.use(deploymentsModule)
 		.use(deploymentDeviceRoutes)
 		.use(artifactsModule)
-		.use(artifactManageRoutes);
+		.use(artifactManageRoutes)
+		.use(sseModule);
 
 	if (env.ENABLE_AUTH) {
 		app.use(authRateLimit);
@@ -242,6 +274,9 @@ export const createApp = () => {
 	} else {
 		appLogger.info('[AUTH] Authentication disabled (ENABLE_AUTH=false)');
 	}
+
+	// Start hawkBit background sync worker
+	DeviceSyncEngine.startBackgroundSync();
 
 	return app;
 };

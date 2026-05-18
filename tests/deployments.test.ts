@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
+import { computeDeploymentStatus, summarizeStatistics } from '../src/modules/deployments/service';
+import { cleanAll } from './test-helpers';
+
+afterAll(async () => {
+	await cleanAll();
+});
 
 describe('Deployments Module', () => {
 	const app = createApp();
@@ -193,6 +199,53 @@ describe('Deployments Module', () => {
 				}),
 			);
 			expect(response.status).toBe(403);
+		});
+	});
+
+	describe('Deployment Status Computation', () => {
+		it('RETRIEVED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ RETRIEVED: 1, total: 1 }, 1)).toBe('in_progress');
+			const summary = summarizeStatistics({ RETRIEVED: 1, total: 1 });
+			expect(summary.inProgress).toBe(1);
+			expect(summary.totalTargets).toBe(1);
+		});
+
+		it('FINISHED (all) maps to completed', () => {
+			expect(computeDeploymentStatus({ FINISHED: 3, total: 3 }, 3)).toBe('completed');
+			const summary = summarizeStatistics({ FINISHED: 3, total: 3 });
+			expect(summary.finished).toBe(3);
+		});
+
+		it('ERROR maps to failed', () => {
+			expect(computeDeploymentStatus({ ERROR: 1, FINISHED: 2, total: 3 }, 3)).toBe('failed');
+			expect(summarizeStatistics({ ERROR: 1, WARNING: 1, total: 2 }).failed).toBe(2);
+		});
+
+		it('CANCELED (all) maps to canceled', () => {
+			expect(computeDeploymentStatus({ CANCELED: 2, total: 2 }, 2)).toBe('canceled');
+		});
+
+		it('RUNNING maps to pending (device has not polled yet)', () => {
+			expect(computeDeploymentStatus({ RUNNING: 5, total: 5 }, 5)).toBe('pending');
+			const summary = summarizeStatistics({ RUNNING: 5, total: 5 });
+			expect(summary.pending).toBe(5);
+			expect(summary.inProgress).toBe(0);
+		});
+
+		it('DOWNLOAD/DOWNLOADED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ DOWNLOAD: 1, total: 1 }, 1)).toBe('in_progress');
+			expect(computeDeploymentStatus({ DOWNLOADED: 1, total: 1 }, 1)).toBe('in_progress');
+		});
+
+		it('total=0 maps to no_targets', () => {
+			expect(computeDeploymentStatus({}, 0)).toBe('no_targets');
+		});
+
+		it('mixed RETRIEVED+FINISHED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ FINISHED: 2, RETRIEVED: 1, total: 3 }, 3)).toBe('in_progress');
+			const summary = summarizeStatistics({ FINISHED: 2, RETRIEVED: 1, total: 3 });
+			expect(summary.finished).toBe(2);
+			expect(summary.inProgress).toBe(1);
 		});
 	});
 

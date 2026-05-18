@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
+import { cleanAll } from './test-helpers';
+
+afterAll(async () => {
+	await cleanAll();
+});
 
 describe('Categories Module', () => {
 	const app = createApp();

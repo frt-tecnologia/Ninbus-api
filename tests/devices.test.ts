@@ -1,15 +1,22 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
+import { cleanAll } from './test-helpers';
+
+afterAll(async () => {
+	await cleanAll();
+});
 
 describe('Devices Module', () => {
 	const app = createApp();
 	const ts = Date.now();
 	const ownerEmail = `dev-owner-${ts}@example.com`;
 	const otherEmail = `dev-other-${ts}@example.com`;
+	const superAdminEmail = `admin-test@ninbus.com.br`;
 	const password = 'TestPassword123!';
-	const testSerial = `FF19E0EB${ts.toString(16).toUpperCase().slice(-8)}`; // valid hex serial
+	const testSerial = `FF19E0EB${ts.toString(16).toUpperCase().slice(-8).padStart(8, '0')}`; // valid 16-char hex serial (8 bytes)
 	let ownerCookie: string;
 	let otherCookie: string;
+	let superAdminCookie: string;
 	let companyId: string;
 	let deviceId: string;
 	let categoryId: string;
@@ -58,10 +65,11 @@ describe('Devices Module', () => {
 		it('creates company and categories', async () => {
 			ownerCookie = await signUpAndIn(ownerEmail, 'Device Owner');
 			otherCookie = await signUpAndIn(otherEmail, 'Other User');
+			superAdminCookie = await signUpAndIn(superAdminEmail, 'Super Admin');
 			companyId = await setupCompany(ownerCookie);
 			categoryId = await createCategory(ownerCookie, companyId, 'bus_line');
 			expect(companyId).toBeDefined();
-		});
+		}, 10000);
 	});
 
 	describe('Unauthenticated', () => {
@@ -104,7 +112,7 @@ describe('Devices Module', () => {
 			const provResponse = await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({
 						serialNumber: testSerial,
 						deviceKey: 'test-factory-key-12345678',
@@ -162,12 +170,12 @@ describe('Devices Module', () => {
 		});
 
 		it('DELETE /:deviceId removes device', async () => {
-			const delSerial = `CC00DD${(ts + 99).toString(16).toUpperCase().padStart(10, '0')}`;
+			const delSerial = `CC00DD${(ts + 99).toString(16).toUpperCase().padStart(10, '0')}`; // 16 hex chars
 			// Provision first
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: delSerial, deviceKey: 'test-del-key-12345678' }),
 				}),
 			);
@@ -290,14 +298,14 @@ describe('Devices Module', () => {
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({
-						serialNumber: `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6)}`,
+						serialNumber: `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6).padStart(6, '0')}`,
 						deviceKey: 'test-dup-key-12345678',
 					}),
 				}),
 			);
-			const dupSerial = `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6)}`;
+			const dupSerial = `AA00BB11CC${ts.toString(16).toUpperCase().slice(-6).padStart(6, '0')}`;
 			// Claim first
 			await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
@@ -392,7 +400,7 @@ describe('Devices Module', () => {
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: hexSerial, deviceKey: 'test-hex-key-12345678' }),
 				}),
 			);
@@ -416,7 +424,7 @@ describe('Devices Module', () => {
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: dottedSerial, deviceKey: 'test-dotted-key-12345678' }),
 				}),
 			);
@@ -439,7 +447,7 @@ describe('Devices Module', () => {
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: mixedSerial, deviceKey: 'test-mixed-key-12345678' }),
 				}),
 			);

@@ -1,4 +1,5 @@
 import { t } from 'elysia';
+import { dateTimeString } from '@common/schemas';
 
 /**
  * Artifacts module schemas.
@@ -28,6 +29,7 @@ export const ARTIFACT_ALLOWED_EXTENSIONS = [
 	'.fw',
 	'.cfg',
 	'.conf',
+	'.opt',
 ] as const;
 
 /**
@@ -103,9 +105,30 @@ export const SoftwareModuleSchema = t.Object({
 	deleted: t.Optional(t.Boolean()),
 	complete: t.Optional(t.Boolean()),
 	createdBy: t.Optional(t.String()),
-	createdAt: t.Optional(t.Number()),
+	/** hawkBit returns epoch millis — API converts to ISO date string. */
+	createdAt: t.Optional(dateTimeString),
 	lastModifiedBy: t.Optional(t.String()),
-	lastModifiedAt: t.Optional(t.Number()),
+	/** hawkBit returns epoch millis — API converts to ISO date string. */
+	lastModifiedAt: t.Optional(dateTimeString),
+	/** Artifact binaries uploaded to this Software Module. */
+	artifacts: t.Optional(
+		t.Array(
+			t.Object({
+				id: t.Number(),
+				filename: t.Optional(t.String()),
+				size: t.Optional(t.Number({ description: 'File size in bytes' })),
+				hashes: t.Optional(
+					t.Object({
+						sha1: t.Optional(t.String()),
+						sha256: t.Optional(t.String()),
+						md5: t.Optional(t.String()),
+					}),
+				),
+			}),
+		),
+	),
+	/** Total file size in bytes across all artifact binaries. */
+	size: t.Optional(t.Number({ description: 'Total artifact file size in bytes' })),
 });
 
 export const ArtifactMetadataSchema = t.Object({
@@ -120,7 +143,8 @@ export const ArtifactMetadataSchema = t.Object({
 		}),
 	),
 	createdBy: t.Optional(t.String()),
-	createdAt: t.Optional(t.Number()),
+	/** hawkBit returns epoch millis — API converts to ISO date string. */
+	createdAt: t.Optional(dateTimeString),
 });
 
 // ── Response Schemas ─────────────────────────────────────────────────
@@ -143,7 +167,10 @@ export const ArtifactUploadResponseSchema = t.Object({
 			name: t.String(),
 			version: t.String(),
 			type: t.String(),
+			/** Total .tar archive size uploaded to hawkBit. */
 			size: t.Number(),
+			/** Original raw firmware file size (before tar packaging). */
+			payloadSize: t.Optional(t.Number()),
 		}),
 	),
 });

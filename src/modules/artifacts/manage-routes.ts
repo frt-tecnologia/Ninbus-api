@@ -57,6 +57,7 @@ export const artifactManageRoutes = withAuth(
 			response: {
 				200: ArtifactListResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -93,6 +94,7 @@ export const artifactManageRoutes = withAuth(
 				200: ArtifactResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -102,8 +104,8 @@ export const artifactManageRoutes = withAuth(
 		'/:artifactId',
 		async ({ params, set }) => {
 			try {
-				await service.deleteArtifact(Number(params.artifactId));
-				return { message: 'Artifact deleted successfully' };
+				const result = await service.deleteArtifact(Number(params.artifactId));
+				return { message: result.message };
 			} catch (error) {
 				if (error instanceof service.ArtifactValidationError) {
 					set.status = 400;
@@ -129,6 +131,7 @@ export const artifactManageRoutes = withAuth(
 			response: {
 				200: ArtifactDeleteResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -166,6 +169,7 @@ export const artifactManageRoutes = withAuth(
 			response: {
 				200: GenericActionResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -210,6 +214,7 @@ export const artifactManageRoutes = withAuth(
 				200: DownloadArtifactResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	);

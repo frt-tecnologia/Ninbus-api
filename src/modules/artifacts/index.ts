@@ -49,7 +49,11 @@ export const artifactsModule = withAuth(
 			} catch (error) {
 				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
-					return { error: 'Validation error', message: error.message, code: error.code };
+					return {
+						error: 'Validation error',
+						message: error.message,
+						code: error.code,
+					};
 				}
 				throw error;
 			}
@@ -63,12 +67,15 @@ export const artifactsModule = withAuth(
 				tags: ['Artifacts'],
 				summary: 'Upload firmware artifact to hawkBit',
 				description:
-					'Uploads a raw firmware file (.fir, .frz, .bin) to hawkBit. Requires operator role or above.',
+					'Uploads a raw firmware file (.fir, .frz, .bin) to hawkBit. The API packages it into a .tar ' +
+					'archive for the embedded device. Each upload creates a unique Software Module (UUID-based name). ' +
+					'Requires operator role or above.',
 			},
 			response: {
 				201: ArtifactUploadResponseSchema,
 				400: ErrorResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)

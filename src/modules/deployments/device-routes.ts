@@ -1,6 +1,7 @@
 /**
  * Deployment detail routes — statistics, targets, action management, status trail.
  */
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { withAuth } from '@common/middleware/auth-guard';
@@ -9,6 +10,9 @@ import {
 	DeploymentStatisticsResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
+	RawActionListResponseSchema,
+	RawDiagnosticResponseSchema,
+	RawTargetListResponseSchema,
 	TargetStatusTrailResponseSchema,
 	TargetStatusesResponseSchema,
 	deploymentActionParams,
@@ -124,7 +128,7 @@ export const deploymentDeviceRoutes = withAuth(
 			auth: true, companyRole: 'viewer', params: deploymentParams,
 			query: t.Object({ offset: t.Optional(t.Number()), limit: t.Optional(t.Number({ maximum: 500 })) }),
 			detail: { tags: ['Deployments'], summary: 'List targets in deployment' },
-			response: { 200: t.Object({ data: t.Array(t.Any()), total: t.Number() }), 403: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: { 200: RawTargetListResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
@@ -153,6 +157,12 @@ export const deploymentDeviceRoutes = withAuth(
 		async ({ params, set }) => {
 			try {
 				await hawkbitTargets.cancelAction(params.targetId, Number(params.actionId), true);
+
+				// After cancelling, protect target from sync engine re-marking as 'pending'
+				// hawkBit may still report 'pending' until it processes the cancellation
+				const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
+				protectTargetStatuses([params.targetId], 'in_sync');
+
 				return { message: 'Action cancelled successfully' };
 			} catch {
 				set.status = 422;
@@ -163,6 +173,42 @@ export const deploymentDeviceRoutes = withAuth(
 			auth: true, companyRole: 'operator', params: deploymentActionParams,
 			detail: { tags: ['Deployments'], summary: 'Cancel deployment action' },
 			response: { 200: GenericActionResponseSchema, 403: ErrorResponseSchema, 422: ErrorResponseSchema, 503: ErrorResponseSchema },
+		},
+	)
+
+	// GET /:deploymentId/ddi-check/:targetId — DDI diagnostic for a target
+	.get(
+		'/:deploymentId/ddi-check/:targetId',
+		async ({ params, set }) => {
+			if (!hawkbitConfig.enabled) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'hawkBit integration is disabled' };
+			}
+			try {
+				const diag = await service.checkDDiReadiness(params.targetId);
+				return { data: diag };
+			} catch (error) {
+				appLogger.warn('[DEPLOYMENTS] ddi-check failed: %s', error instanceof Error ? error.message : String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
+		},
+		{
+			auth: true, companyRole: 'viewer',
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				deploymentId: t.String({ description: 'hawkBit DS ID' }),
+				targetId: t.String({ description: 'hawkBit controllerId' }),
+			}),
+			detail: {
+				tags: ['Deployments'],
+				summary: 'Check if target would receive deploymentBase via DDI',
+				description:
+					'Diagnostic endpoint that checks if a target would get deploymentBase from DDI poll. ' +
+					'Checks for active update/cancel actions, DS completeness, and potential blockers. ' +
+					'Use this to debug DDI issues when device polls but gets no deployment.',
+			},
+			response: { 200: RawDiagnosticResponseSchema, 400: ErrorResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	)
 
@@ -191,6 +237,6 @@ export const deploymentDeviceRoutes = withAuth(
 			auth: true, companyRole: 'viewer', params: deviceParams,
 			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },
-			response: { 200: t.Object({ data: t.Array(t.Any()), total: t.Number() }), 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: { 200: RawActionListResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
 	);

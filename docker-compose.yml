@@ -58,6 +58,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_RATE_LIMITER: ${ENABLE_RATE_LIMITER:-true}
 
+      # Platform admin (comma-separated emails)
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
+
       # hawkBit connection
       HAWKBIT_ENABLED: ${HAWKBIT_ENABLED:-true}
       HAWKBIT_URL: ${HAWKBIT_URL:-http://hawkbit:8080}
@@ -65,6 +68,13 @@ services:
       HAWKBIT_PASSWORD: ${HAWKBIT_PASSWORD:-admin}
       HAWKBIT_TIMEOUT_MS: ${HAWKBIT_TIMEOUT_MS:-30000}
       HAWKBIT_SKIP_TLS: ${HAWKBIT_SKIP_TLS:-false}
+      HAWKBIT_SYNC_MODE: ${HAWKBIT_SYNC_MODE:-hybrid}
+      HAWKBIT_AUTOPROVISIONING: ${HAWKBIT_AUTOPROVISIONING:-false}
+
+      # SSE (Server-Sent Events)
+      SSE_ENABLED: ${SSE_ENABLED:-true}
+      SSE_HEARTBEAT_SEC: ${SSE_HEARTBEAT_SEC:-30}
+      SSE_MAX_CONNECTIONS_PER_COMPANY: ${SSE_MAX_CONNECTIONS_PER_COMPANY:-50}
     depends_on:
       hawkbit:
         condition: service_healthy

@@ -108,10 +108,18 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 				if (!minimumRole) return;
 
 				return {
-					resolve: async ({ user, params }: any) => {
+						resolve: async ({ user, params }: any) => {
 						// Skip if no user (auth macro will handle 401)
 						if (!user || !params?.companyId) {
 							return { companyRole: undefined, companyId: undefined };
+						}
+
+						// Super admins bypass membership check — get owner role for any company
+						if (isSuperAdmin(user.email)) {
+							return {
+								companyRole: 'owner',
+								companyId: params.companyId,
+							};
 						}
 
 						const [membership] = await db
@@ -146,6 +154,9 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 							set.status = 400;
 							return { error: 'Bad Request', message: 'Company ID is required' };
 						}
+
+						// Super admins bypass all company role checks
+						if (isSuperAdmin(user.email)) return;
 
 						if (_membershipDenied) {
 							set.status = 403;

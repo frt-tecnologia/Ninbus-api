@@ -43,23 +43,49 @@ export const hawkbitSoftwareModules = {
 		return hawkbitRequest({ method: 'DELETE', path: `/rest/v1/softwaremodules/${smId}` });
 	},
 
-	uploadArtifact(
+	async uploadArtifact(
 		smId: number,
 		file: File,
 		params?: { filename?: string; md5sum?: string; sha1sum?: string; sha256sum?: string },
 	): Promise<HawkbitArtifact> {
-		const formData = new FormData();
-		formData.append('file', file);
-		return hawkbitRequest({
+		/**
+		 * hawkBit does NOT auto-detect artifact size from multipart uploads.
+		 * Spring's MultipartFile.getSize() returns 0 when the HTTP client
+		 * sends FormData without per-part Content-Length (Bun's fetch behavior).
+		 *
+		 * Fix: Build the multipart/form-data body manually as a raw Buffer
+		 * with an explicit Content-Length header. This guarantees Spring Boot
+		 * correctly parses the file size and hawkBit stores it in the DB.
+		 */
+		const filename = params?.filename ?? file.name;
+		const boundary = `----NinbusFormBoundary${Date.now().toString(36)}`;
+
+		// Read file content as Uint8Array
+		const fileBytes = new Uint8Array(await file.arrayBuffer());
+
+		// Build multipart body: --boundary\r\n headers \r\n\r\n data \r\n--boundary--\r\n
+		const headerPart =
+			`--${boundary}\r\n` +
+			`Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+			`Content-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`;
+		const headerBytes = Buffer.from(headerPart);
+		const footerBytes = Buffer.from(`\r\n--${boundary}--\r\n`);
+		const body = Buffer.concat([headerBytes, fileBytes, footerBytes]);
+
+		return hawkbitRequest<HawkbitArtifact>({
 			method: 'POST',
 			path: `/rest/v1/softwaremodules/${smId}/artifacts`,
 			query: {
-				filename: params?.filename ?? file.name,
+				filename,
 				md5sum: params?.md5sum,
 				sha1sum: params?.sha1sum,
 				sha256sum: params?.sha256sum,
 			},
-			body: formData,
+			body,
+			headers: {
+				'Content-Type': `multipart/form-data; boundary=${boundary}`,
+				'Content-Length': String(body.length),
+			},
 		});
 	},
 

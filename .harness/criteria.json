@@ -2,41 +2,41 @@
   {
     "name": "Functional Correctness",
     "weight": 10,
-    "description": "Build clean (bun build). All tests pass (bun test). Auth, device CRUD + hawkBit ops, deployment CRUD (Distribution Sets + target assignment), artifact management (Software Modules + binary upload) all functional. hawkBit sync engine guards on hawkbitConfig.enabled."
+    "description": "Build clean (bun build). Tests pass (bun test). Auth, device CRUD + provisioning, hawkBit operations, deployments, artifacts all functional. Device delete = unclaim (hawkBit target preserved). Deprovision = permanent removal (super admin only). hawkBit sync engine guards on hawkbitConfig.enabled. Background sync worker runs on interval."
   },
   {
     "name": "Code Quality",
     "weight": 8,
-    "description": "Every file under 250 lines. Clean separation: schemas.ts (types) → index.ts / routes.ts (handlers) → service.ts (logic) → hawkbit client (adapter). No inline response schemas in route files — all imported from schemas.ts. Params/query schemas may be inline in routes or imported from schemas.ts."
+    "description": "Every file under 250 lines. Clean separation: schemas.ts (types) → index.ts / routes.ts (handlers) → service.ts (logic) → hawkbit client (adapter). No inline response schemas in route files — all imported from schemas.ts. Logger uses %s format strings (never pass unknown/number as second arg)."
   },
   {
     "name": "Schema Organization",
     "weight": 9,
-    "description": "Each module's schemas.ts owns all body, response, and shared param schemas for that module. ErrorResponseSchema and GenericActionResponseSchema live in common/schemas and are re-exported by each module. Route files (index.ts, *-routes.ts) NEVER define response schemas inline — they only import from their module's schemas.ts. Params and query schemas may live in schemas.ts or be defined locally in route files."
+    "description": "Each module's schemas.ts owns all body, response, and shared param schemas. ErrorResponseSchema and GenericActionResponseSchema in common/schemas, re-exported by each module. Route files NEVER define response schemas inline. Params/query schemas may live in schemas.ts or locally in route files."
   },
   {
     "name": "Error Handling",
     "weight": 8,
-    "description": "hawkBit errors isolated — never leak API paths or request IDs to clients. HawkbitApiError wraps external failures. sync.ts catches all hawkBit errors silently. Actionable error messages returned to clients."
+    "description": "hawkBit errors isolated — never leak API paths or request IDs. HawkbitApiError wraps external failures. Sync catches errors silently. Deprovision catches hawkBit delete failure gracefully (target may not exist). Pino uses %s format strings for type-safe logging."
   },
   {
     "name": "Test Coverage",
     "weight": 8,
-    "description": "Tests covering auth, devices, deployments, artifacts, categories, companies, health, posts. Tests validate auth, authorization, validation, CRUD, hawkBit endpoint structure. Auth tests match actual Better Auth behavior."
+    "description": "9 test files + test-helpers.ts covering auth, devices, deployments, artifacts, categories, companies, health, posts, provisioning. Tests validate auth (superAdmin macro), authorization, validation, CRUD, hawkBit endpoint structure. Separate test DB (Neon). afterAll() cleans all tables via cleanAll(). Idempotent runs."
   },
   {
     "name": "Config Centralization",
     "weight": 7,
-    "description": "ALL config flows through env.ts (single source of truth). Zero process.env reads outside env.ts (except standalone migrate.ts). hawkbitConfig is thin accessor over env. HAWKBIT_URL, HAWKBIT_USERNAME, HAWKBIT_PASSWORD, HAWKBIT_TIMEOUT_MS, HAWKBIT_SKIP_TLS supported. .env.example and .env.test kept in sync."
+    "description": "ALL config flows through env.ts (TypeBox validated). SUPER_ADMIN_EMAILS for platform admin. HAWKBIT_AUTOPROVISIONING flag. HAWKBIT_SYNC_INTERVAL_SEC/STALE_SEC for sync tuning. Zero process.env reads outside env.ts (except migrate.ts). .env, .env.example, .env.test kept in sync."
   },
   {
     "name": "Security",
     "weight": 8,
-    "description": "Basic Auth credentials never logged or exposed in responses. Company membership checked via checkMembership() helper on every company-scoped endpoint. hawkBit link verified via requireHawkbitLink() on hawkBit operations. Input validation at route boundary via TypeBox schemas."
+    "description": "Super admin via SUPER_ADMIN_EMAILS env var (superAdmin macro). Company RBAC via companyRole macro (owner/admin/operator/viewer). Device removal from company = unclaim (hawkBit preserved). Only DELETE /deprovision/:sn (super admin) removes from hawkBit. hawkBit guard on all external calls. deviceKey never stored in DB."
   },
   {
     "name": "🔮 Futuro (Aprendizado Contínuo)",
     "weight": 5,
-    "description": "Principles extracted and stored in .harness/principles.json. Architecture decisions documented. Conventions for Elysia/TypeScript patterns established and followed."
+    "description": "42 principles in .harness/principles.json covering architecture, security, testing, process, quality. SKILL.md updated with current state. Key patterns: unclaim vs deprovision, superAdmin macro, test DB isolation, background sync architecture."
   }
 ]

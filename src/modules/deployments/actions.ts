@@ -1,5 +1,5 @@
 /**
- * Deployment action management — cancel, force-close, cleanup.
+ * Deployment action management — cancel, force-close, cleanup, DDI diagnostics.
  *
  * hawkBit action lifecycle:
  *   1. DS assigned to target → action created (status=running)
@@ -23,8 +23,25 @@
 import { hawkbitDistributionSets, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Max retries for force-close operations. */
+const FORCE_CLOSE_RETRIES = 3;
+/** Delay between retries in ms. */
+const FORCE_CLOSE_RETRY_DELAY_MS = 500;
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Internal helper: force-close active actions for a single target.
+ * Force-close active actions for a single target.
  *
  * When onlyCancel=true, uses forceQuitAction() for cancel-type actions
  * and skips update-type actions (preserves new deployment).
@@ -47,29 +64,43 @@ async function forceCloseTargetActions(
 	});
 
 	for (const action of toClose) {
-		try {
-			// Cancel-type actions must use forceQuitAction (direct force-close).
-			// Update-type actions use the standard two-step cancelAction process.
-			if (action.type === 'cancel') {
-				await hawkbitTargets.forceQuitAction(targetId, action.id);
-			} else {
-				await hawkbitTargets.cancelAction(targetId, action.id, true);
+		let closed = false;
+		for (let attempt = 1; attempt <= FORCE_CLOSE_RETRIES; attempt++) {
+			try {
+				if (action.type === 'cancel') {
+					await hawkbitTargets.forceQuitAction(targetId, action.id);
+				} else {
+					await hawkbitTargets.cancelAction(targetId, action.id, true);
+				}
+				closed = true;
+				appLogger.info(
+					'[DEPLOY] Force-closed action #%d (type=%s, status=%s) for target %s (attempt %d)',
+					action.id, action.type, action.status, targetId, attempt,
+				);
+				break;
+			} catch (e) {
+				appLogger.warn(
+					'[DEPLOY] Attempt %d/%d failed for action #%d (type=%s) target %s: %s',
+					attempt, FORCE_CLOSE_RETRIES, action.id, action.type, targetId,
+					e instanceof Error ? e.message : String(e),
+				);
+				if (attempt < FORCE_CLOSE_RETRIES) {
+					await delay(FORCE_CLOSE_RETRY_DELAY_MS * attempt);
+				}
 			}
-			appLogger.info(
-				'[DEPLOY] Force-closed action #%d (type=%s, status=%s) for target %s',
-				action.id, action.type, action.status, targetId,
-			);
-		} catch (e) {
-			appLogger.warn(
-				'[DEPLOY] Could not force-close action #%d (type=%s) for target %s: %s',
-				action.id, action.type, targetId,
-				e instanceof Error ? e.message : String(e),
+		}
+
+		if (!closed) {
+			appLogger.error(
+				`[DEPLOY] FAILED to force-close action #${action.id} (type=${action.type}) for target ${targetId} after ${FORCE_CLOSE_RETRIES} attempts. ` +
+				'This action may block DDI deploymentBase!',
 			);
 		}
 	}
 
 	// Verify: check if any actions are still active after force-close
 	if (toClose.length > 0) {
+		await delay(200); // Brief pause for hawkBit to process
 		const recheck = await hawkbitTargets.getActions(targetId, { limit: 100 });
 		const stillActive = recheck.content.filter((a) => {
 			if (!a.active) return false;
@@ -85,9 +116,17 @@ async function forceCloseTargetActions(
 				},
 				'[DEPLOY] BUG: actions STILL ACTIVE after force-close. This will block DDI deploymentBase!',
 			);
+		} else {
+			appLogger.debug(
+				'[DEPLOY] Verified: all target actions closed for %s', targetId,
+			);
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Public API: Force-close operations
+// ---------------------------------------------------------------------------
 
 /**
  * Force-close ALL active actions for a list of targets.
@@ -156,3 +195,9 @@ export async function forceCloseActiveActionsForDS(dsId: number): Promise<void> 
 		hasMore = targets.content.length >= pageSize;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Public API: DDI Diagnostics
+// ---------------------------------------------------------------------------
+
+export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';

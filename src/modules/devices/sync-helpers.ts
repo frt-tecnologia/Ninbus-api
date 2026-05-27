@@ -1,137 +1,51 @@
 /**
- * Sync Engine for hawkBit ↔ Ninbus — Types, helpers, hawkBit fetch utilities.
- * Shared between all sync strategies.
+ * Sync Engine — Batch DB operations and on-demand sync.
+ * Re-exports from split files for backward compatibility.
  */
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
-import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { normalizeSerial } from '@common/utils/serial-number';
 import { and, eq, isNotNull } from 'drizzle-orm';
+import {
+	type ConnectionStatus,
+	type HawkbitUpdateStatus,
+	extractTargetData,
+	getProtectedStatus,
+} from './sync-core';
+import { fetchTargetsByIds } from './sync-fetch';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface SyncState {
-	lastFullSyncAt: Date | null;
-	isRunning: boolean;
-	totalSynced: number;
-	lastDurationMs: number;
-	errors: number;
-	mode: 'periodic' | 'on_demand' | 'hybrid';
-	lastIncrementalTimestamp: number | null;
-}
-
-export type ConnectionStatus = 'unknown' | 'connected' | 'disconnected';
-export type HawkbitUpdateStatus = 'unknown' | 'in_sync' | 'pending' | 'registered' | 'error';
-
-// ---------------------------------------------------------------------------
-// Target data extraction
-// ---------------------------------------------------------------------------
-
-export function mapUpdateStatus(status: string | undefined): HawkbitUpdateStatus {
-	if (!status) return 'unknown';
-	const lower = status.toLowerCase();
-	if (lower === 'in_sync') return 'in_sync';
-	if (lower === 'pending') return 'pending';
-	if (lower === 'registered') return 'registered';
-	if (lower === 'error') return 'error';
-	return 'unknown';
-}
-
-export function extractTargetData(target: {
-	pollStatus?: { overdue?: boolean; lastRequestAt?: number; nextExpectedRequestAt?: number } | null;
-	updateStatus?: string;
-	ipAddress?: string | null;
-}): {
-	connectionStatus: ConnectionStatus;
-	hawkbitUpdateStatus: HawkbitUpdateStatus;
-	ipAddress: string | null;
-	lastPollAt: Date | null;
-	nextExpectedPollAt: Date | null;
-	lastSeenAt: Date | null;
-} {
-	const isConnected = target.pollStatus ? !target.pollStatus.overdue : false;
-	return {
-		connectionStatus: isConnected ? 'connected' : 'disconnected',
-		hawkbitUpdateStatus: mapUpdateStatus(target.updateStatus),
-		ipAddress: target.ipAddress ?? null,
-		lastPollAt: target.pollStatus?.lastRequestAt
-			? new Date(target.pollStatus.lastRequestAt) : null,
-		nextExpectedPollAt: target.pollStatus?.nextExpectedRequestAt
-			? new Date(target.pollStatus.nextExpectedRequestAt) : null,
-		lastSeenAt: target.pollStatus?.lastRequestAt
-			? new Date(target.pollStatus.lastRequestAt) : null,
-	};
-}
-
-// ---------------------------------------------------------------------------
-// hawkBit fetch utilities
-// ---------------------------------------------------------------------------
-
-/** Fetch ALL hawkBit targets (paginated). */
-export async function fetchAllHawkBitTargets(): Promise<Map<string, any>> {
-	const targetMap = new Map<string, any>();
-	const pageSize = 500;
-	let offset = 0;
-	let hasMore = true;
-
-	while (hasMore) {
-		const response = await hawkbitTargets.list({ offset, limit: pageSize });
-		for (const target of response.content) {
-			targetMap.set(target.controllerId, target);
-		}
-		offset += pageSize;
-		hasMore = response.content.length === pageSize && offset < (response.total ?? 0);
-	}
-
-	return targetMap;
-}
-
-/** Fetch hawkBit targets modified since a timestamp (incremental sync). */
-export async function fetchModifiedTargets(sinceTimestamp: number): Promise<Map<string, any>> {
-	const targetMap = new Map<string, any>();
-	const pageSize = 500;
-	let offset = 0;
-	let hasMore = true;
-	const q = `lastModifiedAt>${sinceTimestamp}`;
-
-	while (hasMore) {
-		const response = await hawkbitTargets.list({ offset, limit: pageSize, q });
-		for (const target of response.content) {
-			targetMap.set(target.controllerId, target);
-		}
-		offset += pageSize;
-		hasMore = response.content.length === pageSize && offset < (response.total ?? 0);
-	}
-
-	return targetMap;
-}
-
-/** Fetch hawkBit targets by controllerId list (company-scoped). */
-export async function fetchTargetsByIds(controllerIds: string[]): Promise<Map<string, any>> {
-	if (controllerIds.length === 0) return new Map();
-
-	const targetMap = new Map<string, any>();
-	const batchSize = 100; // hawkBit RSQL URL length limits
-
-	for (let i = 0; i < controllerIds.length; i += batchSize) {
-		const batch = controllerIds.slice(i, i + batchSize);
-		const q = `controllerId=in=(${batch.join(',')})`;
-		const response = await hawkbitTargets.list({ limit: batchSize, q });
-		for (const target of response.content) {
-			targetMap.set(target.controllerId, target);
-		}
-	}
-
-	return targetMap;
-}
+// Re-export everything from split files
+export {
+	type SyncState,
+	type ConnectionStatus,
+	type HawkbitUpdateStatus,
+	extractTargetData,
+	getProtectedStatus,
+	mapUpdateStatus,
+	protectTargetStatuses,
+	syncSingleDeviceSwr,
+} from './sync-core';
+export {
+	fetchAllHawkBitTargets,
+	fetchModifiedTargets,
+	fetchTargetsByIds,
+} from './sync-fetch';
 
 // ---------------------------------------------------------------------------
 // Batch DB operations
 // ---------------------------------------------------------------------------
+
+export interface ChangedDevice {
+	deviceId: string;
+	companyId: string;
+	controllerId: string;
+	connectionStatus: string;
+	hawkbitUpdateStatus: string;
+	lastPollAt: Date | null;
+	ipAddress: string | null;
+}
 
 /** Update local device records from hawkBit target data.
  *  Returns Map<companyId, count> of updated devices per company for SSE emission.
@@ -139,36 +53,35 @@ export async function fetchTargetsByIds(controllerIds: string[]): Promise<Map<st
 export async function batchUpdateDevicesFromTargets(
 	devicesToUpdate: { id: string; hawkbitTargetId: string; companyId?: string | null }[],
 	targetMap: Map<string, any>,
-): Promise<{ companyUpdates: Map<string, number>; changedDevices: { deviceId: string; companyId: string; controllerId: string; connectionStatus: string; hawkbitUpdateStatus: string; lastPollAt: Date | null; ipAddress: string | null }[] }> {
+): Promise<{ companyUpdates: Map<string, number>; changedDevices: ChangedDevice[] }> {
 	if (devicesToUpdate.length === 0) return { companyUpdates: new Map(), changedDevices: [] };
 
 	const companyUpdates = new Map<string, number>();
-	const changedDevices: { deviceId: string; companyId: string; controllerId: string; connectionStatus: string; hawkbitUpdateStatus: string; lastPollAt: Date | null; ipAddress: string | null }[] = [];
-	let updated = 0;
+	const changedDevices: ChangedDevice[] = [];
 	const now = new Date();
-	const chunkSize = 100;
 
+	// Batch updates in parallel (100 at a time to avoid DB overload)
+	const chunkSize = 100;
 	for (let i = 0; i < devicesToUpdate.length; i += chunkSize) {
 		const chunk = devicesToUpdate.slice(i, i + chunkSize);
-		for (const device of chunk) {
+		const updates = chunk.map(async (device) => {
 			const target = targetMap.get(device.hawkbitTargetId);
-			if (!target) continue;
+			if (!target) return;
 
 			const targetData = extractTargetData(target);
+			const protectedStatus = getProtectedStatus(device.hawkbitTargetId);
+			if (protectedStatus) {
+				targetData.hawkbitUpdateStatus = protectedStatus;
+			}
 
 			try {
 				await db
 					.update(devices)
 					.set({ ...targetData, updatedAt: now })
 					.where(eq(devices.id, device.id));
-				updated++;
 
-				// Track per-company counts and changed device data for SSE
 				if (device.companyId) {
-					companyUpdates.set(
-						device.companyId,
-						(companyUpdates.get(device.companyId) ?? 0) + 1,
-					);
+					companyUpdates.set(device.companyId, (companyUpdates.get(device.companyId) ?? 0) + 1);
 					changedDevices.push({
 						deviceId: device.id,
 						companyId: device.companyId,
@@ -180,9 +93,10 @@ export async function batchUpdateDevicesFromTargets(
 					});
 				}
 			} catch (error: any) {
-				appLogger.debug(`[SYNC] Failed to update device ${device.id}: ${error?.message}`);
+				appLogger.debug('[SYNC] Failed to update device %s: %s', device.id, error?.message);
 			}
-		}
+		});
+		await Promise.all(updates);
 	}
 
 	return { companyUpdates, changedDevices };
@@ -214,13 +128,13 @@ export async function syncNewTargets(targetMap: Map<string, any>): Promise<numbe
 			created++;
 		} catch (error: any) {
 			if (error?.code !== '23505') {
-				appLogger.debug(`[SYNC] Failed to create ${controllerId}: ${error?.message}`);
+				appLogger.debug('[SYNC] Failed to create %s: %s', controllerId, error?.message);
 			}
 		}
 	}
 
 	if (created > 0) {
-		appLogger.info(`[SYNC] Created ${created} auto-provisioned device(s)`);
+		appLogger.info('[SYNC] Created %d auto-provisioned device(s)', created);
 	}
 	return created;
 }
@@ -246,7 +160,7 @@ export async function syncPendingDevices(targetMap: Map<string, any>): Promise<v
 				})
 				.where(eq(devices.id, local.id));
 
-			appLogger.info(`[SYNC] Linked pending device ${local.name} → hawkBit ${match.controllerId}`);
+			appLogger.info('[SYNC] Linked pending device %s → hawkBit %s', local.name, match.controllerId);
 		}
 	}
 }
@@ -254,60 +168,6 @@ export async function syncPendingDevices(targetMap: Map<string, any>): Promise<v
 // ---------------------------------------------------------------------------
 // On-demand sync utilities
 // ---------------------------------------------------------------------------
-
-/** Single-device stale-while-revalidate sync. */
-export async function syncSingleDeviceSwr(targetId: string): Promise<{
-	updateStatus: string; connectionStatus: string; lastSeen: string | null; ipAddress: string | null;
-} | null> {
-	if (!hawkbitConfig.enabled) return null;
-
-	const staleMs = hawkbitConfig.syncStaleSec * 1000;
-	const [device] = await db
-		.select({ updatedAt: devices.updatedAt })
-		.from(devices)
-		.where(eq(devices.hawkbitTargetId, targetId));
-
-	if (device?.updatedAt && Date.now() - device.updatedAt.getTime() < staleMs) {
-		const [fresh] = await db
-			.select({
-				hawkbitUpdateStatus: devices.hawkbitUpdateStatus,
-				connectionStatus: devices.connectionStatus,
-				lastSeenAt: devices.lastSeenAt,
-				ipAddress: devices.ipAddress,
-			})
-			.from(devices)
-			.where(eq(devices.hawkbitTargetId, targetId));
-
-		if (fresh) {
-			return {
-				updateStatus: fresh.hawkbitUpdateStatus ?? 'unknown',
-				connectionStatus: fresh.connectionStatus ?? 'unknown',
-				lastSeen: fresh.lastSeenAt?.toISOString() ?? null,
-				ipAddress: fresh.ipAddress ?? null,
-			};
-		}
-	}
-
-	try {
-		const target = await hawkbitTargets.get(targetId);
-		const isConnected = target.pollStatus ? !target.pollStatus.overdue : false;
-
-		await db
-			.update(devices)
-			.set({ ...extractTargetData(target), updatedAt: new Date() })
-			.where(eq(devices.hawkbitTargetId, targetId));
-
-		return {
-			updateStatus: target.updateStatus ?? 'unknown',
-			connectionStatus: isConnected ? 'connected' : 'disconnected',
-			lastSeen: target.pollStatus?.lastRequestAt
-				? new Date(target.pollStatus.lastRequestAt).toISOString() : null,
-			ipAddress: target.ipAddress ?? null,
-		};
-	} catch {
-		return null;
-	}
-}
 
 /** Company-scoped on-demand sync. Returns number of updated devices. */
 export async function syncCompanyOnDemand(companyId: string): Promise<number> {
@@ -333,11 +193,9 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 	const targetMap = await fetchTargetsByIds(controllerIds);
 	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(companyDevices, targetMap);
 
-	// Emit SSE for this company
 	const count = companyUpdates.get(companyId) ?? 0;
 	if (count > 0) {
 		import('@common/sse').then(({ sseEmitter }) => {
-			// Push individual device status updates
 			for (const d of changedDevices) {
 				if (d.companyId === companyId) {
 					sseEmitter.emit(companyId, 'device.status', {

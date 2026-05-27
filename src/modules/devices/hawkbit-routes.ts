@@ -1,3 +1,4 @@
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ErrorResponseSchema,
@@ -19,6 +20,51 @@ import * as service from './service';
 export const deviceHawkbitRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/devices' }),
 )
+	// GET /:deviceId/ddi-check — DDI diagnostic for device
+	.get(
+		'/:deviceId/ddi-check',
+		async ({ params, set }: any) => {
+			if (!hawkbitConfig.enabled) {
+				set.status = 400;
+				return { error: 'Bad Request', message: 'hawkBit integration is disabled' };
+			}
+			const result = await loadDevice(params.deviceId, params.companyId);
+			if ('status' in result) {
+				set.status = result.status;
+				return result.body;
+			}
+			const linkErr = requireHawkbitLink(result.device);
+			if (linkErr) {
+				set.status = linkErr.status;
+				return linkErr.body;
+			}
+			try {
+				const { checkDDiReadiness } = await import('@modules/deployments/ddi-diagnostics');
+				const diag = await checkDDiReadiness(result.device.hawkbitTargetId);
+				return { data: diag };
+			} catch (error: any) {
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+			}
+		},
+		{
+			auth: true,
+			companyRole: 'operator',
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				deviceId: t.String({ format: 'uuid' }),
+			}),
+			detail: {
+				tags: ['Devices'],
+				summary: 'Check if device would receive deploymentBase via DDI',
+				description:
+					'Diagnostic endpoint that simulates what the device would see when polling DDI. ' +
+					'Checks for active update/cancel actions, DS completeness, and potential blockers.',
+			},
+			response: { 200: t.Object({ data: t.Any() }), 400: ErrorResponseSchema, 403: ErrorResponseSchema },
+		},
+	)
+
 	// GET /:deviceId/attributes — Target attributes
 	.get(
 		'/:deviceId/attributes',

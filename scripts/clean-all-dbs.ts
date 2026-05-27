@@ -81,22 +81,35 @@ async function cleanHawkbit() {
 	// hawkBit tables - clean in dependency order
 	// These are the main tables in hawkBit 1.0.3
 	const hawkbitTables = [
-		'sp_action_status',        // action status history
-		'sp_action',               // actions (deployments per target)
-		'sp_target',               // targets (devices)
-		'sp_ds_module',            // DS ↔ SM mapping
-		'sp_distribution_set',     // distribution sets
-		'sp_so_module',            // software modules
-		'sp_ds_type_sm_type',      // DS type ↔ SM type mapping
-		'sp_distribution_set_type',// DS types
-		'sp_so_module_type',       // software module types
-		'sp_artifact',             // artifact binaries metadata
-		'sp_tenant_configuration', // tenant config
-		'sp_tenant',               // tenants
-		'sp_audit_log',            // audit logs
-		'sp_target_filter_query',  // target filter queries
-		'sp_rollout',              // rollouts
-		'sp_rolloutgroup',         // rollout groups
+		'sp_action_status_messages',  // status messages (child of action_status)
+		'sp_action_status',           // action status history
+		'sp_action',                  // actions (deployments per target)
+		'sp_ds_sm',                   // DS ↔ SM mapping (junction table)
+		'sp_sm_metadata',             // software module metadata
+		'sp_software_module',         // software modules
+		'sp_artifact',                // artifact binaries metadata
+		'sp_ds_metadata',             // distribution set metadata
+		'sp_ds_type_element',         // DS type element mappings
+		'sp_distribution_set',        // distribution sets
+		'sp_distribution_set_tag',    // DS tags
+		'sp_ds_tag',                  // tag definitions
+		'sp_software_module_type',    // SM types (DS types depend on these)
+		'sp_distribution_set_type',   // DS types
+		'sp_target_type_ds_type',     // target type ↔ DS type mapping
+		'sp_target_type',             // target types
+		'sp_target_attributes',       // target attributes
+		'sp_target_metadata',         // target metadata
+		'sp_target_target_tag',       // target ↔ tag mapping
+		'sp_target_tag',              // target tag definitions
+		'sp_target_conf_status',      // target confirmation status
+		'sp_target',                  // targets (devices)
+		'sp_target_filter_query',     // target filter queries
+		'sp_rollout_target_group',    // rollout group targets
+		'sp_rollout_group',           // rollout groups
+		'sp_rollout',                 // rollouts
+		'sp_tenant_configuration',   // tenant config
+		'sp_tenant',                  // tenants
+		'sp_lock',                    // locks
 	];
 
 	for (const table of hawkbitTables) {

@@ -279,6 +279,374 @@
       "category": "architecture",
       "learnedAt": "2026-05-10T03:19:17.058Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-background-sync-for-external-apis",
+      "rule": "NEVER sync external API data (hawkBit, Mender, etc.) on every HTTP request. Use a background worker that periodically syncs to the local DB. API routes ONLY read from the local DB — zero external API calls on GET. For single-device detail views, use stale-while-revalidate: return cached data immediately, only refresh from external API if data is older than a configurable threshold (e.g. 60s). This scales from 10 to 100k+ devices without performance degradation.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-11T15:43:06.851Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-paginated-external-api-fetch",
+      "rule": "When fetching data from external APIs that may return large datasets, ALWAYS use pagination. Never hardcode limit:1000 — this silently drops data beyond the limit. Implement a paginated fetch loop: while (hasMore) { fetch page; offset += pageSize; hasMore = content.length === pageSize; }. Use conservative page sizes (500) to balance memory and HTTP overhead. At 50k devices with pageSize=500, this requires 100 HTTP calls instead of 1 silently-truncated call.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-11T15:43:20.303Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-update-all-docs-on-architecture-change",
+      "rule": "When a major architectural change is made (background sync worker, new error handlers, new DB columns), update ALL documentation files: (1) README.md — env table, architecture diagram, route descriptions, (2) SKILL.md — architecture overview, module catalog, env vars, checklists, (3) CODE-PATTERNS.md — code examples, (4) SECURITY-DEEP-DIVE.md — security implications, (5) feature-specific docs (device-provisioning.md), (6) .env.example, .env.test, .env.docker. Never update only one file — stale docs are worse than no docs.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-11T16:14:11.017Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-references-existing-artifact",
+      "rule": "NEVER create new Software Modules during deployment creation. The deployment flow is: (1) Upload artifact via POST /artifacts → creates SM + binary, (2) Create deployment via POST /deployments → finds EXISTING SM by name+type → creates Distribution Set referencing it → assigns targets. If artifact not found, return 422 with clear message: \"Upload the artifact first via POST /artifacts.\" This prevents 409 conflicts from trying to recreate SMs that already exist.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-12T14:15:19.702Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-type-requires-sm-type-assignment",
+      "rule": "hawkBit Distribution Set Types MUST have Software Module Types assigned as mandatory before creating Distribution Sets with those SM types. The DS type POST endpoint silently ignores the 'modules' field — you MUST call the separate POST /rest/v1/distributionsettypes/{id}/mandatorymoduletypes endpoint with the raw SM type ID (not a JSON object) after creating the DS type. Without this, creating a DS with a custom SM type returns 400 \"Distribution set type does not contain the given module, i.e. is incompatible.\"",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-12T14:15:29.773Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-superadmin-env-macro",
+      "rule": "Platform-level super admin access must use a `superAdmin` macro in withAuth() that checks SUPER_ADMIN_EMAILS env var (case-insensitive). Apply via { auth: true, superAdmin: true } on endpoints. NEVER hardcode admin checks inside handlers. The macro returns 401 (unauthenticated) or 403 (not super admin). This prevents privilege escalation — no API can grant or revoke super admin status.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-12T20:30:02.426Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-db-isolation",
+      "rule": "Tests MUST use a separate database (configured via .env.test) and clean up ALL data after each test suite using afterAll() + cleanAll(). The cleanAll() helper truncates all tables (CASCADE) and cleans hawkBit entities when enabled. This ensures: (1) idempotent test runs, (2) no data contamination between suites, (3) the test DB stays clean for the next run. Every test file imports { cleanAll } from './test-helpers' and calls afterAll(async () => await cleanAll()).",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-12T21:31:25.280Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-unclaim-vs-deprovision",
+      "rule": "Device removal from company (DELETE /companies/:id/devices/:deviceId) = UNCLAIM (sets companyId=null, status=unclaimed). hawkBit target is PRESERVED. Only DELETE /api/devices/deprovision/:serialNumber (super admin only) permanently removes from hawkBit + local DB. This two-tier pattern prevents accidental hawkBit target deletion. The deleteDevice() service function uses db.update() NOT db.delete().",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T03:57:44.394Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-helpers-cleanall",
+      "rule": "tests/test-helpers.ts provides cleanAll() that truncates ALL tables (CASCADE) + cleans hawkBit entities. Every test file imports it and calls afterAll(async () => await cleanAll()). This ensures idempotent test runs with zero data contamination. cleanHawkbitData() silently catches errors (hawkBit unavailable in test env).",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-13T03:57:55.476Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-uuid-entity-names-external-systems",
+      "rule": "When creating entities in external systems (hawkBit Distribution Sets, Software Modules, etc.), ALWAYS use UUID-based names (ds-{randomUUID()}) as the primary identifier to prevent name/version collisions (409 Conflict). Store the human-readable name in metadata fields (description). The response should return both dsName (UUID) and name (human-readable). This applies to ANY external system where multiple tenants or repeated operations could cause collisions.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:06:47.327Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-enrich-with-related-data",
+      "rule": "When listing entities from external systems (hawkBit Software Modules, etc.), enrich with related data (artifact binaries, file sizes, hashes) by fetching the sub-resources. Use async enrichSoftwareModule() that calls listArtifacts(smId) per module. The response schema must include both the entity and its nested resources (e.g., artifacts[] with size + hashes). Calculate aggregate values (total size) from the nested data. Wrap sub-resource fetches in try/catch — the entity may exist without binaries yet.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:07:07.801Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-client-integration-docs",
+      "rule": "When building APIs consumed by mobile/web clients, create a standalone integration guide (e.g., FLUTTER_DEPLOYMENT_GUIDE.md) that covers: full lifecycle flow (upload → create → monitor → cancel), every endpoint with request/response examples, error handling table (HTTP code → action), polling strategy (interval, stop condition), and status code meanings. This guide serves as the API contract between backend and frontend teams — it should be self-contained (no need to read backend code).",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-13T06:07:18.841Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-action-blocking-ddi",
+      "rule": "hawkBit DDI prioritizes cancelAction over deploymentBase in the poll response. If ANY active action has status=canceling, the device MUST send cancel feedback via POST .../cancelAction/{id}/feedback BEFORE hawkBit will offer new deployments. Firmware that only handles deploymentBase will be stuck forever when previous deployments are cancelled/superseded. The API must also force-close stale actions before assigning new DS via hawkbitTargets.cancelAction(id, actionId, true). This is not optional — it's a fundamental DDI protocol requirement.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:22:21.335Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-metadata-vs-deployment-status",
+      "rule": "hawkBit Distribution Set fields `complete`, `valid`, `locked` are STRUCTURAL metadata (DS has all modules, is valid, is immutable). They are NOT deployment-to-device status. The real deployment progress is in the action statistics endpoint: GET /rest/v1/distributionsets/{id}/statistics → {actions: {RETRIEVED: 1, total: 1}}. Always compute deployment status from action statistics, never from DS metadata. Enrichment pattern: enrichDeployment() fetches statistics, computes status, and returns {status, statistics: {summary}, dsMetadata: {complete, valid, locked}}.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T14:13:36.940Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-action-status-mapping",
+      "rule": "hawkBit action status to deployment status mapping: RUNNING → pending (action created, device hasn't polled), SCHEDULED → pending, RETRIEVED → in_progress (device polled and got deploymentBase), DOWNLOAD → in_progress (downloading), DOWNLOADED → in_progress (download done), FINISHED (all) → completed, ERROR → failed, WARNING → failed, CANCELED (all) → canceled, CANCELING → canceled, total=0 → no_targets. Statistics keys are UPPERCASE in hawkBit response — always normalize to lowercase before matching.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T14:13:46.192Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-two-step",
+      "rule": "hawkBit action cancellation requires a TWO-STEP process: Step 1: DELETE /rest/v1/targets/{id}/actions/{actionId} (NO force param) → creates cancel action, status becomes \"canceling\". Step 2: DELETE /rest/v1/targets/{id}/actions/{actionId}?force=true → only works AFTER step 1, force-quits immediately. Sending force=true in step 1 returns 405 \"not canceled yet and cannot be force quit\". The cancelAction() method must handle both steps automatically — catch 405 from step 2 when action is already canceling, then proceed to force-quit.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T15:15:14.136Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-delete-no-action-cancel",
+      "rule": "hawkBit DS deletion (DELETE /rest/v1/distributionsets/{id}) does NOT cancel active actions for assigned targets. The DS metadata is removed but orphaned actions continue running — devices still receive deploymentBase via DDI and keep downloading. Before deleting a DS, the API MUST cancel all active actions for all assigned targets using the two-step cancel process. Without this, deployments become \"zombies\" — deleted in the management UI but still actively served to devices.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T15:15:22.152Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-feedback-format",
+      "rule": "hawkBit DDI feedback format requires: (1) `id` must be STRING (\"3\"), not number (3). (2) `details` must be array of STRINGS ([\"msg\"]), not array of objects ([{\"message\":\"msg\"}]). Wrong format returns 400 \"The given request body is not well formed\". This is the most common DDI integration error for embedded devices. Always validate feedback body format against the hawkBit DDI API spec before deploying firmware.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-13T15:15:30.125Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancelaction-priority-over-deploymentbase",
+      "rule": "hawkBit DDI PRIORITIZES cancelAction over deploymentBase in the poll response. If a target has ANY active cancel-type action (even stuck in 'canceling' state), the DDI response will contain ONLY cancelAction and NO deploymentBase — blocking ALL new deployments from being offered. This is the root cause of the most critical DDI incongruence: frontend shows updateStatus=pending but device sees no update. Fix: createDeployment() must use 3-step process: (1) forceCloseActiveActions(ALL actions) before assign, (2) assignTargets, (3) forceCloseCancelActions(only cancel-type) after. Step 3 is the critical fix — it removes auto-created cancel actions without touching the new update action.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T21:21:38.601Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-action-type-change",
+      "rule": "hawkBit changes the action TYPE on the SAME action when cancelled: type changes from \"update\" to \"cancel\", status to \"canceling\". There is NO separate cancel action entity. The two-step process is: (1) DELETE /actions/{id} → type becomes \"cancel\", status \"canceling\"; (2) DELETE /actions/{id}?force=true → action becomes inactive, status \"canceled\". Step 1 FAILS on already-cancel-type actions. When force=true, always proceed to step 2 regardless of step 1 errors. DDI prioritizes cancelAction over deploymentBase — stuck cancel actions block new deployments.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T10:37:18.733Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-verification-step",
+      "rule": "After creating a deployment (DS → assignTargets → forceCloseCancelActions), verify that each target has an active update action. If no active update action exists, the device will NOT see deploymentBase via DDI. Log an error with the target ID and active action list. This verification step catches race conditions and hawkBit edge cases that would otherwise silently fail.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T10:37:25.576Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-pino-object-logging",
+      "rule": "Pino's TypeScript types don't support printf-style format strings (%s, %d). Use object-based logging instead: appLogger.error({ targetId, count, actions }, 'message'). This avoids TS2345 errors with pino's overloaded type signatures. The printf style works at runtime but fails type checking.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-17T10:37:32.673Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-artifact-tar-packaging",
+      "rule": "The Ninbus v3 embedded device requires artifacts in .tar format with specific structure: header-info/featureidentity.json (with {\"type\": \"...\"}) + data/payload.bin (raw firmware). The API MUST package raw firmware files (.frz, .fir, .bin) into this .tar format using tar-stream BEFORE uploading to hawkBit. Plain .tar only (NOT .tar.gz — device decompressor is stub). Directory names and payload filename are EXACT: header-info, data, payload.bin. Valid types: configuration-nfx, firmware-ninbus, firmware-controller.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:28:44.187Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-soft-delete-uuid-names",
+      "rule": "hawkBit enforces UNIQUE(name, version, type) constraint on Software Modules INCLUDING soft-deleted rows. After DELETE, hawkBit sets deleted=true but keeps the row — re-creating with the same name fails with 409. Solution: ALWAYS use UUID-based names (sm-{uuid}) for SM creation. Store user-visible names in SM description metadata. extractDisplayName() parses the description for display. This also allows multiple companies to upload the same filename without conflicts.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:57:47.285Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sm-id-for-deployments",
+      "rule": "Deployments should reference artifacts by numeric hawkBit SM ID, not by artifactName. The deployment's findSoftwareModule() should accept both: if input is numeric → use as SM ID directly (GET /softwaremodules/{id}), else fall back to name-based search. This ensures deployments work reliably even after artifact re-uploads create new SM IDs.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:57:57.017Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-event-driven-sync",
+      "rule": "SSE (Server-Sent Events) replaces REST polling for real-time UI updates. Pattern: sync engine detects hawkBit changes → emits SSE events per company → Flutter EventSource receives push. SSE carries volatile fields inline (device.status: connectionStatus, hawkbitUpdateStatus, lastPollAt, ipAddress) and signals for structural changes (device.claimed/unclaimed, deployment.created). SSE endpoint reuses auth-guard macro (companyRole: 'viewer'). Elysia returns ReadableStream with text/event-stream. Heartbeat every 30s keeps connections alive through proxies. Max 50 connections per company (evicts oldest). SSE is ADDITIVE — zero REST endpoints change, SSE fails gracefully to REST.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T03:56:38.036Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-stream-fully-read",
+      "rule": "AWS SDK v1's S3ObjectInputStream logs WARN 'Not all bytes were read, aborting HTTP connection' when the stream is closed before fully consumed. This aborts the TCP connection to S3, forcing a new connection on the next request — causing download slowdowns. Fix: read the entire S3 object into memory (readAllBytes() + ByteArrayInputStream) before returning. For firmware artifacts (<50MB), the memory overhead is negligible and eliminates connection abort overhead. Only use direct streaming for files >100MB.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T11:46:21.896Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-elysia-param-name-conflict",
+      "rule": "Elysia does NOT allow different parameter names at the same URL position across routes in the same instance. /targets/:controllerId/status-trail CONFLICTS with /targets/:targetId/actions/:actionId/status because the :controllerId vs :targetId param at position 3 differs. Use the SAME param name (e.g. :targetId) for all routes at the same path position.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T14:08:20.716Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-finished-always-success",
+      "rule": "hawkBit action status type='finished' ALWAYS means success. The DDI mapping is: closed+success → finished, closed+failure → error. Never override phase based on message content (like 'rebooting') when type='finished'. The message is informational — the action is complete. Map type='finished' → phase='success' unconditionally.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-19T23:44:39.536Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-assign-body-type-field",
+      "rule": "hawkBit Management API expects field name 'type' (not 'forceType') in assignment bodies for both POST /distributionsets/{id}/assignedTargets and POST /targets/{id}/assignedDS. While the default is 'forced', always use the correct field name. The body format is: [{ \"id\": \"controllerId\", \"type\": \"forced\" }].",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-21T17:41:46.304Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-diagnostic",
+      "rule": "When a device polls hawkBit DDI but gets no deploymentBase despite a DS being assigned, check: (1) active cancel actions blocking, (2) DS missing artifacts on its Software Module, (3) action not actually created. Add a DDI diagnostic function that queries the Management API to simulate what DDI would return: active update actions, active cancel actions, DS completeness, target updateStatus. Never assume the Management API view matches the DDI view.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-21T17:41:54.419Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-sm-artifact-validation",
+      "rule": "Before creating a deployment, ALWAYS verify the Software Module has at least one artifact (binary file) uploaded. hawkBit will NOT offer deploymentBase via DDI for a Distribution Set whose Software Module has no artifacts. The SM creation succeeds without artifacts — only the artifact upload populates the binary. Check via GET /rest/v1/softwaremodules/{id}/artifacts before allowing deployment creation.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-21T17:42:02.031Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-delete-must-clear-local-state",
+      "rule": "When deleting a hawkBit Distribution Set (deployment), you MUST also clear local device records. hawkBit soft-deletes DSes and may not immediately update target.updateStatus. Without clearing local state, the sync engine re-reads stale 'pending' status from hawkBit and overwrites the local DB, causing the deployment to 'come back' on frontend refresh. Delete flow: (1) collect target IDs from DS, (2) force-close ALL their actions, (3) delete DS, (4) UPDATE devices SET hawkbitUpdateStatus='in_sync' WHERE hawkbitTargetId IN (targets), (5) emit SSE deployment.deleted + device.status events.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T03:29:05.838Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-size-param-required",
+      "rule": "hawkBit artifact upload (POST /rest/v1/softwaremodules/{id}/artifacts) does NOT auto-detect file size from multipart/form-data. You MUST pass `size` as a query parameter explicitly. Without it, hawkBit stores size=0, and DDI deployment details omit the field — embedded devices cannot calculate download progress and show \"?KB\" instead of actual sizes. Always include: query: { filename: file.name, size: file.size }.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T17:49:05.853Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-sync-status-protection",
+      "rule": "When the sync engine reads external service data (hawkBit targets) and writes to local DB, any operation that clears device status (deployment delete, action cancel) must be protected from sync overwrites. Use a TTL-based in-memory Map (targetId → {status, until}) to enforce the cleared status for a period (e.g., 2 minutes). The sync engine checks this map before writing hawkBit's status to local DB. Without this, the sync engine will overwrite freshly-cleared 'in_sync' status back to 'pending' from stale hawkBit data — causing deleted deployments to \"come back\" in the UI.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T17:49:15.689Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-status-edge-cases",
+      "rule": "computeDeploymentStatus() fallback for total>0 with 0 known status keys MUST be 'pending', NOT 'in_progress'. When hawkBit creates actions but hasn't updated statistics yet, returning 'in_progress' or 'completed' is misleading. 'pending' correctly indicates the action exists but the device hasn't reported yet.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:29.105Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-display-name",
+      "rule": "Deployment status computed from hawkBit statistics is ALWAYS a live API call — there is no local caching. When the statistics fetch fails (hawkBit down, timeout), return 'unknown' status instead of computing from empty data (which would return 'no_targets'). 'unknown' tells the frontend \"we don't know\" rather than \"there are no targets\".",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:40.412Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-ds-display-name-extraction",
+      "rule": "DS names in hawkBit are UUID-based (ds-{uuid}) to avoid UNIQUE constraint conflicts with soft-deleted rows. The user-visible deployment name is stored in the DS description field as \"{name} | artifact: ...\". Always extract and return displayName from the description in enrichDeployment() so the frontend gets the correct name immediately without a second fetch or 2-second delay.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:48.136Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-engine-file-split",
+      "rule": "When a sync engine file exceeds 250 lines, split by domain: sync-core.ts (types, protection, single-device), sync-fetch.ts (paginated hawkBit queries), sync-helpers.ts (batch DB ops, re-exports), sync-strategies.ts (periodic/hybrid), sync.ts (orchestrator). Keep sync-helpers.ts as barrel re-export for backward compatibility.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-22T21:19:00.997Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-swagger-config-extraction",
+      "rule": "When app.ts exceeds 250 lines, extract swagger/scalar configuration to common/swagger-config.ts. The config object is pure data (no framework imports except types). app.ts imports and passes to swagger() plugin. This typically saves 100+ lines.",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-05-22T21:19:07.635Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-logger-format-strings",
+      "rule": "ALL appLogger.warn/error/info calls in hot-path code (request handlers, sync engine, service layer) MUST use %s/%d/%j format strings, NEVER template literals with interpolation. Template literals force string allocation even when the log level is disabled. Exception: single-execution startup/shutdown logs in index.ts are acceptable.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-22T21:19:15.776Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-raw-proxy-schemas",
+      "rule": "When route files proxy raw hawkBit data (targets, actions, diagnostics), define named schemas in schemas.ts (e.g., RawTargetListResponseSchema, RawDiagnosticResponseSchema) instead of inline t.Object({ data: t.Any() }). This maintains the \"no inline response schemas in routes\" rule even for passthrough endpoints. Use t.Any() with description inside the named schema for documentation.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T21:19:22.495Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-assertion-precision",
+      "rule": "Tests that accept multiple status codes like [201, 500] are hiding bugs. A 500 Internal Server Error is NEVER an acceptable test outcome — it means the server crashed. If a FK violation or business rule violation is expected, assert for specific error codes (400, 404, 422). If the behavior is uncertain, use a narrower range like [400, 404, 422] and document why.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-22T21:39:54.373Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-compose-env-vars",
+      "rule": "Docker Compose does NOT automatically pass ALL .env variables to containers. Only variables explicitly listed in the service's `environment:` section are passed. When adding a new env var to .env and env.ts, it MUST also be added to docker-compose.yml's environment section. Missing this means the container gets an empty/undefined value. Check all env vars: SUPER_ADMIN_EMAILS, HAWKBIT_*, DATABASE_URL, BETTER_AUTH_*, etc.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-22T22:01:33.801Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-superadmin-company-bypass",
+      "rule": "Super admins (via SUPER_ADMIN_EMAILS env) should bypass companyRole membership checks. They get implicit 'owner' role for any company. This is critical for: SSE connections (super admin needs to monitor all companies), company admin operations, and device management across companies. Without this, super admins can't use company-scoped endpoints without being explicitly added as members.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-22T22:32:08.900Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-line-buffering",
+      "rule": "SSE parsers MUST buffer partial lines across TCP chunks. TCP chunk boundaries do NOT align with SSE event boundaries. Splitting each chunk by '\\n' independently loses data when a chunk ends mid-line. Use a lineBuffer: concatenate buffer + new text, split by '\\n', keep last element as buffer, process all others. Also: strip '\\r' from lines, and set receiveTimeout=Duration.zero for long-lived SSE connections (Dio default 30s kills the stream).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-26T20:27:15.360Z",
+      "reinforcementCount": 1
     }
   ]
 }

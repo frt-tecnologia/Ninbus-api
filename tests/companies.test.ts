@@ -127,10 +127,7 @@ describe('Companies Module', () => {
 			expect(body.data[0].role).toBe('owner');
 		});
 
-		it('POST /api/companies/:companyId/members adds a member', async () => {
-			// First, we need the member's user ID. Sign up gives us the email.
-			// We'll add by email — but our schema uses userId.
-			// For now, we'll test the endpoint works.
+		it('POST /api/companies/:companyId/members rejects non-existent user', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					method: 'POST',
@@ -141,9 +138,8 @@ describe('Companies Module', () => {
 					}),
 				}),
 			);
-			// Will succeed in DB insert (FK may fail, but endpoint itself works)
-			// This tests that the body validation passes and the endpoint is reachable
-			expect([201, 500].includes(response.status)).toBe(true);
+			// Should reject invalid userId (FK violation) — not crash with 500
+			expect([400, 404, 422]).toContain(response.status);
 		});
 
 		it('returns 403 for non-member accessing members', async () => {

@@ -163,8 +163,8 @@ describe('Deployments Module', () => {
 						}),
 					}),
 				);
-				// Will fail with 500/422 because hawkBit is disabled in tests
-				// But should NOT return 400 (validation error)
+				// hawkBit disabled in tests → will fail with 422/503 (not 400 validation error)
+				// The point: valid body schema should pass Elysia validation (no 400)
 				expect(response.status).not.toBe(400);
 			}
 		});
@@ -246,6 +246,33 @@ describe('Deployments Module', () => {
 			const summary = summarizeStatistics({ FINISHED: 2, RETRIEVED: 1, total: 3 });
 			expect(summary.finished).toBe(2);
 			expect(summary.inProgress).toBe(1);
+		});
+
+		it('total>0 with no known status keys maps to pending (fallback)', () => {
+			// hawkBit may report total=N but no status keys yet (race condition)
+			expect(computeDeploymentStatus({ total: 1 }, 1)).toBe('pending');
+			expect(computeDeploymentStatus({ total: 3 }, 3)).toBe('pending');
+		});
+
+		it('mixed FINISHED+CANCELED maps to pending (partial states)', () => {
+			// finished=1, canceled=1, total=3 — neither condition matches, fallback to pending
+			expect(computeDeploymentStatus({ FINISHED: 1, CANCELED: 1, total: 3 }, 3)).toBe('pending');
+		});
+
+		it('dsDeleted option maps to canceled', () => {
+			expect(computeDeploymentStatus({ FINISHED: 1, total: 1 }, 1, { dsDeleted: true })).toBe('canceled');
+		});
+
+		it('SCHEDULED maps to pending', () => {
+			expect(computeDeploymentStatus({ SCHEDULED: 2, total: 2 }, 2)).toBe('pending');
+		});
+
+		it('CANCELING maps to canceled', () => {
+			expect(computeDeploymentStatus({ CANCELING: 1, total: 1 }, 1)).toBe('canceled');
+		});
+
+		it('WARNING maps to failed', () => {
+			expect(computeDeploymentStatus({ WARNING: 1, total: 1 }, 1)).toBe('failed');
 		});
 	});
 

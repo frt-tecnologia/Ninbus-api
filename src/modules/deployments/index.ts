@@ -82,7 +82,7 @@ export const deploymentsModule = withAuth(
 				try {
 					const { sseEmitter } = await import('@common/sse');
 					sseEmitter.emit(params.companyId, 'deployment.created', {
-						deploymentId: deployment.id,
+						deploymentId: deployment.dsId,
 						name: body.name,
 						artifactType: body.artifactType ?? 'firmware',
 					});
@@ -202,11 +202,16 @@ export const deploymentsModule = withAuth(
 		'/:deploymentId',
 		async ({ params, set }) => {
 			try {
-				await service.deleteDeployment(Number(params.deploymentId));
+				await service.deleteDeployment(Number(params.deploymentId), params.companyId);
 				return { message: 'Deployment deleted successfully' };
-			} catch {
-				set.status = 404;
-				return { error: 'Not Found', message: 'Deployment not found' };
+			} catch (error: any) {
+				if (error?.status === 404) {
+					set.status = 404;
+					return { error: 'Not Found', message: 'Deployment not found' };
+				}
+				appLogger.warn('[DEPLOYMENTS] Delete failed: %s', error?.message ?? String(error));
+				set.status = 503;
+				return { error: 'Service Unavailable', message: `Failed to delete deployment: ${error?.message ?? 'hawkBit error'}` };
 			}
 		},
 		{

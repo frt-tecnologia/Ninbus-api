@@ -35,7 +35,7 @@ export async function provisionDevice(data: {
 	const serialDisplay = normalized.display;
 	const displayName = data.name || serialDisplay;
 
-	appLogger.info(`[PROVISION] Normalized serial: "${data.serialNumber}" → hex=${serialHex}, display=${serialDisplay}`);
+	appLogger.info('[PROVISION] Normalized serial: "%s" → hex=%s, display=%s', data.serialNumber, serialHex, serialDisplay);
 
 	// Check if serial number is already registered (by hex format)
 	const [existing] = await db.select().from(devices).where(eq(devices.serialNumber, serialHex));
@@ -47,10 +47,10 @@ export async function provisionDevice(data: {
 	if (hawkbitConfig.enabled) {
 		try {
 			await hawkbitTargets.create({ controllerId: serialHex, name: displayName, securityToken: data.deviceKey });
-			appLogger.info(`[PROVISION] Created hawkBit target: ${serialHex}`);
+			appLogger.info('[PROVISION] Created hawkBit target: %s', serialHex);
 		} catch (error: any) {
 			// Target might already exist in hawkBit (e.g. device already polled)
-			appLogger.warn(`[PROVISION] hawkBit target creation for ${serialHex}: ${error?.message ?? error}. Continuing.`);
+			appLogger.warn('[PROVISION] hawkBit target creation for %s: %s. Continuing.', serialHex, error?.message ?? error);
 		}
 	}
 
@@ -116,7 +116,7 @@ export async function claimDevice(data: {
 		status: existing.hawkbitTargetId ? 'accepted' : 'pending', updatedAt: new Date(),
 	}).where(eq(devices.id, existing.id)).returning();
 
-	appLogger.info(`[CLAIM] Device ${serialHex} (${serialDisplay}) claimed by company ${data.companyId}`);
+	appLogger.info('[CLAIM] Device %s (%s) claimed by company %s', serialHex, serialDisplay, data.companyId);
 	return { success: true, device: claimed };
 }
 

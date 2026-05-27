@@ -109,7 +109,8 @@ export class ArtifactValidationError extends Error {
 			| 'FILE_TOO_LARGE'
 			| 'EMPTY_FILE'
 			| 'MISSING_FILE'
-			| 'HAWKBIT_NOT_ENABLED',
+			| 'HAWKBIT_NOT_ENABLED'
+
 	) {
 		super(message);
 		this.name = 'ArtifactValidationError';
@@ -140,7 +141,7 @@ export async function uploadArtifact(
 	validateFileSize(file.size);
 	requireHawkbit();
 
-	appLogger.info(`[ARTIFACT] Uploading: ${file.name} (${Math.round(file.size / 1024)} KB) type=${artifactType}`);
+	appLogger.info('[ARTIFACT] Uploading: %s (%d KB) type=%s', file.name, Math.round(file.size / 1024), artifactType);
 
 	// Package raw file into .tar for the embedded device
 	const packaged = await packageArtifact(file, artifactType);
@@ -162,10 +163,23 @@ export async function uploadArtifact(
 		name: smInternalName, version: smVersion, type: smType.typeKey, description: smDescription,
 	});
 
-	appLogger.info(`[ARTIFACT] Created SM ${sm.id} (display: ${artifactName})`);
+	appLogger.info('[ARTIFACT] Created SM %d (display: %s)', sm.id, artifactName);
 
 	const tarFile = new File([packaged.blob], packaged.filename, { type: 'application/x-tar' });
 	const artifact = await hawkbitSoftwareModules.uploadArtifact(sm.id, tarFile);
+
+	appLogger.info(
+		`[ARTIFACT] Upload complete: artifact #${artifact.id} size=${artifact.size ?? 'undefined'} filename=${artifact.providedFilename} ` +
+		`(expected ~${packaged.size} bytes)`,
+	);
+
+	if (!artifact.size || artifact.size === 0) {
+		appLogger.error(
+			`[ARTIFACT] WARNING: hawkBit returned size=0 for artifact #${artifact.id}. ` +
+			`The embedded device will not be able to calculate download progress ("?KB"). ` +
+			`This indicates the multipart upload did not correctly communicate the file size to Spring Boot.`,
+		);
+	}
 
 	return {
 		smId: sm.id, artifactId: artifact.id, name: artifactName,
@@ -207,7 +221,7 @@ export async function deleteArtifact(smId: number): Promise<{ deleted: boolean; 
 	// Verify deletion (hawkBit soft-deletes, get() may still return SM with deleted=true)
 	try {
 		const check = await hawkbitSoftwareModules.get(smId);
-		if (!check.deleted) appLogger.warn(`[ARTIFACT] SM ${smId} still active after delete`);
+		if (!check.deleted) appLogger.warn('[ARTIFACT] SM %d still active after delete', smId);
 	} catch { /* 404 = hard-deleted, even better */ }
 	return { deleted: true, message: 'Artifact deleted successfully' };
 }

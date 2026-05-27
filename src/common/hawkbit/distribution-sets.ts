@@ -45,12 +45,14 @@ export const hawkbitDistributionSets = {
 	},
 
 	/** Assign multiple targets to a distribution set (creates deployments). */
-	assignTargets(dsId: number, targetIds: string[], params?: { offline?: boolean }): Promise<void> {
+	assignTargets(dsId: number, targetIds: string[], params?: { offline?: boolean; type?: 'forced' | 'soft' | 'timeforced' | 'downloadonly' }): Promise<void> {
 		return hawkbitRequest({
 			method: 'POST',
 			path: `/rest/v1/distributionsets/${dsId}/assignedTargets`,
 			query: { offline: params?.offline },
-			body: targetIds.map((id) => ({ id, forceType: 'forced' })),
+			// hawkBit expects field name 'type' (not 'forceType') for the force type.
+			// Default is 'forced' which is the correct value for our use case.
+			body: targetIds.map((id) => ({ id, type: params?.type ?? 'forced' })),
 		});
 	},
 

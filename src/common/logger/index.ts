@@ -14,8 +14,6 @@
 import { env } from '@common/config/env';
 import pino from 'pino';
 
-const isTest = process.env.NODE_ENV === 'test';
-
 export const appLogger = pino({
-	level: isTest ? 'silent' : (env.LOG_LEVEL ?? 'info'),
+	level: env.NODE_ENV === 'test' ? 'silent' : (env.LOG_LEVEL ?? 'info'),
 });

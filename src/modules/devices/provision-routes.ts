@@ -202,7 +202,7 @@ export const provisioningRoutes = withAuth(
 			try {
 				await hawkbitTargets.delete(serialHex);
 			} catch {
-				appLogger.debug(`[DEPROVISION] hawkBit target ${serialHex} not found or already deleted`);
+				appLogger.debug('[DEPROVISION] hawkBit target %s not found or already deleted', serialHex);
 			}
 
 			// Delete from local DB

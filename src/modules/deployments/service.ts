@@ -8,106 +8,18 @@ import {
 	hawkbitTargets,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
-import { and, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { inArray } from 'drizzle-orm';
 
 import { enrichDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
 import { forceCloseActiveActions, forceCloseCancelActions, forceCloseActiveActionsForDS } from './actions';
+export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
+import { resolveHawkbitTargetIds, findSoftwareModule } from './helpers';
 
 export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
-
-async function resolveHawkbitTargetIds(
-	companyId: string,
-	options: {
-		deviceIds?: string[];
-		categoryIds?: string[];
-		allDevices?: boolean;
-	},
-): Promise<string[]> {
-	const targetIds = new Set<string>();
-
-	if (options.deviceIds && options.deviceIds.length > 0) {
-		const companyDevices = await db
-			.select({ hawkbitTargetId: devices.hawkbitTargetId })
-			.from(devices)
-			.where(
-				and(
-					inArray(devices.id, options.deviceIds),
-					eq(devices.companyId, companyId),
-					eq(devices.status, 'accepted'),
-				),
-			);
-		for (const d of companyDevices) {
-			if (d.hawkbitTargetId) targetIds.add(d.hawkbitTargetId);
-		}
-	}
-
-	if (options.categoryIds && options.categoryIds.length > 0) {
-		const ninbusIds = await getDeviceIdsByCategories(companyId, options.categoryIds);
-		if (ninbusIds.length > 0) {
-			const companyDevices = await db
-				.select({ hawkbitTargetId: devices.hawkbitTargetId })
-				.from(devices)
-				.where(
-					and(
-						inArray(devices.id, ninbusIds),
-						eq(devices.companyId, companyId),
-						eq(devices.status, 'accepted'),
-					),
-				);
-			for (const d of companyDevices) {
-				if (d.hawkbitTargetId) targetIds.add(d.hawkbitTargetId);
-			}
-		}
-	}
-
-	if (options.allDevices) {
-		const allTargetIds = await getHawkbitTargetIdsForCompany(companyId);
-		for (const id of allTargetIds) {
-			targetIds.add(id);
-		}
-	}
-
-	return [...targetIds];
-}
-
-async function findSoftwareModule(
-	artifactNameOrSmId: string,
-	version: string,
-	typeKey: string,
-): Promise<{ id: number; name: string; version: string } | null> {
-	// If artifactName looks like a numeric SM ID, use it directly
-	const asNumber = Number(artifactNameOrSmId);
-	if (!isNaN(asNumber) && asNumber > 0 && String(asNumber) === artifactNameOrSmId) {
-		try {
-			const sm = await hawkbitSoftwareModules.get(asNumber);
-			return { id: sm.id, name: sm.name, version: sm.version };
-		} catch {
-			return null;
-		}
-	}
-	// Legacy fallback: search by name+version+type
-	const result = await hawkbitSoftwareModules.list({
-		q: `name==${artifactNameOrSmId};version==${version};type==${typeKey}`,
-	});
-	if (result.content.length > 0) {
-		const sm = result.content[0]!;
-		return { id: sm.id, name: sm.name, version: sm.version };
-	}
-	const byNameType = await hawkbitSoftwareModules.list({
-		q: `name==${artifactNameOrSmId};type==${typeKey}`,
-	});
-	if (byNameType.content.length > 0) {
-		const sorted = byNameType.content.sort((a, b) => b.id - a.id);
-		const sm = sorted[0]!;
-		return { id: sm.id, name: sm.name, version: sm.version };
-	}
-	return null;
-}
 
 export interface CreateDeploymentInput {
 	name: string;
@@ -131,7 +43,6 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 	}
 
 	const smVersion = data.version ?? '1.0';
-
 	const sm = await findSoftwareModule(data.artifactName, smVersion, data.artifactType);
 	if (!sm) {
 		throw new Error(
@@ -140,37 +51,49 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 		);
 	}
 
+	// Verify SM has at least one artifact (binary file)
+	let smHasArtifacts = true;
+	try {
+		const artifacts = await hawkbitSoftwareModules.listArtifacts(sm.id);
+		if (artifacts.length === 0) smHasArtifacts = false;
+	} catch {
+		smHasArtifacts = false;
+	}
+	if (!smHasArtifacts) {
+		throw new Error(
+			`Software Module "${sm.name}" (#${sm.id}) has no artifacts (binary files). ` +
+			'Upload the artifact file first. DDI will not offer deploymentBase for an incomplete DS.',
+		);
+	}
+
 	const dsType = await getOrCreateDistributionSetType(data.artifactType);
-
 	const dsUuid = randomUUID();
-	const dsName = `ds-${dsUuid}`;
-	const dsVersion = `v-${Date.now()}`;
-
 	const ds = await hawkbitDistributionSets.create({
-		name: dsName,
-		version: dsVersion,
+		name: `ds-${dsUuid}`,
+		version: `v-${Date.now()}`,
 		description: `${data.name} | artifact: ${sm.name} (${data.artifactType}) | uuid: ${dsUuid}`,
 		type: dsType.typeKey,
 		modules: [{ id: sm.id }],
 	});
 
-	// Step 1: Force-close ALL pre-existing active actions before assigning new DS.
+	appLogger.info(
+		`[DEPLOY] Created DS #${ds.id} (type=${dsType.typeKey}) with SM #${sm.id} (${sm.name}). Assigning to ${targetIds.length} targets...`,
+	);
+
+	// Step 1: Force-close ALL pre-existing active actions.
 	await forceCloseActiveActions(targetIds);
 
-	// Step 2: Assign targets to the new DS
+	// Step 2: Assign targets to the new DS.
 	await hawkbitDistributionSets.assignTargets(ds.id, targetIds);
 
-	// Step 3: Force-close only CANCEL-type actions after assignment.
-	// hawkBit auto-creates cancel actions when a new DS replaces an active one.
-	// These cancel actions get stuck in "canceling" state (device doesn't send
-	// cancel feedback) and BLOCK the new deploymentBase from being offered via DDI.
-	// We only close cancel-type actions to preserve the new update action.
+	// Step 3: Force-close auto-created cancel actions.
 	await forceCloseCancelActions(targetIds);
 
 	// Step 4: Verify deployment is properly offered via DDI.
-	// Check that each target has exactly ONE active update action for the new DS.
-	// If no active update action exists, the device will NOT see deploymentBase.
+	const { checkDDiReadiness } = await import('./ddi-diagnostics');
 	let verifiedCount = 0;
+	const failedTargets: string[] = [];
+
 	for (const targetId of targetIds) {
 		try {
 			const targetActions = await hawkbitTargets.getActions(targetId, { limit: 10 });
@@ -180,36 +103,36 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 			if (activeUpdate) {
 				verifiedCount++;
 			} else {
-				const activeAll = targetActions.content.filter((a: { active: boolean }) => a.active);
-				appLogger.error(
-					{
-						targetId,
-						activeActions: activeAll.map((a: { id: number; type: string; status: string }) =>
-							`#${a.id}(${a.type}/${a.status})`),
-					},
-					'[DEPLOY] VERIFICATION FAILED: no active update action! Device will NOT see deploymentBase via DDI.',
-				);
+				failedTargets.push(targetId);
 			}
-		} catch (e) {
-			appLogger.warn({ targetId, err: e }, '[DEPLOY] Could not verify target');
+		} catch {
+			failedTargets.push(targetId);
+		}
+	}
+
+	if (failedTargets.length > 0) {
+		appLogger.warn('[DEPLOY] %d/%d targets FAILED verification.', failedTargets.length, targetIds.length);
+		for (const targetId of failedTargets.slice(0, 3)) {
+			try {
+				const diag = await checkDDiReadiness(targetId);
+				appLogger.error({ targetId, ...diag }, '[DEPLOY] DDI Diagnostic');
+			} catch { /* diagnostic failed */ }
 		}
 	}
 
 	appLogger.info(
-		'[DEPLOY] Created deployment "%s" (DS #%d) with %d targets, artifact %s (%s). Verified: %d/%d targets have active update action.',
-		data.name, ds.id, targetIds.length, sm.name, data.artifactType, verifiedCount, targetIds.length,
+		`[DEPLOY] "${data.name}" (DS #${ds.id}): ${verifiedCount}/${targetIds.length} verified.`,
 	);
 
 	return {
-		dsId: ds.id, name: data.name, dsName: ds.name, version: ds.version,
+		dsId: ds.id, name: data.name, version: ds.version,
 		targetsAssigned: targetIds.length, artifactType: data.artifactType,
-		smId: sm.id, smName: sm.name,
+		smId: sm.id, smName: sm.name, verified: verifiedCount, failed: failedTargets.length,
 	};
 }
 
 export async function getDeployment(dsId: number) {
-	const ds = await hawkbitDistributionSets.get(dsId);
-	return enrichDeployment(ds);
+	return enrichDeployment(await hawkbitDistributionSets.get(dsId));
 }
 
 export async function getDeploymentStatistics(dsId: number) {
@@ -219,29 +142,105 @@ export async function getDeploymentStatistics(dsId: number) {
 	return {
 		raw,
 		summary: summarizeStatistics(statsMap),
-		status: computeDeploymentStatus(statsMap, total),
+		status: computeDeploymentStatus(statsMap, total, { dsId }),
 	};
 }
 
-export async function deleteDeployment(dsId: number): Promise<void> {
-	// hawkBit DS deletion does NOT cancel active actions.
-	// Must cancel all active actions first, otherwise device keeps receiving deploymentBase.
-	await forceCloseActiveActionsForDS(dsId);
-	return hawkbitDistributionSets.delete(dsId);
+/**
+ * Delete a deployment — properly stops it so it doesn't come back.
+ *
+ * Steps:
+ * 1. Get all targets assigned to this DS
+ * 2. Force-close ALL their active actions (update + cancel)
+ * 3. Delete the DS from hawkBit (soft-delete)
+ * 4. Clear local device status for affected targets (pending → in_sync)
+ * 5. Emit SSE events so frontend updates immediately
+ */
+export async function deleteDeployment(dsId: number, companyId?: string): Promise<void> {
+	appLogger.info('[DEPLOY] Deleting deployment DS #%d...', dsId);
+
+	// Step 1: Collect target IDs before force-closing
+	let targetControllerIds: string[] = [];
+	try {
+		const targets = await hawkbitDistributionSets.getAssignedTargets(dsId, { limit: 500 });
+		targetControllerIds = targets.content.map((t) => t.controllerId);
+		appLogger.info('[DEPLOY] DS #%d has %d assigned targets', dsId, targetControllerIds.length);
+	} catch (e) {
+		appLogger.warn('[DEPLOY] Could not list targets for DS #%d: %s', dsId, e);
+	}
+
+	// Step 2: Force-close ALL active actions for every target in this DS
+	if (targetControllerIds.length > 0) {
+		await forceCloseActiveActionsForDS(dsId);
+	}
+
+	// Step 3: Delete the DS from hawkBit
+	await hawkbitDistributionSets.delete(dsId);
+	appLogger.info('[DEPLOY] DS #%d deleted from hawkBit', dsId);
+
+	// Step 4: Clear local device status for affected targets
+	// After deleting the DS, devices that were "pending" should go back to "in_sync"
+	if (targetControllerIds.length > 0) {
+		try {
+			await db
+				.update(devices)
+				.set({
+					hawkbitUpdateStatus: 'in_sync',
+					updatedAt: new Date(),
+				})
+				.where(
+					inArray(devices.hawkbitTargetId, targetControllerIds),
+				);
+			appLogger.info(
+				`[DEPLOY] Cleared pending status for ${targetControllerIds.length} local devices`,
+			);
+
+			// Protect these targets from sync engine overwriting status back to 'pending'
+			// hawkBit may still report 'pending' for a few cycles after DS deletion
+			const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
+			protectTargetStatuses(targetControllerIds, 'in_sync');
+		} catch (e) {
+			appLogger.warn('[DEPLOY] Could not clear local device status: %s', e);
+		}
+	}
+
+	// Step 5: Emit SSE events so frontend updates immediately
+	if (companyId && targetControllerIds.length > 0) {
+		try {
+			const { sseEmitter } = await import('@common/sse');
+			// Notify that deployment was deleted
+			sseEmitter.emit(companyId, 'deployment.deleted', {
+				deploymentId: dsId,
+				timestamp: new Date().toISOString(),
+			});
+			// Notify each device status changed
+			const localDevices = await db
+				.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId })
+				.from(devices)
+				.where(inArray(devices.hawkbitTargetId, targetControllerIds));
+			for (const d of localDevices) {
+				sseEmitter.emit(companyId, 'device.status', {
+					deviceId: d.id,
+					connectionStatus: 'disconnected',
+					hawkbitUpdateStatus: 'in_sync',
+					lastPollAt: null,
+					ipAddress: null,
+				});
+			}
+		} catch { /* SSE failure is non-critical */ }
+	}
+
+	appLogger.info('[DEPLOY] Deployment DS #%d fully deleted and cleaned up', dsId);
 }
 
 export async function listDeployments(params?: { offset?: number; limit?: number }) {
 	const result = await hawkbitDistributionSets.list(params);
-	// Filter out soft-deleted DSes — these are abandoned/cleaned up deployments
-	// that should not appear in the active deployment list.
+	// Filter out soft-deleted DSes
 	const active = result.content.filter((ds) => !ds.deleted);
 	const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
 	return { data: enriched, total: enriched.length };
 }
 
-export async function getDeploymentTargets(
-	dsId: number,
-	params?: { offset?: number; limit?: number },
-) {
+export async function getDeploymentTargets(dsId: number, params?: { offset?: number; limit?: number }) {
 	return hawkbitDistributionSets.getAssignedTargets(dsId, params);
 }

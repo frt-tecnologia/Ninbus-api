@@ -14,12 +14,14 @@ import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { deviceCategoryRoutes } from '@modules/devices/category-routes';
 import { provisioningRoutes } from '@modules/devices/provision-routes';
 import { DeviceSyncEngine } from '@modules/devices/sync';
-import { sseModule } from '@modules/sse';
+import { sseModule, sseGlobalModule } from '@modules/sse';
+import { sseTestModule } from '@modules/sse/test-routes';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
 import { Elysia } from 'elysia';
 import { HawkbitApiError } from '@common/hawkbit/client';
 import { appLogger } from './common/logger';
+import { swaggerConfig } from './common/swagger-config';
 import { authRateLimit, globalRateLimit } from './common/middleware/rate-limiter';
 import { requestLogger } from './common/middleware/request-logger';
 
@@ -41,132 +43,13 @@ export const createApp = () => {
 				credentials: true,
 			}),
 		)
-		// ---  API Documentation (open at /docs) --->
-		.use(
-			swagger({
-				path: '/docs',
-				documentation: {
-					info: {
-						title: 'Ninbus API',
-						version: '2.0.0',
-						description:
-							'Ninbus IoT Platform — Device management, OTA deployments and fleet orchestration.\n\n' +
-							'Powered by Elysia.js + Eclipse hawkBit.\n\n' +
-							'Full Better Auth documentation: https://better-auth.com',
-					},
-					components: {
-						securitySchemes: {
-							cookieAuth: {
-								type: 'apiKey',
-								in: 'cookie',
-								name: 'auth.session_token',
-								description:
-									'Session cookie obtained via POST /api/auth/sign-in/email. ' +
-									'Sign in first, then the browser will send the cookie automatically.',
-							},
-						},
-					},
-					tags: [
-						// ── Platform ──────────────────────────────────────────
-						{ name: 'Health', description: 'Health check endpoints' },
-						{
-							name: 'Auth',
-							description: 'Authentication endpoints (Better Auth)',
-						},
-
-						// ── Provisioning (factory / warehouse) ─────────────────
-						{
-							name: 'Provisioning',
-							description:
-								'Pre-registration of devices in hawkBit. Done at the factory or warehouse BEFORE any company claims the device. Creates the hawkBit target so the device can start polling immediately.',
-						},
-
-						// ── Multi-tenancy ─────────────────────────────────────
-						{
-							name: 'Companies',
-							description:
-								'Multi-tenancy company management. Members: viewer | operator | admin | owner.',
-						},
-						{
-							name: 'Categories',
-							description:
-								'Device grouping within a company (bus lines, garages, yards, regions)',
-						},
-
-						// ── Devices (company-scoped) ───────────────────────────
-						{
-							name: 'Devices',
-							description:
-								'Company device management — CRUD, categories, claim, hawkBit operations (attributes, actions, cancel). All routes require company membership with role-based access control.',
-						},
-
-						// ── OTA ───────────────────────────────────────────────
-						{
-							name: 'Deployments',
-							description:
-								'OTA deployment creation, monitoring and management via hawkBit Distribution Sets',
-						},
-						{
-							name: 'Artifacts',
-							description:
-								'Firmware artifact management via hawkBit Software Modules',
-						},
-
-						// ── Reference ─────────────────────────────────────────
-						{
-							name: 'Posts',
-							description: 'Posts CRUD (reference implementation)',
-						},
-					],
-				},
-				scalarConfig: {
-					spec: {
-						url: '/docs/json',
-					},
-					// @ts-ignore - fastify might not be in the local elysia scalar types yet
-					theme: 'fastify',
-					defaultOpenAllTags: false,
-					hideModels: true,
-					hideClientButton: false,
-					showSidebar: true,
-					showDeveloperTools: 'localhost',
-					showToolbar: 'localhost',
-					operationTitleSource: 'summary',
-					persistAuth: true,
-					telemetry: true,
-					externalUrls: {
-						dashboardUrl: 'https://dashboard.scalar.com',
-						registryUrl: 'https://registry.scalar.com',
-						proxyUrl: 'https://proxy.scalar.com',
-						apiBaseUrl: 'https://api.scalar.com',
-					},
-					layout: 'modern',
-					isEditable: false,
-					isLoading: false,
-					documentDownloadType: 'both',
-					hideTestRequestButton: false,
-					hideSearch: false,
-					showOperationId: false,
-					hideDarkModeToggle: false,
-					withDefaultFonts: true,
-					defaultOpenFirstTag: true,
-					expandAllModelSections: false,
-					expandAllResponses: false,
-					orderSchemaPropertiesBy: 'alpha',
-					orderRequiredPropertiesFirst: true,
-					_integration: 'elysiajs',
-					default: false,
-					slug: 'ninbus-api',
-					title: 'Ninbus API',
-				},
-			}),
-		)
+		.use(swagger(swaggerConfig))
 		.onError(({ code, error, set }) => {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 
 			// Handle hawkBit API errors globally
 			if (error instanceof HawkbitApiError) {
-				appLogger.warn(`[HAWKBIT] API error ${error.status} on ${error.endpoint}: ${JSON.stringify(error.body)}`);
+				appLogger.warn('[HAWKBIT] API error %d on %s: %j', error.status, error.endpoint, error.body);
 
 				if (error.status === 409) {
 					set.status = 409;
@@ -265,7 +148,9 @@ export const createApp = () => {
 		.use(deploymentDeviceRoutes)
 		.use(artifactsModule)
 		.use(artifactManageRoutes)
-		.use(sseModule);
+		.use(sseModule)
+		.use(sseGlobalModule)
+		.use(sseTestModule);
 
 	if (env.ENABLE_AUTH) {
 		app.use(authRateLimit);

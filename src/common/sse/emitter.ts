@@ -1,44 +1,27 @@
 /**
  * SSE Event Emitter — company-scoped real-time push.
- * Manages active SSE connections grouped by companyId.
  * W3C SSE format: id: N\nevent: type\ndata: json\n\n
  */
 import { appLogger } from '@common/logger';
 import { env } from '@common/config/env';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/** SSE event payload — always JSON-serializable. */
 export interface SseEvent {
-	/** Event type name (e.g. 'device.status', 'deployment.created'). */
 	event: string;
-	/** JSON-serializable data object. */
 	data: Record<string, unknown>;
 }
 
-/** Internal connection handle stored per company. */interface SseConnection {
-	/** ReadableStream controller for pushing events. */
+interface SseConnection {
 	controller: ReadableStreamDefaultController;
-	/** Company this connection belongs to. */
 	companyId: string;
-	/** Connection established timestamp. */
 	connectedAt: Date;
-	/** Last successful send timestamp. */
 	lastSendAt: Date | null;
-	/** Sequential event ID for Last-Event-ID recovery. */
 	lastEventId: number;
 }
 
 // ---------------------------------------------------------------------------
-// SSE formatting (W3C spec)
+// SSE formatting
 // ---------------------------------------------------------------------------
 
-/**
- * Format a JS object into a W3C SSE string.
- * @see https://html.spec.whatwg.org/multipage/server-sent-events.html
- */
 function formatSSE(id: number, event: string, data: Record<string, unknown>): string {
 	const json = JSON.stringify(data);
 	return `id: ${id}\nevent: ${event}\ndata: ${json}\n\n`;
@@ -49,15 +32,10 @@ function formatSSE(id: number, event: string, data: Record<string, unknown>): st
 // ---------------------------------------------------------------------------
 
 class SseEmitter {
-	/** Map<companyId, Set<connection>> — active connections by company. */
 	private connections = new Map<string, Set<SseConnection>>();
-	/** Global event ID counter (monotonic). */
 	private globalEventId = 0;
-	/** Heartbeat timer reference. */
 	private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-	/** Max connections per company (from config). */
 	private readonly maxPerCompany: number;
-	/** Heartbeat interval in ms. */
 	private readonly heartbeatMs: number;
 
 	constructor() {
@@ -82,7 +60,7 @@ class SseEmitter {
 
 		// Enforce max connections — evict oldest
 		if (companyConns.size >= this.maxPerCompany) {
-			const oldest = [...companyConns][0];
+			const oldest = [...companyConns][0]!;
 			this.closeConnection(oldest);
 			appLogger.debug(
 				`[SSE] Evicted oldest connection for company ${companyId} (max ${this.maxPerCompany})`,
@@ -145,10 +123,18 @@ class SseEmitter {
 	 */
 	emit(companyId: string, event: string, data: Record<string, unknown>): void {
 		const companyConns = this.connections.get(companyId);
-		if (!companyConns || companyConns.size === 0) return;
+		if (companyConns && companyConns.size > 0) {
+			for (const conn of companyConns) {
+				this.sendToConnection(conn, event, data);
+			}
+		}
 
-		for (const conn of companyConns) {
-			this.sendToConnection(conn, event, data);
+		// Also send to global listeners (admin dashboard)
+		const globalConns = this.connections.get('__global__');
+		if (globalConns && globalConns.size > 0) {
+			for (const conn of globalConns) {
+				this.sendToConnection(conn, event, { ...data, _companyId: companyId });
+			}
 		}
 	}
 
@@ -244,6 +230,9 @@ class SseEmitter {
 
 	/** Get companies with active connections. */
 	get companyCount(): number { return this.connections.size; }
+
+	/** Whether the heartbeat timer is running. */
+	get isHeartbeatRunning(): boolean { return this.heartbeatTimer !== null; }
 }
 
 // Singleton instance

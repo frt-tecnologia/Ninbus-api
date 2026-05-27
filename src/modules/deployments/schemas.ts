@@ -64,6 +64,7 @@ export const DEPLOYMENT_STATUS_VALUES = [
 	'failed',
 	'canceled',
 	'no_targets',
+	'unknown',
 ] as const;
 export type DeploymentStatusType = (typeof DEPLOYMENT_STATUS_VALUES)[number];
 
@@ -90,6 +91,7 @@ export const DSMetadataSchema = t.Object({
 export const EnrichedDistributionSetSchema = t.Object({
 	id: t.Number(),
 	name: t.String(),
+	displayName: t.Optional(t.String({ description: 'User-visible deployment name extracted from DS description' })),
 	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
 	typeName: t.Optional(t.String()),
@@ -205,4 +207,23 @@ export const deploymentActionParams = t.Object({
 	deploymentId: t.String({ description: 'hawkBit Distribution Set ID' }),
 	targetId: t.String(),
 	actionId: t.String(),
+});
+
+// ── hawkBit Proxy Responses (raw data passthrough) ────────────────────
+
+/** Raw hawkBit target list (passthrough, no enrichment). */
+export const RawTargetListResponseSchema = t.Object({
+	data: t.Array(t.Any({ description: 'Raw hawkBit target objects' })),
+	total: t.Number(),
+});
+
+/** Raw DDI diagnostic result. */
+export const RawDiagnosticResponseSchema = t.Object({
+	data: t.Any({ description: 'DDI diagnostic result' }),
+});
+
+/** Raw device action history. */
+export const RawActionListResponseSchema = t.Object({
+	data: t.Array(t.Any({ description: 'Raw hawkBit action objects' })),
+	total: t.Number(),
 });

@@ -25,6 +25,8 @@ export interface DeploymentStatisticsSummary {
 export interface EnrichedDeployment {
 	id: number;
 	name: string;
+	/** User-visible deployment name extracted from DS description. */
+	displayName?: string;
 	version?: string;
 	type?: string;
 	typeName?: string;
@@ -57,7 +59,7 @@ export interface EnrichedDeployment {
 export function computeDeploymentStatus(
 	statsMap: Record<string, number>,
 	total: number,
-	options?: { dsDeleted?: boolean },
+	options?: { dsDeleted?: boolean; dsId?: number },
 ): DeploymentStatusType {
 	// Deleted DSes should not appear as active deployments
 	if (options?.dsDeleted) return 'canceled';
@@ -77,23 +79,38 @@ export function computeDeploymentStatus(
 		(n['retrieved'] || 0) + (n['download'] || 0) + (n['downloaded'] || 0);
 	const pending = (n['running'] || 0) + (n['scheduled'] || 0);
 
+	let status: DeploymentStatusType;
+
 	// All targets completed successfully
-	if (finished === total) return 'completed';
+	if (finished === total) {
+		status = 'completed';
+	} else if (error > 0) {
+		// Any error → deployment has failures
+		status = 'failed';
+	} else if (canceled === total) {
+		// All canceled
+		status = 'canceled';
+	} else if (inProgress > 0) {
+		// Some targets still working
+		status = 'in_progress';
+	} else if (pending > 0) {
+		// Scheduled but not started
+		status = 'pending';
+	} else {
+		// Fallback: anything with targets but no clear terminal state
+		// This can happen when hawkBit reports total=N but 0 actions in any known status.
+		// Example: actions just created but statistics not yet updated.
+		// Treat as pending (action exists, device hasn't reported yet).
+		status = 'pending';
+	}
 
-	// Any error → deployment has failures
-	if (error > 0) return 'failed';
+	appLogger.debug(
+		`[DEPLOY] DS #${options?.dsId ?? '?'} status computation: ${status} ` +
+		`(total=${total}, finished=${finished}, error=${error}, canceled=${canceled}, ` +
+		`inProgress=${inProgress}, pending=${pending}, raw=${JSON.stringify(statsMap)})`,
+	);
 
-	// All canceled
-	if (canceled === total) return 'canceled';
-
-	// Some targets still working
-	if (inProgress > 0) return 'in_progress';
-
-	// Scheduled but not started
-	if (pending > 0) return 'pending';
-
-	// Fallback: anything with targets but no clear terminal state
-	return 'in_progress';
+	return status;
 }
 
 /**
@@ -119,6 +136,17 @@ export function summarizeStatistics(
 }
 
 // ---------------------------------------------------------------------------
+// Display name extraction
+// ---------------------------------------------------------------------------
+
+/** Extract user-visible deployment name from DS description. Format: "{name} | artifact: ..." */
+function extractDeploymentDisplayName(ds: HawkbitDistributionSet): string | undefined {
+	const desc = ds.description ?? '';
+	const match = desc.match(/^([^|]+)\|/);
+	return match ? match[1]!.trim() : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Enrichment: DS → EnrichedDeployment
 // ---------------------------------------------------------------------------
 
@@ -133,14 +161,19 @@ export function summarizeStatistics(
 export async function enrichDeployment(ds: HawkbitDistributionSet): Promise<EnrichedDeployment> {
 	let statsMap: Record<string, number> = {};
 	let total = 0;
+	let statsFetchFailed = false;
 
 	try {
 		const stats: HawkbitDSStatistics = await hawkbitDistributionSets.getStatistics(ds.id);
 		statsMap = stats.actions || {};
 		total = stats.actions?.['total'] || 0;
-	} catch (e) {
 		appLogger.debug(
-			'[DEPLOY] Could not fetch statistics for DS %d: %s',
+			`[DEPLOY] DS #${ds.id} raw stats: ${JSON.stringify(stats)}`,
+		);
+	} catch (e) {
+		statsFetchFailed = true;
+		appLogger.warn(
+			'[DEPLOY] Could not fetch statistics for DS %d (will use fallback): %s',
 			ds.id,
 			e instanceof Error ? e.message : String(e),
 		);
@@ -149,13 +182,16 @@ export async function enrichDeployment(ds: HawkbitDistributionSet): Promise<Enri
 	return {
 		id: ds.id,
 		name: ds.name,
+		displayName: extractDeploymentDisplayName(ds),
 		version: ds.version,
 		type: ds.type,
 		typeName: ds.typeName,
 		description: ds.description,
 		createdAt: ds.createdAt,
 		lastModifiedAt: ds.lastModifiedAt,
-		status: computeDeploymentStatus(statsMap, total, { dsDeleted: ds.deleted }),
+		status: statsFetchFailed
+			? 'unknown' as DeploymentStatusType
+			: computeDeploymentStatus(statsMap, total, { dsDeleted: ds.deleted, dsId: ds.id }),
 		statistics: summarizeStatistics(statsMap),
 		dsMetadata: {
 			locked: ds.locked ?? false,

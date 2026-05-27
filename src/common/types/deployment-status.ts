@@ -5,21 +5,26 @@
  * and what hawkBit stores as action status history.
  *
  * ═══════════════════════════════════════════════════════════════════════
- *  FULL LIFECYCLE (8-step feedback from Ninbus v3 firmware):
+ *  FULL LIFECYCLE (feedback from Ninbus v3 firmware via hawkBit DDI):
  * ═══════════════════════════════════════════════════════════════════════
  *
- *  Step  DDI exec      hawkBit type  Message                            Phase
- *  ────  ──────────    ───────────   ─────────────────────────────────  ────────────
- *   0    (server)      running       "Assignment initiated by admin"    assigned
- *   1    proceeding    retrieved     "Target retrieved update action"   retrieved
- *   2    proceeding    running       "deployment started"               installing
- *   3    download      download      "downloading artifact"             downloading(0%)
- *   4    proceeding    running       "downloading 25%"                  downloading(25%)
- *   5    proceeding    running       "downloading 50%"                  downloading(50%)
- *   6    proceeding    running       "downloading 75%"                  downloading(75%)
- *   7    downloaded    downloaded    "download complete"                downloaded
- *   8    proceeding    running       "installing NFX to controller"     installing
- *   9    closed/success finished     "installed successfully, rebooting" rebooting
+ *  Step  DDI exec              hawkBit type  Message                            Phase
+ *  ────  ──────────────────    ───────────   ─────────────────────────────────  ────────────
+ *   0    (server-side)         running       "Assignment initiated by admin"    assigned
+ *   1    (server-side)         retrieved     "Target retrieved update action"   retrieved
+ *   2    proceeding            running       "deployment started"               installing
+ *   3    download              download      "downloading artifact"             downloading
+ *   4    proceeding            running       "downloading 25%"                  downloading(25%)
+ *   5    proceeding            running       "downloading 50%"                  downloading(50%)
+ *   6    proceeding            running       "downloading 75%"                  downloading(75%)
+ *   7    downloaded            downloaded    "download complete"                downloaded(100%)
+ *   8    proceeding            running       "installing NFX to controller"     installing
+ *   9    closed+success        finished      "installed successfully, rebooting" success
+ *
+ *  IMPORTANT: type='finished' ALWAYS means success.
+ *  hawkBit maps closed+failure → type='error', closed+success → type='finished'.
+ *  The "rebooting" in step 9's message is informational — the install is done
+ *  and the device has already rebooted and reconnected.
  * ═══════════════════════════════════════════════════════════════════════
  */
 

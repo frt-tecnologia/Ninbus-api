@@ -11,5 +11,5 @@ export const requestLogger = () =>
 			const startTime = (store as any).startTime;
 			const durationMs = startTime ? Date.now() - startTime : 0;
 
-			appLogger.info(`${set.status} ${request.method} ${url.pathname} (${durationMs}ms)`);
+			appLogger.info('%s %s %s (%dms)', set.status, request.method, url.pathname, durationMs);
 		});

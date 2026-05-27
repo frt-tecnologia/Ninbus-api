@@ -201,13 +201,14 @@ export const hawkbitTargets = {
 	assignDS(
 		targetId: string,
 		dsId: number,
-		params?: { forceType?: string; offline?: boolean },
+		params?: { type?: 'forced' | 'soft' | 'timeforced' | 'downloadonly'; offline?: boolean },
 	): Promise<void> {
 		return hawkbitRequest({
 			method: 'POST',
 			path: `/rest/v1/targets/${encodeURIComponent(targetId)}/assignedDS`,
 			query: { offline: params?.offline },
-			body: { id: dsId, forceType: params?.forceType ?? 'forced' },
+			// hawkBit expects 'type' (not 'forceType'). Default is 'forced'.
+			body: { id: dsId, type: params?.type ?? 'forced' },
 		});
 	},
 };

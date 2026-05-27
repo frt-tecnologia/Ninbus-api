@@ -46,6 +46,10 @@ function buildQueryString(params?: Record<string, string | number | boolean | un
 	return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 
+function isRawBody(body: unknown): body is Uint8Array | ArrayBuffer {
+	return body instanceof Uint8Array || body instanceof ArrayBuffer;
+}
+
 export async function hawkbitRequest<T>(options: HawkbitRequestOptions): Promise<T> {
 	const { method, path, body, query, headers = {}, timeout } = options;
 	const url = `${hawkbitConfig.baseUrl}${path}${buildQueryString(query)}`;
@@ -59,14 +63,23 @@ export async function hawkbitRequest<T>(options: HawkbitRequestOptions): Promise
 			...headers,
 		};
 
-		if (body && !(body instanceof FormData)) {
+		if (body && !(body instanceof FormData) && !isRawBody(body) && !fetchHeaders['Content-Type']) {
 			fetchHeaders['Content-Type'] = 'application/json';
+		}
+
+		let fetchBody: BodyInit | undefined;
+		if (body instanceof FormData) {
+			fetchBody = body;
+		} else if (isRawBody(body)) {
+			fetchBody = body;
+		} else if (body) {
+			fetchBody = JSON.stringify(body);
 		}
 
 		const response = await fetch(url, {
 			method,
 			headers: fetchHeaders,
-			body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+			body: fetchBody,
 			signal: controller.signal,
 			...(hawkbitConfig.skipTls && { tls: { rejectUnauthorized: false } }),
 		});
@@ -105,7 +118,7 @@ export async function hawkbitRequest<T>(options: HawkbitRequestOptions): Promise
 		// Bun fetch throws TypeError with "Unable to connect" on network failures.
 		const message = error instanceof Error ? error.message : String(error);
 		const status = (error as Error).name === 'AbortError' ? 408 : 503;
-		appLogger.warn(`[HAWKBIT] Network error on ${method} ${path}: ${message}`);
+		appLogger.warn('[HAWKBIT] Network error on %s %s: %s', method, path, message);
 		throw new HawkbitApiError(status, { error: message }, path);
 	} finally {
 		clearTimeout(timer);

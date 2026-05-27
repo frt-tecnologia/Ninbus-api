@@ -94,7 +94,12 @@ export function enrichActionStatus(entry: {
 			phase = 'installing';
 		}
 	} else if (entry.type === 'finished') {
-		phase = msg.toLowerCase().includes('reboot') ? 'rebooting' : 'success';
+		// hawkBit type='finished' ALWAYS means the action completed successfully.
+		// DDI: execution='closed' + result={finished:'success'} → type='finished'.
+		// DDI: execution='closed' + result={finished:'failure'} → type='error' (not finished).
+		// The message may mention 'rebooting' but that's informational — the install
+		// is done and the device has already rebooted and reconnected.
+		phase = 'success';
 	} else {
 		phase = actionStatusToPhase(entry.type);
 	}
@@ -135,7 +140,9 @@ export function computeLatestPhase(
 	}
 
 	if (latest.type === 'finished') {
-		return msg.toLowerCase().includes('reboot') ? 'rebooting' : 'success';
+		// hawkBit type='finished' = action completed successfully.
+		// See enrichActionStatus() for full reasoning.
+		return 'success';
 	}
 
 	return actionStatusToPhase(latest.type);

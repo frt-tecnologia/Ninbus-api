@@ -70,7 +70,10 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get all target statuses with phase and progress',
-				description: 'Each target includes semantic phase (downloading, installing...) and download progress (0-100%).',
+				description:
+					'Each target includes semantic phase and download progress (0-100%). ' +
+					'Phase values: assigned, pending, downloading, downloaded, installing, installed, error, canceled. ' +
+					'See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.',
 			},
 			response: { 200: TargetStatusesResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},
@@ -103,7 +106,10 @@ export const deploymentDeviceRoutes = withAuth(
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get full status trail (timeline) for a target',
-				description: 'Complete timeline of status entries (oldest→newest) with phase, progress, and display message.',
+				description:
+					'Complete timeline of status entries (oldest→newest) with phase, progress, and display message. ' +
+					'Phase values: assigned, pending, downloading, downloaded, installing, installed, error, canceled. ' +
+					'See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.',
 			},
 			response: { 200: TargetStatusTrailResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
 		},

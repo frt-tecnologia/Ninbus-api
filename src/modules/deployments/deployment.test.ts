@@ -107,8 +107,8 @@ describe('message type detection', () => {
 // actionStatusToPhase
 // ---------------------------------------------------------------------------
 describe('actionStatusToPhase', () => {
-	test('retrieved → retrieved', () => {
-		expect(actionStatusToPhase('retrieved')).toBe('retrieved');
+	test('retrieved → pending', () => {
+		expect(actionStatusToPhase('retrieved')).toBe('pending');
 	});
 
 	test('download → downloading', () => {
@@ -123,8 +123,8 @@ describe('actionStatusToPhase', () => {
 		expect(actionStatusToPhase('running')).toBe('installing');
 	});
 
-	test('finished → success', () => {
-		expect(actionStatusToPhase('finished')).toBe('success');
+	test('finished → installed', () => {
+		expect(actionStatusToPhase('finished')).toBe('installed');
 	});
 
 	test('error → error', () => {
@@ -177,23 +177,23 @@ describe('enrichActionStatus', () => {
 		expect(result.progress).toBe(100);
 	});
 
-	test('maps type=finished to phase=success ALWAYS', () => {
-		// Even if message contains "rebooting", finished = success
+	test('maps type=finished to phase=installed ALWAYS', () => {
+		// Even if message contains "rebooting", finished = installed
 		const result = enrichActionStatus({
 			id: 3,
 			type: 'finished',
 			messages: ['installed successfully, controller verified OK'],
 		});
-		expect(result.phase).toBe('success');
+		expect(result.phase).toBe('installed');
 	});
 
-	test('maps type=finished with rebooting message to phase=success', () => {
+	test('maps type=finished with rebooting message to phase=installed', () => {
 		const result = enrichActionStatus({
 			id: 4,
 			type: 'finished',
 			messages: ['NFX staged, rebooting to apply to controller'],
 		});
-		expect(result.phase).toBe('success');
+		expect(result.phase).toBe('installed');
 	});
 
 	test('maps type=error to phase=error', () => {
@@ -232,13 +232,13 @@ describe('enrichActionStatus', () => {
 		expect(result.phase).toBe('downloading');
 	});
 
-	test('maps type=retrieved to phase=retrieved', () => {
+	test('maps type=retrieved to phase=pending', () => {
 		const result = enrichActionStatus({
 			id: 9,
 			type: 'retrieved',
 			messages: ['Target retrieved update action'],
 		});
-		expect(result.phase).toBe('retrieved');
+		expect(result.phase).toBe('pending');
 	});
 
 	test('handles empty messages', () => {
@@ -284,12 +284,12 @@ describe('computeLatestPhase', () => {
 		expect(computeLatestPhase(history)).toBe('installing');
 	});
 
-	test('maps finished to success', () => {
+	test('maps finished to installed', () => {
 		const history = [
 			{ type: 'finished' as const, messages: ['installed successfully'] },
 			{ type: 'running' as const, messages: ['installing NFX'] },
 		];
-		expect(computeLatestPhase(history)).toBe('success');
+		expect(computeLatestPhase(history)).toBe('installed');
 	});
 });
 
@@ -434,10 +434,10 @@ describe('DDI v2 feedback flow', () => {
 		expect(enriched[7]!.phase).toBe('installing');  // processing artifact
 		expect(enriched[8]!.phase).toBe('installing');  // installing NFX
 		expect(enriched[9]!.phase).toBe('installing');  // NFX staged, rebooting
-		expect(enriched[10]!.phase).toBe('success');    // installed successfully
+		expect(enriched[10]!.phase).toBe('installed');   // installed successfully
 
-		// Latest phase should be success
-		expect(computeLatestPhase(statuses.reverse())).toBe('success');
+		// Latest phase should be installed
+		expect(computeLatestPhase(statuses.reverse())).toBe('installed');
 	});
 
 	test('error path produces correct phases', () => {

@@ -56,6 +56,10 @@ export const abortActionSchema = t.Object({
  *   ERROR, WARNING              → 'failed'
  *   CANCELED, CANCELING         → 'canceled'
  *   (no targets assigned)       → 'no_targets'
+ *
+ * Per-target phase values (from target-statuses endpoint):
+ *   assigned, pending, downloading, downloaded, installing, installed, error, canceled, unknown
+ * See docs/hawkbit-status-flow-mapping.md for full DDI feedback mapping.
  */
 export const DEPLOYMENT_STATUS_VALUES = [
 	'pending',

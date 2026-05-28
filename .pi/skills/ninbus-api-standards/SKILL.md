@@ -90,7 +90,7 @@ src/
 | Target | Device | controllerId = serialNumber hex |
 | Software Module | Artifact | Container tipado |
 | Distribution Set | Deployment | Agrupa SMs, atribuído a targets |
-| Action | Status por target | running→retrieved→download→finished |
+| Action | Status por target | running→retrieved→download→downloaded→finished |
 | DDI | Device polling | TargetToken auth |
 
 ### Deployment Status (computado de action statistics)
@@ -192,6 +192,18 @@ soft-delete gracefully — logs warning if SM still active, returns success for 
 3. **DOWNLOAD**: Device baixa artefato via DDI artifact URL
 4. **FEEDBACK**: Device envia feedback (retrieved → download → downloaded → finished/error)
 5. **CANCEL**: DELETE /deployments/:id → force-close all actions → delete DS
+
+Per-target phase mapping (DDI feedback → API phase → UI):
+- `assigned` — DS assigned, target hasn't polled
+- `pending` — Target retrieved, no feedback yet
+- `downloading` — Download in progress (with progress %)
+- `downloaded` — Download complete
+- `installing` — Install in progress
+- `installed` — Success (closed+success)
+- `error` — Failure (closed+failure)
+- `canceled` — Deployment canceled
+
+See docs/hawkbit-status-flow-mapping.md for full DDI feedback table.
 
 Status mapping: `running/scheduled` → pending · `retrieved/download/downloaded` → in_progress · `finished` → completed · `error/warning` → failed · `canceled/canceling` → canceled · `deleted DS` → canceled · `no actions` → no_targets · `stats fetch failed` → unknown · `total>0 no status keys` → pending (fallback)
 

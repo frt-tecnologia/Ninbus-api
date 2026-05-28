@@ -46,14 +46,21 @@ export function isRetrievedMessage(message: string): boolean {
 // Phase Computation
 // ---------------------------------------------------------------------------
 
-/** Map raw hawkBit action status type → base semantic phase (no message context). */
+/**
+ * Map raw hawkBit action status type → semantic phase for UI.
+ *
+ * Reference: docs/hawkbit-status-flow-mapping.md
+ * - retrieved → pending (device polled, no feedback yet)
+ * - finished → installed (closed+success)
+ * - error/warning → error (closed+failure)
+ */
 export function actionStatusToPhase(status: HawkbitActionStatusType): DeploymentPhase {
 	switch (status) {
-		case 'retrieved': return 'retrieved';
+		case 'retrieved': return 'pending';
 		case 'download': return 'downloading';
 		case 'downloaded': return 'downloaded';
 		case 'running': return 'installing';
-		case 'finished': return 'success';
+		case 'finished': return 'installed';
 		case 'error':
 		case 'warning':
 		case 'cancel_rejected': return 'error';
@@ -85,7 +92,7 @@ export function enrichActionStatus(entry: {
 		} else if (isAssignmentMessage(msg)) {
 			phase = 'assigned';
 		} else if (isRetrievedMessage(msg)) {
-			phase = 'retrieved';
+			phase = 'pending';
 		} else if (isInstallMessage(msg)) {
 			phase = 'installing';
 		} else if (msg.toLowerCase().includes('deployment started')) {
@@ -94,12 +101,10 @@ export function enrichActionStatus(entry: {
 			phase = 'installing';
 		}
 	} else if (entry.type === 'finished') {
-		// hawkBit type='finished' ALWAYS means the action completed successfully.
+		// hawkBit type='finished' = DDI closed+success → Installed.
 		// DDI: execution='closed' + result={finished:'success'} → type='finished'.
 		// DDI: execution='closed' + result={finished:'failure'} → type='error' (not finished).
-		// The message may mention 'rebooting' but that's informational — the install
-		// is done and the device has already rebooted and reconnected.
-		phase = 'success';
+		phase = 'installed';
 	} else {
 		phase = actionStatusToPhase(entry.type);
 	}
@@ -129,7 +134,7 @@ export function computeLatestPhase(
 	if (latest.type === 'running') {
 		if (isDownloadMessage(msg)) return 'downloading';
 		if (isAssignmentMessage(msg)) return 'assigned';
-		if (isRetrievedMessage(msg)) return 'retrieved';
+		if (isRetrievedMessage(msg)) return 'pending';
 		if (isInstallMessage(msg)) return 'installing';
 
 		const hasDownloaded = statusHistory.some(s => s.type === 'downloaded');
@@ -140,9 +145,7 @@ export function computeLatestPhase(
 	}
 
 	if (latest.type === 'finished') {
-		// hawkBit type='finished' = action completed successfully.
-		// See enrichActionStatus() for full reasoning.
-		return 'success';
+		return 'installed';
 	}
 
 	return actionStatusToPhase(latest.type);

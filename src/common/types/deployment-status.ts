@@ -10,21 +10,20 @@
  *
  *  Step  DDI exec              hawkBit type  Message                            Phase
  *  ────  ──────────────────    ───────────   ─────────────────────────────────  ────────────
- *   0    (server-side)         running       "Assignment initiated by admin"    assigned
- *   1    (server-side)         retrieved     "Target retrieved update action"   retrieved
- *   2    proceeding            running       "deployment started"               installing
- *   3    download              download      "downloading artifact"             downloading
- *   4    proceeding            running       "downloading 25%"                  downloading(25%)
- *   5    proceeding            running       "downloading 50%"                  downloading(50%)
- *   6    proceeding            running       "downloading 75%"                  downloading(75%)
- *   7    downloaded            downloaded    "download complete"                downloaded(100%)
- *   8    proceeding            running       "installing NFX to controller"     installing
- *   9    closed+success        finished      "installed successfully, rebooting" success
+ *  0     (server-side)         running       "Assignment initiated by admin"    assigned
+ *  1     (device poll)         retrieved     "Target retrieved update action"   pending
+ *  2     proceeding            running       "deployment started"               installing
+ *  3     download              download      "downloading artifact"             downloading
+ *  4     proceeding            running       "downloading 25%"                  downloading(25%)
+ *  5     proceeding            running       "downloading 50%"                  downloading(50%)
+ *  6     proceeding            running       "downloading 75%"                  downloading(75%)
+ *  7     downloaded            downloaded    "download complete"                downloaded(100%)
+ *  8     proceeding            running       "installing NFX to controller"     installing
+ *  9     closed+success        finished      "installed successfully"           installed
  *
- *  IMPORTANT: type='finished' ALWAYS means success.
+ *  IMPORTANT: type='finished' ALWAYS means installed (success).
  *  hawkBit maps closed+failure → type='error', closed+success → type='finished'.
- *  The "rebooting" in step 9's message is informational — the install is done
- *  and the device has already rebooted and reconnected.
+ *  See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -57,8 +56,8 @@ export type DdiResultStatus = (typeof DDI_RESULT_STATUS)[number];
 // ---------------------------------------------------------------------------
 
 export const DEPLOYMENT_PHASE_VALUES = [
-	'assigned', 'retrieved', 'downloading', 'downloaded', 'installing',
-	'rebooting', 'success', 'error', 'canceled', 'unknown',
+	'assigned', 'pending', 'downloading', 'downloaded', 'installing',
+	'installed', 'error', 'canceled', 'unknown',
 ] as const;
 export type DeploymentPhase = (typeof DEPLOYMENT_PHASE_VALUES)[number];
 

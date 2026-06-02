@@ -93,3 +93,6 @@ service-account.json
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Docker environment files (contain secrets)
+.env.docker

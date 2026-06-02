@@ -159,7 +159,7 @@ services:
       # Artifact binary storage (fallback when S3 is disabled)
       - hawkbit-artifacts:/app/artifactrepo
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://admin:admin@localhost:8080/rest/v1/system/configs"]
+      test: ["CMD", "wget", "-qO-", "http://${HAWKBIT_USERNAME:-admin}:${HAWKBIT_PASSWORD:-admin}@localhost:8080/rest/v1/system/configs"]
       interval: 30s
       timeout: 10s
       start_period: 60s

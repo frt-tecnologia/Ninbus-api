@@ -8,44 +8,29 @@ Plataforma OTA para gerenciamento de frotas IoT — provisioning, firmware uploa
 
 ## Arquitetura
 
-```mermaid
-graph LR
-    subgraph Clients
-        FL[Flutter App]
-        DEV[Dispositivo IoT]
-    end
-
-    subgraph Ninbus API :8081
-        AUTH[Better Auth]
-        SYNC[Sync Engine]
-        SSE[SSE Emitter]
-    end
-
-    subgraph hawkBit :8080
-        MGMT[Management API]
-        DDI[DDI API]
-    end
-
-    subgraph Storage
-        DB[(PostgreSQL<br/>Neon)]
-        S3[(S3 / Cloudflare R2)]
-    end
-
-    FL -->|Cookie Auth| AUTH
-    FL -->|SSE stream| SSE
-    AUTH --> DB
-    SYNC -->|periodic / hybrid| MGMT
-    MGMT --> DB
-    DDI -->|TargetToken| DEV
-    MGMT --> S3
-
-    SYNC -->|emit events| SSE
-    SSE -->|push| FL
+```
+Internet
+  │
+  ├── Flutter App ─── Cookie/Bearer Auth ──┐
+  │                                         │
+  │                    Ninbus API (:8081)    │
+  │                     ├── Better Auth     │
+  │                     ├── Sync Engine     │
+  │                     └── SSE Emitter     │
+  │                              │          │
+  │                   hawkBit (:8080)       │
+  │                     ├── Management API (Basic Auth)
+  │                     └── DDI API (TargetToken)
+  │                              │          │
+  │              ┌───────────────┤          │
+  │              │               │          │
+  │         PostgreSQL      S3 / R2    IoT Device
+  │          (Neon)      (artifacts)   (DDI poll)
 ```
 
 **Fluxo de dados:**
 
-1. **Flutter** → Ninbus API (cookie auth) → hawkBit Management API (Basic Auth)
+1. **Flutter** → Ninbus API (cookie ou Bearer) → hawkBit Management API (Basic Auth)
 2. **Sync Engine** → hawkBit → DB local (background) → SSE → Flutter (real-time)
 3. **Dispositivo** → hawkBit DDI (TargetToken) → download firmware → feedback
 
@@ -54,40 +39,51 @@ graph LR
 ## Quick Start
 
 ```bash
-# Local development
 bun install
-cp .env.example .env          # fill required values
-bun run db:push
+cp .env.example .env          # preencha valores obrigatórios
+bun run db:push               # sincroniza schema Drizzle
 bun run dev                    # → http://localhost:8081
+```
 
-# Docker (API + hawkBit)
+### Docker (API + hawkBit)
+
+```bash
 docker compose build
 docker compose up -d
 docker compose logs -f api
-
-# Tests (separate .env.test DB)
-bun test --env-file=.env.test
 ```
-
----
-
-## Serviços Docker
 
 | Serviço | Porta | Descrição |
 |---------|-------|-----------|
 | `api` | 8081 | Ninbus API |
-| `hawkbit` | 8080 | hawkBit Update Server 1.0.3 (custom build com S3 extension) |
+| `hawkbit` | 8080 | hawkBit 1.0.3 (custom build com S3 extension + CDN) |
 
-> Armazenamento de artefatos: AWS S3 ou Cloudflare R2 (configurável via env). Sem serviço MinIO local.
+> `docker compose` lê `.env` por padrão. Use `--env-file .env.docker` para overrides Docker.
+
+---
+
+## Autenticação
+
+Better Auth com sessões via cookie httpOnly e Bearer token.
+
+**No navegador (/docs):** Faça sign-in → cookie é setado automaticamente → todos os endpoints subsequentes funcionam.
+
+**Para API clients (mobile, curl, etc.):** Use `Authorization: Bearer <token>` onde `<token>` é o campo `token` da resposta de sign-in.
 
 ```bash
-docker compose up -d          # all services
-docker compose up -d api      # API only (hawkBit must be running)
-docker compose build api      # rebuild after code changes
-docker compose down -v        # stop + remove volumes
+# Sign-in → captura token
+curl -X POST http://localhost:8081/api/auth/sign-in/email \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"password123"}'
+# Resposta: { "token": "abc123...", "user": {...} }
+
+# Usa token como Bearer
+curl http://localhost:8081/api/companies \
+  -H 'Authorization: Bearer abc123...'
 ```
 
-> **Nota:** `docker compose` lê `.env` por padrão. Use `--env-file .env.docker` para overrides.
+> **Importante:** Better Auth plugins devem ser array `[bearer()]`, não objeto `{ bearer: bearer() }`.
+> Cookie `auth.session_token` precisa ser o valor assinado (HMAC), não o token raw.
 
 ---
 
@@ -99,12 +95,12 @@ docker compose down -v        # stop + remove volumes
 
 | Rota | Descrição |
 |------|-----------|
-| `/sign-up/email` | Registro |
-| `/sign-in/email` | Login → cookie session |
+| `/sign-up/email` | Registro → cookie session |
+| `/sign-in/email` | Login → cookie session + token no body |
 | `/sign-out` | Logout |
-| `/get-session` | Sessão atual |
+| `/get-session` | Sessão atual (null se não autenticado) |
 | `/request-password-reset` | Solicitar reset de senha |
-| `/reset-password` | Resetar senha |
+| `/reset-password` | Resetar senha com token |
 
 ### Provisioning — `/api/devices/*` (super admin only)
 
@@ -170,13 +166,11 @@ docker compose down -v        # stop + remove volumes
 | `GET /:deploymentId` | viewer | Detalhes com status real |
 | `DELETE /:deploymentId` | admin | Remover (cancela ações ativas) |
 | `GET /:deploymentId/statistics` | viewer | Estatísticas hawkBit |
-| `GET /:deploymentId/target-statuses` | viewer | Devices com fase + progresso enriquecidos |
+| `GET /:deploymentId/target-statuses` | viewer | Devices com fase + progresso |
 | `GET /:deploymentId/targets` | viewer | Targets brutos do Distribution Set |
 | `GET /:deploymentId/targets/:targetId/status-trail` | viewer | Timeline de status do device |
-| `GET /:deploymentId/targets/:targetId/actions/:actionId/status` | viewer | Histórico raw de action status |
 | `DELETE /:deploymentId/targets/:targetId/actions/:actionId` | operator | Cancelar ação por device |
-| `GET /:deploymentId/ddi-check/:targetId` | viewer | Diagnóstico DDI: target receberia deploymentBase? |
-| `GET /devices/:deviceId/actions` | viewer | Histórico de deployments do device |
+| `GET /:deploymentId/ddi-check/:targetId` | viewer | Diagnóstico DDI |
 
 ### Artefatos — `/api/companies/:companyId/artifacts/*`
 
@@ -210,13 +204,12 @@ docker compose down -v        # stop + remove volumes
 
 ## RBAC
 
-```mermaid
-graph TD
-    SA[Super Admin<br/>SUPER_ADMIN_EMAILS] -->|bypass| ANY[Qualquer empresa]
-    OWN[owner] -->|4| ADM[admin]
-    ADM -->|3| OPR[operator]
-    OPR -->|2| VR[viewer]
-    VR -->|1| AUTH[authenticated]
+```
+Super Admin (SUPER_ADMIN_EMAILS) → bypassa membership, vê todas as empresas
+  owner (4) → tudo, inclusive deletar empresa
+    admin (3) → gerenciar membros, deletar recursos
+      operator (2) → criar/editar devices, deployments, artefatos
+        viewer (1) → apenas leitura
 ```
 
 | Role | Ler | Criar | Editar | Deletar |
@@ -225,8 +218,6 @@ graph TD
 | admin | ✅ | ✅ | ✅ | ✅ |
 | operator | ✅ | ✅ | ✅ | ❌ |
 | viewer | ✅ | ❌ | ❌ | ❌ |
-
-> **Super admin** (via `SUPER_ADMIN_EMAILS` env var): bypassa membership. Vê todas as empresas, não precisa ser membro. Recebe role implícita de `owner` em qualquer company-scoped endpoint.
 
 ---
 
@@ -244,73 +235,44 @@ graph TD
 
 ### Ciclo de Deployment
 
-```mermaid
-sequenceDiagram
-    participant F as Flutter
-    participant A as Ninbus API
-    participant H as hawkBit
-    participant D as Dispositivo
-
-    F->>A: POST /deployments
-    A->>H: Criar DS + assign targets
-    H-->>A: Action ID
-    A-->>F: 201 + deployment info
-    A->>F: SSE: deployment.created
-
-    D->>H: DDI poll (TargetToken)
-    H-->>D: deploymentBase (artifact URL + size)
-
-    D->>H: GET artifact binary
-    H-->>D: .tar file (empacotado pela API)
-
-    D->>H: POST feedback (retrieved → download → finished)
-    H-->>A: Sync engine detecta mudança
-    A->>F: SSE: device.status {hawkbitUpdateStatus: "in_sync"}
+```
+Flutter → POST /deployments → cria DS + assign targets
+  Device → DDI poll → recebe deploymentBase (artifact URL)
+  Device → GET artifact binary → download firmware (.tar)
+  Device → POST feedback (retrieved → download → finished)
+  Sync Engine → detecta mudança → SSE → Flutter
 ```
 
-### Formato do Artefato (Device-side)
+### Cancel Flow (Two-Step)
 
-O firmware é empacotado em `.tar` pela API antes do upload ao hawkBit:
-
-```
-├── header-info/
-│   └── featureidentity.json    {"type": "configuration-nfx"}
-└── data/
-    └── payload.bin             firmware raw (.frz / .fir / .bin)
-```
-
-O campo `size` no DDI deploymentBase = tamanho total do `.tar`. O tamanho do firmware real está no tar header no offset 1024+124 (12 bytes, octal).
-
-### Cancel Flow
-
-hawkBit requer **two-step** para cancelar uma action:
+hawkBit requer dois passos para cancelar:
 1. `DELETE /actions/{id}` → type muda para "cancel", status = "canceling"
 2. `DELETE /actions/{id}?force=true` → status = "canceled"
 
-Step 2 **só funciona** após step 1. Para actions já tipo "cancel", usar force direto.
+Step 2 só funciona após step 1. Para actions já tipo "cancel", usar force direto.
+
+### Artifact Tar Packaging
+
+O firmware é empacotado em `.tar` antes do upload ao hawkBit:
+
+```
+├── header-info/featureidentity.json    {"type": "configuration-nfx"}
+└── data/payload.bin                    firmware raw (.frz/.fir/.bin)
+```
+
+### Tipos de Artefato
+
+| Tipo | Destino | Risco | Reboot |
+|------|---------|-------|--------|
+| `firmware-ninbus` | STM32F407 (NAND) | 🔴 HIGH | ✅ |
+| `firmware-controller` | LightDot (CAN) | 🟡 MED | ❌ |
+| `configuration-nfx` | NFX (NAND→CAN) | 🟢 LOW | ❌ |
 
 ---
 
 ## Sync Engine
 
-O sync engine sincroniza hawkBit → DB local. Três modos:
-
-```mermaid
-graph TD
-    subgraph periodic
-        P1[Background: ALL targets<br/>every N seconds]
-    end
-    subgraph on_demand
-        O1[Zero background]
-        O2[Per-request: stale-while-revalidate]
-        O1 --> O2
-    end
-    subgraph hybrid
-        H1[Background: ONLY active companies]
-        H2[Per-request: single device SWR]
-        H1 --> H2
-    end
-```
+Sincroniza hawkBit → DB local. GET /devices faz ZERO chamadas hawkBit.
 
 | Modo | Background | On-demand | Recomendado para |
 |------|-----------|-----------|-----------------|
@@ -318,66 +280,25 @@ graph TD
 | `on_demand` | nenhum | por request (cache 60s) | debug / dev |
 | `hybrid` | companies com sessões ativas | single device (cache 60s) | **produção (50k+)** |
 
-**Variáveis:**
-
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `HAWKBIT_SYNC_MODE` | `hybrid` | Estratégia de sync |
-| `HAWKBIT_SYNC_INTERVAL_SEC` | 30 | Intervalo do background sync |
-| `HAWKBIT_SYNC_STALE_SEC` | 60 | Threshold stale para on-demand |
-| `HAWKBIT_SYNC_ACTIVE_WINDOW_SEC` | 300 | Janela para considerar empresa "ativa" |
-
-**GET /devices faz ZERO chamadas hawkBit** — tudo vem do DB local atualizado pelo sync.
-
 ---
 
 ## SSE — Real-Time Events
-
-```mermaid
-graph LR
-    SYNC[Sync Engine] -->|emit| EMITTER[SSE Emitter]
-    DEV_ROUTE[Device Routes] -->|emit| EMITTER
-    DEP_ROUTE[Deployment Routes] -->|emit| EMITTER
-    EMITTER -->|push| FLUTTER[Flutter App]
-```
-
-### Eventos
 
 | Evento | Dados | Quando |
 |--------|-------|--------|
 | `connected` | companyId, timestamp | Conexão estabelecida |
 | `heartbeat` | timestamp | A cada 30s |
-| `device.status` | deviceId, connectionStatus, hawkbitUpdateStatus, lastPollAt, ipAddress | Sync atualiza device |
-| `device.deployment` | deviceId, controllerId, status, message, timestamp | Target recebe deployment |
+| `device.status` | deviceId, connectionStatus, hawkbitUpdateStatus | Sync atualiza device |
+| `device.deployment` | deviceId, controllerId, status, message | Target recebe deployment |
 | `device.claimed` | deviceId | POST /devices claim |
 | `device.unclaimed` | deviceId | DELETE device (unclaim) |
 | `deployment.created` | deploymentId, name, artifactType | POST /deployments |
 | `deployment.deleted` | deploymentId | DELETE /deployments |
 | `devices.batch` | count | Sync cycle completo |
-| `test` | message, triggeredBy | POST /sse/test/:companyId |
-
-### Endpoints
-
-| Endpoint | Auth | Descrição |
-|----------|------|-----------|
-| `GET /api/companies/:companyId/sse` | viewer | SSE company-scoped |
-| `GET /api/sse/global` | auth | SSE global (super admin) |
-| `POST /api/sse/test/:companyId` | viewer | Dispara evento teste |
-| `POST /api/sse/simulate/:companyId` | viewer | Simula stream de eventos |
-| `GET /api/sse/debug/connections` | auth | Conexões ativas |
 
 ---
 
 ## Device Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Unclaimed: POST /provision (super admin)
-    Unclaimed --> Accepted: POST /devices (claim by company)
-    Accepted --> Unclaimed: DELETE /companies/:id/devices/:id (unclaim)
-    Unclaimed --> [*]: DELETE /deprovision/:sn (super admin)
-    Accepted --> [*]: DELETE /deprovision/:sn (super admin)
-```
 
 | Ação | Quem | hawkBit Target | DB Record |
 |------|------|---------------|-----------|
@@ -388,19 +309,9 @@ stateDiagram-v2
 
 ---
 
-## Tipos de Artefato
-
-| Tipo | Destino | Risco | Reboot | Extensões |
-|------|---------|-------|--------|-----------|
-| `firmware-ninbus` | STM32F407 (NAND) | 🔴 HIGH | ✅ | `.fir` `.bin` |
-| `firmware-controller` | LightDot (CAN) | 🟡 MED | ❌ | `.fir` `.bin` |
-| `configuration-nfx` | NFX (NAND→CAN) | 🟢 LOW | ❌ | `.frz` `.nfx` |
-
----
-
 ## Configuração
 
-Copie `.env.example` para `.env`. Todas as variáveis são validadas no startup via TypeBox.
+Copie `.env.example` para `.env`. Todas as variáveis validadas no startup via TypeBox (`src/common/config/env.ts`).
 
 ### Obrigatórias
 
@@ -418,41 +329,23 @@ Copie `.env.example` para `.env`. Todas as variáveis são validadas no startup 
 | `HAWKBIT_URL` | — | Management API URL |
 | `HAWKBIT_USERNAME` | — | Basic Auth user |
 | `HAWKBIT_PASSWORD` | — | Basic Auth password |
-| `HAWKBIT_TIMEOUT_MS` | 30000 | Request timeout |
-| `HAWKBIT_SKIP_TLS` | false | Skip TLS verification |
+| `HAWKBIT_SYNC_MODE` | hybrid | periodic / on_demand / hybrid |
+| `HAWKBIT_SYNC_INTERVAL_SEC` | 30 | Intervalo background sync |
 | `HAWKBIT_AUTOPROVISIONING` | false | Auto-criar targets no DDI poll |
-
-### hawkBit Sync Engine
-
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `HAWKBIT_SYNC_MODE` | hybrid | Estratégia (periodic/on_demand/hybrid) |
-| `HAWKBIT_SYNC_INTERVAL_SEC` | 30 | Intervalo do background sync |
-| `HAWKBIT_SYNC_STALE_SEC` | 60 | Threshold stale para on-demand |
-| `HAWKBIT_SYNC_ACTIVE_WINDOW_SEC` | 300 | Janela para empresa "ativa" |
 
 ### hawkBit S3 / CDN
 
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `HAWKBIT_S3_ENABLED` | false | Usa S3/R2 para armazenar artefatos |
-| `S3_ENDPOINT` | — | S3 endpoint (vazio = AWS default) |
-| `S3_REGION` | — | Região S3 |
-| `S3_ACCESS_KEY` | — | Access key |
-| `S3_SECRET_KEY` | — | Secret key |
-| `S3_BUCKET` | ninbus-artifacts | Bucket name |
-| `HAWKBIT_CDN_BASE_URL` | — | CDN URL (CloudFront ou R2) |
-| `HAWKBIT_CDN_KEY_PAIR_ID` | — | CloudFront Key Pair ID (Mode A) |
-| `HAWKBIT_CDN_PRIVATE_KEY_PATH` | — | CloudFront RSA private key path |
-| `HAWKBIT_CDN_EXPIRY_SEC` | 3600 | CDN URL expiry |
-
-### SSE
-
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `SSE_ENABLED` | true | Ativa SSE endpoints |
-| `SSE_HEARTBEAT_SEC` | 30 | Intervalo heartbeat |
-| `SSE_MAX_CONNECTIONS_PER_COMPANY` | 50 | Limite por empresa |
+| Variável | Descrição |
+|----------|-----------|
+| `HAWKBIT_S3_ENABLED` | Usa S3/R2 para armazenar artefatos |
+| `S3_ENDPOINT` | S3 endpoint (vazio = AWS default, R2 = `https://<id>.r2.cloudflarestorage.com`) |
+| `S3_REGION` | Região S3 (R2: `auto`) |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Credenciais |
+| `S3_BUCKET` | Bucket name (default: `ninbus-artifacts`) |
+| `HAWKBIT_CDN_BASE_URL` | CDN URL (CloudFront ou R2 custom domain) |
+| `HAWKBIT_CDN_KEY_PAIR_ID` | CloudFront Key Pair ID (Mode A — RSA) |
+| `HAWKBIT_CDN_PRIVATE_KEY_PATH` | CloudFront RSA private key path |
+| `HAWKBIT_CDN_EXPIRY_SEC` | CDN URL expiry (default: 3600) |
 
 ### Opcionais
 
@@ -477,79 +370,55 @@ Copie `.env.example` para `.env`. Todas as variáveis são validadas no startup 
 ```
 src/
 ├── index.ts                         # Entry + graceful shutdown
-├── app.ts                           # Composition root (modules + middleware + error handling)
+├── app.ts                           # Composition root
 ├── common/
-│   ├── config/                      # env.ts · hawkbit.ts · auth.ts · auth-client.ts · email.ts
+│   ├── config/                      # env.ts · hawkbit.ts · auth.ts · email.ts
 │   ├── db/schema/                   # Drizzle tables (auth · companies · categories · devices · posts)
 │   ├── hawkbit/                     # Client split by domain
-│   │   ├── client.ts                # Barrel re-export + utility functions
+│   │   ├── client.ts                # Barrel re-export
 │   │   ├── http.ts                  # HTTP infrastructure + error class
 │   │   ├── targets.ts               # Target CRUD + actions + attributes
 │   │   ├── distribution-sets.ts     # DS CRUD + assignment + statistics
 │   │   ├── software-modules.ts      # SM CRUD + types + artifact upload
-│   │   ├── constants.ts             # Artifact types + device type
+│   │   ├── constants.ts             # Artifact types
 │   │   └── types.ts                 # hawkBit API DTOs
-│   ├── middleware/                  # auth-guard · company-guard · company-check · rate-limiter · request-logger
+│   ├── middleware/                  # auth-guard · rate-limiter · request-logger
 │   ├── schemas/                     # ErrorResponse · GenericActionResponse
-│   ├── sse/                         # emitter.ts (W3C, company-scoped, heartbeat) + index.ts
-│   ├── types/                       # deployment-status.ts + deployment-status-helpers.ts
+│   ├── sse/                         # SSE emitter + routes
+│   ├── types/                       # deployment-status.ts
 │   ├── utils/                       # serial-number.ts
-│   ├── logger/                      # Pino (JSON em prod, pino-pretty em dev)
-│   └── swagger-config.ts           # OpenAPI/Scalar configuration
+│   ├── logger/                      # Pino (JSON em prod)
+│   └── swagger-config.ts           # OpenAPI/Scalar config
 ├── modules/
-│   ├── auth/                        # Better Auth (sign-up · sign-in · sign-out · password reset)
-│   ├── companies/                   # Multi-tenancy (index.ts + member-routes.ts)
-│   ├── categories/                  # Device grouping (CRUD)
+│   ├── auth/                        # Better Auth routes
+│   ├── companies/                   # Multi-tenancy + RBAC + members
+│   ├── categories/                  # Device grouping
 │   ├── devices/                     # Registry + provisioning + sync engine
-│   │   ├── index.ts                 # CRUD routes (list · claim · get · update · delete · link)
+│   │   ├── index.ts                 # CRUD routes
 │   │   ├── hawkbit-routes.ts        # hawkBit ops (attributes · actions · ddi-check)
-│   │   ├── category-routes.ts       # Device ↔ category assignment
-│   │   ├── provision-routes.ts      # Provisioning (super admin: provision · unclaimed · sync · deprovision)
-│   │   ├── provisioning.ts          # Provision/unclaim/deprovision logic
-│   │   ├── service.ts               # Business logic + hawkBit calls
-│   │   ├── auth.ts                  # Device auth helpers
-│   │   ├── schemas.ts               # Body/param/response schemas
-│   │   ├── sync.ts                  # Engine orchestrator (<150 lines)
-│   │   ├── sync-core.ts             # Types · status protection · single-device sync
-│   │   ├── sync-fetch.ts            # Paginated hawkBit target queries
-│   │   ├── sync-helpers.ts          # Batch DB ops · on-demand sync · re-exports
-│   │   └── sync-strategies.ts       # Periodic · hybrid · SSE emission
+│   │   ├── category-routes.ts       # Device ↔ category
+│   │   ├── provision-routes.ts      # Super admin provisioning
+│   │   ├── service.ts               # Business logic
+│   │   ├── sync.ts                  # Engine orchestrator
+│   │   └── sync-*.ts               # Sync strategies + fetch + helpers
 │   ├── deployments/                 # OTA via hawkBit Distribution Sets
 │   │   ├── index.ts                 # Create · list · get · delete
-│   │   ├── device-routes.ts         # Statistics · targets · actions · trail · ddi-check
-│   │   ├── service.ts               # Deployment business logic
-│   │   ├── schemas.ts               # All deployment schemas
-│   │   ├── actions.ts               # Action management (cancel · force-close)
-│   │   ├── enrichment.ts            # Status computation + hawkBit statistics
-│   │   ├── helpers.ts               # Shared deployment helpers
-│   │   ├── trail.ts                 # Target status trail (timeline)
-│   │   ├── trail-schemas.ts         # Trail-specific schemas
-│   │   ├── ddi-diagnostics.ts       # DDI readiness check logic
-│   │   └── deployment.test.ts       # Unit tests (71 tests, 95 assertions)
-│   ├── artifacts/                   # Firmware upload via hawkBit Software Modules
-│   │   ├── index.ts                 # Upload + types
-│   │   ├── manage-routes.ts         # List · get · update · delete · download
-│   │   ├── service.ts               # Upload + enrichment + tar packaging
-│   │   ├── schemas.ts               # Artifact schemas
-│   │   └── tar-packager.ts          # .tar archive generator for embedded device
-│   ├── sse/                         # SSE routes (index.ts + test-routes.ts)
-│   ├── health/                      # GET /health (DB + sync state)
-│   └── posts/                       # CRUD reference implementation
+│   │   ├── device-routes.ts         # Statistics · targets · actions · trail
+│   │   ├── service.ts · schemas.ts · actions.ts · enrichment.ts
+│   │   └── trail.ts · trail-schemas.ts · ddi-diagnostics.ts
+│   ├── artifacts/                   # Firmware via hawkBit Software Modules
+│   │   ├── index.ts · manage-routes.ts · service.ts · schemas.ts
+│   │   └── tar-packager.ts          # .tar archive generator
+│   ├── sse/                         # SSE routes
+│   ├── health/                      # GET /health
+│   └── posts/                       # CRUD reference
 ├── scripts/
-│   ├── migrate.ts                   # Startup migrations
-│   ├── seed.ts                      # DB seed
-│   └── sse-test-simulation.ts       # SSE E2E test
-└── tests/                           # Integration tests (174 it() · 272 expect())
-    ├── artifacts.test.ts            # 20 tests
-    ├── auth.test.ts                 # 27 tests
-    ├── categories.test.ts           # 12 tests
-    ├── companies.test.ts            # 13 tests
-    ├── deployments.test.ts          # 27 tests
-    ├── devices.test.ts              # 25 tests
-    ├── health.test.ts               # 5 tests
-    ├── posts.test.ts                # 24 tests
-    ├── provisioning.test.ts         # 17 tests
-    └── sse.test.ts                  # 4 tests
+│   ├── migrate.ts · seed.ts
+│   └── sse-test-simulation.ts
+└── tests/                           # Integration tests (174 it() · 10 files)
+    ├── auth · companies · categories · devices · deployments
+    ├── artifacts · provisioning · health · posts · sse
+    └── test-helpers.ts
 ```
 
 ---
@@ -564,16 +433,23 @@ src/
 | `bun run db:push` | Push schema para o DB |
 | `bun run db:migrate` | Migrations |
 | `bun run db:studio` | Drizzle Studio |
-| `bun run db:generate` | Gerar migration files |
 | `bun run db:seed` | Popular DB com seed data |
 | `bun test` | Rodar testes |
 | `bun run lint` | Biome linter |
 | `bun run lint:fix` | Biome auto-fix |
 | `bun run format` | Biome formatter |
-| `bun run docker:build` | Build Docker image |
-| `bun run docker:up` | Docker compose up |
-| `bun run docker:down` | Docker compose down |
-| `bun run docker:logs` | Docker compose logs |
+
+---
+
+## Testes
+
+```bash
+bun test --env-file=.env.test    # 174 testes, DB separado (Neon)
+```
+
+- 10 arquivos de integration tests + 1 unit test file (deployment status helpers, 71 test())
+- `afterAll(() => cleanAll())` em cada suite
+- `HAWKBIT_ENABLED=false` nos testes — zero chamadas hawkBit
 
 ---
 

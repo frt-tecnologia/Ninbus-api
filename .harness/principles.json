@@ -50,7 +50,7 @@
     },
     {
       "id": "p-single-env-source-of-truth",
-      "rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like hawkbitConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults — let env be the only source.",
+      "rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like hawkbitConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults ï¿½ let env be the only source.",
       "origin": "learned",
       "category": "architecture",
       "learnedAt": "2026-04-28T23:52:45.154Z",
@@ -654,6 +654,14 @@
       "origin": "learned",
       "category": "architecture",
       "learnedAt": "2026-06-01T22:15:29.169Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-credentials-in-repo",
+      "rule": "NEVER commit real credentials to git. This includes .env.test, scripts with hardcoded connection strings, or any file containing real passwords/API keys/database URLs. All sensitive values go in .env (gitignored). Scripts must read from environment variables only. Run `git ls-files | xargs grep -l \"npg_|AKIA|password=\" ` periodically to catch leaks. .env.test with real DB URLs must be in .gitignore.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-02T19:29:20.601Z",
       "reinforcementCount": 1
     }
   ]

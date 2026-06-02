@@ -109,3 +109,42 @@ normalizeSerial("25.5F.FF.FFF.FFFFF.F")
 ```
 
 hex → hawkBit controllerId + DB · display → frontend
+
+---
+
+## 8. Better Auth Plugin Config
+
+```typescript
+// CORRETO — array
+plugins: [bearer()]
+
+// ERRADO — objeto (causa TypeError: .reduce is not a function)
+plugins: { bearer: bearer() }
+```
+
+Better Auth 1.4.x espera plugins como array. Objeto causa crash na inicialização.
+
+---
+
+## 9. Auth in Route Bodies
+
+Better Auth lê `request.json()` internamente — Elysia body schemas causam "Body already used".
+
+```typescript
+// CORRETO — document body in description string
+.post('/sign-in/email', handler, {
+  body: SignInBodySchema,  // for Swagger docs only
+  detail: {
+    description: 'Request Body: {"email": "...", "password": "..."}',
+  },
+})
+
+// HANDLER — recria Request para Better Auth
+({ body, request }) => auth.handler(
+  new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify(body),
+  })
+)
+```

@@ -13,80 +13,24 @@ description: >
 | Runtime | Bun ≥1.1 |
 | Framework | Elysia.js |
 | ORM | Drizzle ORM + postgres.js |
-| Auth | Better Auth (cookie sessions) |
+| Auth | Better Auth (cookie sessions + Bearer token) |
 | OTA | Eclipse hawkBit 1.0.3 |
 | Validação | TypeBox (via Elysia) |
 | Logging | Pino (JSON em prod) |
 
+---
+
 ## Arquitetura
 
 ```
-Frontend → Ninbus API → hawkBit Management (Basic Auth)
-               │              │
-               │              └── DDI (TargetToken, device polling)
-               │
-               └── PostgreSQL (Neon)
+Flutter → Ninbus API (Cookie/Bearer) → hawkBit Management (Basic Auth)
+                │                              │
+                │                              └── DDI (TargetToken, device polling)
+                │
+                └── PostgreSQL (Neon) ← Sync Engine (background)
 ```
 
 **Módulos:** Auth · Companies · Categories · Devices · Deployments · Artifacts · Health
-
-### Estrutura de Diretórios
-
-```
-src/
-├── index.ts              # Entry + graceful shutdown
-├── app.ts                # Composition root
-├── common/
-│   ├── config/           # env.ts (fonte única), hawkbit.ts, auth.ts, auth-client.ts, email.ts
-│   ├── db/schema/        # auth, companies, categories, devices, posts
-│   ├── hawkbit/          # client.ts, http.ts, targets.ts, distribution-sets.ts, software-modules.ts, constants.ts, types.ts
-│   ├── middleware/        # auth-guard, company-guard, company-check, rate-limiter, request-logger
-│   ├── schemas/          # ErrorResponse, GenericActionResponse
-│   ├── sse/              # emitter.ts, index.ts
-│   ├── types/            # deployment-status.ts, deployment-status-helpers.ts
-│   ├── utils/            # serial-number.ts
-│   ├── logger/           # Pino (JSON em prod)
-│   └── swagger-config.ts  # OpenAPI/Scalar configuration
-├── modules/
-│   ├── auth/             # Better Auth routes
-│   ├── companies/        # Multi-tenancy + RBAC + members
-│   ├── categories/       # Device grouping
-│   ├── devices/          # Registry + provisioning + hawkBit sync
-│   │   ├── index.ts          # CRUD routes (list, claim, get, update, delete, link)
-│   │   ├── hawkbit-routes.ts # hawkBit ops (attributes, actions, ddi-check)
-│   │   ├── category-routes.ts # Device ↔ category assignment
-│   │   ├── provision-routes.ts # Super admin: provision, unclaimed, sync, deprovision
-│   │   ├── provisioning.ts   # Provision/unclaim/deprovision logic
-│   │   ├── service.ts        # Business logic + hawkBit calls
-│   │   ├── auth.ts           # Device auth helpers
-│   │   ├── schemas.ts        # Body/param/response schemas
-│   │   ├── sync.ts           # Engine orchestrator (<150 lines)
-│   │   ├── sync-core.ts      # Types, status protection, single-device sync
-│   │   ├── sync-fetch.ts     # hawkBit paginated target queries
-│   │   ├── sync-helpers.ts   # Batch DB ops, on-demand sync, re-exports
-│   │   └── sync-strategies.ts # Periodic/hybrid strategies, SSE helpers
-│   ├── deployments/      # OTA via hawkBit Distribution Sets
-│   │   ├── index.ts           # Create, list, get, delete
-│   │   ├── device-routes.ts   # Statistics, targets, actions, trail, ddi-check
-│   │   ├── service.ts         # Deployment business logic
-│   │   ├── schemas.ts         # All deployment schemas
-│   │   ├── actions.ts         # Action management (cancel, force-close)
-│   │   ├── enrichment.ts      # Status computation + hawkBit statistics
-│   │   ├── helpers.ts         # Shared deployment helpers
-│   │   ├── trail.ts           # Target status trail (timeline)
-│   │   ├── trail-schemas.ts   # Trail-specific schemas
-│   │   ├── ddi-diagnostics.ts # DDI readiness check logic
-│   │   └── deployment.test.ts # Unit tests (71 tests, 95 assertions)
-│   ├── artifacts/        # Firmware via hawkBit Software Modules
-│   │   ├── index.ts           # Upload + types
-│   │   ├── manage-routes.ts   # List, get, update, delete, download
-│   │   ├── service.ts         # Upload + enrichment + tar packaging
-│   │   ├── schemas.ts         # Artifact schemas
-│   │   └── tar-packager.ts    # .tar archive generator for embedded device
-│   ├── sse/              # SSE routes (index.ts + test-routes.ts)
-│   ├── health/           # GET /health (sync state)
-│   └── posts/            # CRUD reference
-```
 
 ---
 
@@ -94,18 +38,19 @@ src/
 
 1. **`auth: true`** — qualquer usuário logado
 2. **`superAdmin: true`** — emails em `SUPER_ADMIN_EMAILS` env var (não DB)
-3. **`companyRole: 'viewer'`** — RBAC: owner > admin > operator > viewer
+3. **`companyRole: 'viewer'`** — RBAC: owner(4) > admin(3) > operator(2) > viewer(1)
+
+Rotas sem `:companyId` NUNCA usam `companyRole`.
 
 ---
 
-## Device Lifecycle
+## Auth — Better Auth
 
-| Ação | Quem | hawkBit | DB Local |
-|------|------|---------|----------|
-| Provision | Super admin | Cria target | Cria device (unclaimed) |
-| Claim | Company member | Nada | companyId set, status=accepted |
-| Unclaim (DELETE from company) | Admin | **PRESERVADO** | companyId=null |
-| Deprovision | Super admin | **DELETADO** | **DELETADO** |
+- **Plugins:** DEVE ser array `[bearer()]`, NÃO objeto `{ bearer: bearer() }`
+- **Cookie:** `auth.session_token` = valor assinado (HMAC), não o token raw
+- **Bearer:** `Authorization: Bearer <token>` — o token vem do campo `token` na resposta de sign-in
+- **Sessões:** 7 dias TTL, httpOnly cookies
+- **Body schemas:** NUNCA definir body schema em rotas Better Auth (causa "Body already used"). Descrever body no `detail.description` string
 
 ---
 
@@ -121,259 +66,101 @@ src/
 | Action | Status por target | running→retrieved→download→downloaded→finished |
 | DDI | Device polling | TargetToken auth |
 
-### Deployment Status (computado de action statistics)
+### Padrões hawkBit
 
-`RUNNING/SCHEDULED` → pending · `RETRIEVED/DOWNLOAD/DOWNLOADED` → in_progress · `FINISHED` → completed · `ERROR/WARNING` → failed · `CANCELED/CANCELING` → canceled
+- **Bulk POST:** body em array `[data]`, response é array → `arr[0]`
+- **Assign body:** campo `type` (NÃO `forceType`) para force type
+- **Artifact upload:** `FormData` + `formData.append('file', file)` — nunca raw File
+- **Cancel two-step:** step 1 (DELETE sem force) → step 2 (DELETE com force)
+- **DDI TargetToken:** `HAWKBIT_DDI_TARGET_TOKEN_AUTH=true` obrigatório
+- **SM names:** UUID-based (`sm-{uuid}`), nunca nomes legíveis (hawkBit unique constraint inclui soft-deleted)
+- **DS names:** UUID-based (`ds-{uuid}`)
 
-### createDeployment — Fluxo de 5 Etapas
+### hawkBit Guard (Two-Level Error Protection)
 
-1. **forceCloseActiveActions(ALL)** — cancela ações pré-existentes
-2. **assignTargets** — atribui novo DS (cria update action). hawkBit body usa `type: 'forced'` (não `forceType`)
-3. **forceCloseCancelActions(cancel-only)** — força close de ações cancel que ficaram em canceling
-4. **verifyActiveUpdateAction** — verifica que cada target tem ação ativa. Para falhas, roda DDI diagnostic
-5. **checkDDiReadiness** (se falhas) — diagnostica por que DDI não oferece deploymentBase
+```typescript
+// Service — config check
+if (!hawkbitConfig.enabled) throw new ArtifactValidationError('HAWKBIT_NOT_ENABLED');
 
-hawkBit PRIORIZA cancelAction sobre deploymentBase no DDI. Sem a etapa 3, o dispositivo NÃO vê o novo deployment.
+// Route — network error catch
+catch (error) {
+  if (error instanceof HawkbitApiError) { set.status = 502; return ...; }
+  set.status = 503; return { error: 'Service Unavailable' };
+}
+```
 
-### DDI Diagnostic Endpoint
+### Sync Engine
 
-`GET /api/companies/:companyId/deployments/:deploymentId/ddi-check/:targetId`
-`GET /api/companies/:companyId/devices/:deviceId/ddi-check`
+| Modo | Background | On-demand | Uso |
+|------|-----------|-----------|-----|
+| periodic | ALL targets | — | <1k |
+| on_demand | nenhum | per-request (cache 60s) | debug |
+| hybrid | active companies | single device (cache 60s) | **produção 50k+** |
 
-Verifica se o dispositivo receberia deploymentBase via DDI. Checa:
-1. Target existe com securityToken correto
-2. Ação update ativa existe
-3. Ações cancel bloqueantes
-4. DS completo (módulos com artefatos)
-5. Status de conexão do target
-
-Retorna `{ deploymentBaseOffered, cancelActionOffered, activeActions, updateStatus, issues[] }`
-
-### Cancel Flow (Two-Step)
-
-1. `DELETE /actions/{id}` (sem force) → type muda de "update" para "cancel", status = "canceling"
-2. `DELETE /actions/{id}?force=true` → action inativa, status = "canceled" (só funciona após step 1)
-
-**IMPORTANTE**: hawkBit muda o TYPE da mesma ação (não cria ação separada). Step 1 FALHA em ações type=cancel. Quando force=true, sempre executar step 2 independente do resultado de step 1. Para ações cancel-type, usar `forceQuitAction()` (pula step 1).
-
-Se force=true ANTES do step 1 → hawkBit retorna 405 "not canceled yet".
-
-### DDI Artifact Download
-
-hawkBit DDI serve artefatos do storage backend (S3 ou filesystem).
-
-- URL: `GET /{tenant}/controller/v1/{controllerId}/softwaremodules/{smId}/artifacts/{filename}`
-- Auth: `Authorization: TargetToken {securityToken}`
-- Só funciona com deployment ativo (action active=true). Após action completar/errar, DDI retorna 404.
-- S3: hawkBit baixa do S3 e faz proxy para o device.
-- Arquivo é armazenado como .tar (empacotado pela API antes do upload).
+GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
 
 ### Artifact Tar Packaging
 
-O firmware embarcado (Ninbus v3) exige que o artefato seja um .tar com estrutura específica.
-A API empacota automaticamente o arquivo raw (.frz, .fir, .bin) antes de enviar ao hawkBit.
-
-**Fluxo:** `Frontend upload (.frz)` → `API empacota em .tar` → `hawkBit armazena .tar` → `DDI serve .tar` → `Device faz TarParser`
-
-**Estrutura do .tar:**
+Firmware empacotado em `.tar` antes do upload ao hawkBit:
 ```
-header-info/
-header-info/featureidentity.json     ← {"type": "configuration-nfx"}
-data/
-data/payload.bin                     ← arquivo raw original (.frz, .fir, .bin)
+├── header-info/featureidentity.json    {"type": "configuration-nfx"}
+└── data/payload.bin                    firmware raw
 ```
 
-**Regras:**
-- .tar plano (NÃO .tar.gz — decompressor é stub no device)
-- Nomes de diretório EXATOS: `header-info` e `data`
-- Nome do payload EXATO: `payload.bin`
-- Tipos: `configuration-nfx`, `firmware-ninbus`, `firmware-controller`
+Tipos: `firmware-ninbus` (HIGH), `firmware-controller` (MED), `configuration-nfx` (LOW)
 
-**Código:** `src/modules/artifacts/tar-packager.ts` — usa `tar-stream` para gerar o .tar.
+---
 
-**API Response:** `size` = tamanho do .tar, `payloadSize` = tamanho do arquivo original.
+## Device Lifecycle
 
-### Artifact Naming — UUID-based
+| Ação | Quem | hawkBit Target | DB Record |
+|------|------|---------------|-----------|
+| Provision | Super admin | Cria | Cria (unclaimed) |
+| Claim | Company member | Preservado | companyId set |
+| Unclaim | Admin | **PRESERVADO** | companyId=null |
+| Deprovision | Super admin | **DELETADO** | **DELETADO** |
 
-Software Module names are UUID-based (`sm-{uuid}`), NOT the user-provided filename.
+---
 
-**Why:** hawkBit enforces UNIQUE(name, version, type) constraint **including soft-deleted rows**.
-This means:
-1. After delete, hawkBit soft-deletes (deleted=true) but keeps the row
-2. Re-uploading with same name fails with 409 "entity already exists"
-3. Multiple companies uploading the same filename would conflict
+## SSE Events
 
-**Solution:** Each upload gets `sm-{uuid}` as SM name. The user-visible name is stored in
-the SM description as `artifactName: X | originalFile: Y | payloadBytes: N`.
-`enrichSoftwareModule()` extracts and returns the display name via `extractDisplayName()`.
-
-**Deployments:** Accept either numeric SM ID (recommended) or artifactName for backward compatibility.
-`findSoftwareModule()` checks if input is numeric → uses directly, else searches by name.
-
-**Delete:** `deleteArtifact()` verifies deletion by calling `get()` after delete. Handles hawkBit
-soft-delete gracefully — logs warning if SM still active, returns success for 404 (already deleted).
-
-### Deployment Lifecycle
-
-1. **CREATE**: POST /deployments → cria DS + assigna targets → ação update criada
-2. **DDI POLL**: Device polls GET /controller/v1/{id} → recebe deploymentBase
-3. **DOWNLOAD**: Device baixa artefato via DDI artifact URL
-4. **FEEDBACK**: Device envia feedback (retrieved → download → downloaded → finished/error)
-5. **CANCEL**: DELETE /deployments/:id → force-close all actions → delete DS
-
-Per-target phase mapping (DDI feedback → API phase → UI):
-- `assigned` — DS assigned, target hasn't polled
-- `pending` — Target retrieved, no feedback yet
-- `downloading` — Download in progress (with progress %)
-- `downloaded` — Download complete
-- `installing` — Install in progress
-- `installed` — Success (closed+success)
-- `error` — Failure (closed+failure)
-- `canceled` — Deployment canceled
-
-See docs/hawkbit-status-flow-mapping.md for full DDI feedback table.
-
-Status mapping: `running/scheduled` → pending · `retrieved/download/downloaded` → in_progress · `finished` → completed · `error/warning` → failed · `canceled/canceling` → canceled · `deleted DS` → canceled · `no actions` → no_targets · `stats fetch failed` → unknown · `total>0 no status keys` → pending (fallback)
-
-### Background Sync
-
-Worker sincroniza hawkBit → DB local a cada 30s. GET /devices faz ZERO chamadas hawkBit.
-
-### SSE Events
-
-**Endpoints:**
-- `GET /api/companies/:companyId/sse` — Company-scoped SSE (auth + membership)
-- `GET /api/sse/global` — Global SSE (auth only, receives ALL events, for admin)
-- `POST /api/sse/test/:companyId` — Send test event to company SSE connections
-- `POST /api/sse/simulate/:companyId` — Simulate SSE events for testing (body: {eventCount, intervalMs, eventType})
-- `GET /api/sse/debug/connections` — Debug: list active SSE connections
-
-**W3C SSE Format:**
-```
-id: 1
-event: device.status
-data: {"deviceId":"...","connectionStatus":"online"}
-
-```
-
-Eventos SSE emitidos para Flutter em tempo real:
-
-| Evento | Dados | Quando |
-|--------|-------|--------|
-| `connected` | companyId, timestamp | Conexão SSE aberta |
-| `heartbeat` | timestamp | A cada 30s |
-| `device.status` | deviceId, connectionStatus, hawkbitUpdateStatus, lastPollAt, ipAddress | Sync cycle |
-| `device.deployment` | deviceId, controllerId, status, message, timestamp | Sync: target pending |
-| `device.claimed` | deviceId, action="claimed" | POST /devices/:id/register |
-| `device.unclaimed` | deviceId, action="unclaimed" | DELETE /companies/:id/devices/:id |
-| `deployment.created` | deploymentId, name, artifactType | POST /deployments |
-| `deployment.deleted` | deploymentId | DELETE /deployments |
-| `devices.batch` | count | Sync cycle |
-| `test` | message, companyId, triggeredBy, timestamp | POST /api/sse/test/:companyId |
-
-**Flutter SSE Parser — Critical Implementation Notes:**
-
-1. **Line buffering is MANDATORY.** TCP chunks don't align with SSE event boundaries.
-   The parser MUST buffer partial lines across chunks. Without buffering, events are
-   silently dropped when a chunk boundary falls in the middle of an SSE line.
-   ```dart
-   // WRONG — splits each chunk independently, loses partial lines:
-   for (final line in text.split('\n')) { ... }
-
-   // CORRECT — buffer partial lines across chunks:
-   final combined = lineBuffer + text;
-   final lines = combined.split('\n');
-   lineBuffer = lines.last;  // Keep partial line for next chunk
-   for (int i = 0; i < lines.length - 1; i++) { ... }
-   ```
-
-2. **receiveTimeout MUST be Duration.zero for SSE.** Dio's default 30s timeout kills
-   the long-lived SSE stream. Always override in Options:
-   ```dart
-   options: Options(
-     responseType: ResponseType.stream,
-     receiveTimeout: Duration.zero,  // Disable timeout for SSE
-   )
-   ```
-
-3. **Strip \\r from lines.** Some HTTP transports/proxies normalize line endings to \\r\\n.
-
-**Dio-based Flutter connection:**
-```dart
-final dio = await getDio(); // Cookie-managed Dio instance
-final response = await dio.get<ResponseBody>(
-  '/api/companies/$companyId/sse',
-  options: Options(
-    responseType: ResponseType.stream,
-    receiveTimeout: Duration.zero,
-    headers: {'Accept': 'text/event-stream'},
-  ),
-);
-response.data!.stream.listen((chunk) {
-  // Parse with line buffering (see above)
-});
-```
+| Evento | Quando |
+|--------|--------|
+| `device.status` | Sync atualiza device |
+| `device.deployment` | Target recebe deployment |
+| `device.claimed` / `device.unclaimed` | Claim/unclaim |
+| `deployment.created` / `deployment.deleted` | Deploy CRUD |
+| `devices.batch` | Sync cycle completo |
 
 ---
 
 ## Convenções de Código
 
-- **Files < 250 linhas** — split em sub-arquivos quando necessário. Sync engine: sync-core + sync-fetch + sync-helpers + sync-strategies + sync
-- **Response schemas** em `schemas.ts`, nunca inline em rotas. hawkBit proxy schemas: RawTargetListResponseSchema, RawDiagnosticResponseSchema, RawActionListResponseSchema
-- ** hawkBit guard:** checar `hawkbitConfig.enabled` antes de qualquer chamada
-- **Config:** TUDO por `env.ts`, nunca `process.env` direto (incluindo logger)
-- ** hawkBit bulk POST:** body em array `[data]`, response é array → `arr[0]`
-- ** hawkBit assign body:** campo `type` (NÃO `forceType`) para force type
-- **Artifact upload:** `FormData` + `formData.append('file', file)`
-- **DS names:** UUID-based (`ds-{uuid}`), nunca nomes legíveis. Display name extraído da descrição.
-- **Logger:** `%s/%d/%j` format strings em hot-path. Template literals OK em startup logs.
-
----
-
-## Tipos de Artefato
-
-| Tipo | Destino | Risco | Reboot |
-|------|---------|-------|--------|
-| `firmware-ninbus` | STM32F407 | HIGH | ✅ |
-| `firmware-controller` | LightDot | MED | ❌ |
-| `configuration-nfx` | NAND NFX | LOW | ❌ |
+- **Files < 250 linhas** — split em sub-arquivos quando necessário
+- **Response schemas** em `schemas.ts`, nunca inline em rotas
+- **hawkBit guard:** checar `hawkbitConfig.enabled` antes de qualquer chamada
+- **Config:** TUDO por `env.ts`, nunca `process.env` direto
+- **Logger:** `%s/%d/%j` format strings em hot-path. Template literals OK em startup
+- **Drizzle dates:** usar `t.Date()` em response schemas (aceita Date objects), nunca `t.String({ format: 'date-time' })`
+- **Params:** schema deve incluir TODOS os path parameters (companyId + outros)
 
 ---
 
 ## Testes
 
-- **Separate test DB** via `.env.test`
-- **`afterAll(() => cleanAll())`** em cada suite
-- **HAWKBIT_ENABLED=false** nos testes
-- **174 testes** em 10 arquivos na pasta `tests/` (174 `it()` blocos, 272 `expect()` assertions)
-- **+71 unit tests** em `src/modules/deployments/deployment.test.ts` (status helpers, phase computation)
-- **Total:** 245 testes, 11 arquivos
-
 ```bash
 bun test --env-file=.env.test
 ```
 
-```bash
-bun test --env-file=.env.test
-```
+- 174 integration tests (10 arquivos) + 71 unit tests (deployment.test.ts)
+- Separate test DB via `.env.test`
+- `afterAll(() => cleanAll())` em cada suite
+- `HAWKBIT_ENABLED=false` — zero hawkBit calls
 
 ---
 
-## Rotas
+## Environment
 
-Ver README.md para tabela completa de rotas.
+Ver `.env.example` para lista completa. Fonte única: `src/common/config/env.ts` (TypeBox validated).
 
----
-
-## Environment Variables
-
-Ver `.env.example` para lista completa. Variáveis-chave:
-
-| Var | Obrigatória | Descrição |
-|-----|------------|-----------|
-| `DATABASE_URL` | ✅ | PostgreSQL |
-| `BETTER_AUTH_SECRET` | ✅ | Sessões (mín 32 chars) |
-| `BETTER_AUTH_URL` | ✅ | URL base |
-| `HAWKBIT_ENABLED` | ❌ | Habilita hawkBit (default: false) |
-| `HAWKBIT_URL` | ❌ | hawkBit Management API |
-| `SUPER_ADMIN_EMAILS` | ❌ | Platform admins (vírgula) |
+Novas variáveis devem ser adicionadas em: (1) `env.ts` schema, (2) `.env.example`, (3) `.env.test` simultaneamente.

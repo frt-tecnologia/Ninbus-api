@@ -663,6 +663,14 @@
       "category": "security",
       "learnedAt": "2026-06-02T19:29:20.601Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-push-without-authorization",
+      "rule": "NEVER run `git push` without explicit authorization from the user. Always commit locally and report what's ready, but wait for the user to say \"push\" or \"faz o push\" before pushing to remote. This prevents accidental exposure of incomplete work or credentials.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-02T19:38:20.343Z",
+      "reinforcementCount": 1
     }
   ]
 }

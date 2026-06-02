@@ -9,6 +9,9 @@
  */
 package org.eclipse.hawkbit.artifact.s3;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSCredentialsProvider;
@@ -18,6 +21,7 @@ import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.eclipse.hawkbit.artifact.ArtifactStorage;
+import org.eclipse.hawkbit.artifact.urlresolver.ArtifactUrlResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -28,18 +32,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 
 /**
- * Spring Boot auto-configuration that registers S3-based ArtifactStorage.
+ * Spring Boot auto-configuration for S3 artifact storage + CDN URL resolution.
  *
- * Activated when org.eclipse.hawkbit.artifact.s3.enabled=true.
- * Overrides the default filesystem ArtifactStorage via @ConditionalOnMissingBean
- * on the filesystem configuration.
+ * <p>Storage: activated when {@code org.eclipse.hawkbit.artifact.s3.enabled=true}.
+ * Overrides the default filesystem ArtifactStorage.
  *
- * Configuration:
- *   org.eclipse.hawkbit.artifact.s3.bucket-name  — S3 bucket name
- *   org.eclipse.hawkbit.artifact.s3.endpoint      — S3 endpoint (SeaweedFS, MinIO, R2)
- *   org.eclipse.hawkbit.artifact.s3.region         — AWS region (optional)
- *   org.eclipse.hawkbit.artifact.s3.access-key     — Access key (or use AWS_ACCESS_KEY_ID env)
- *   org.eclipse.hawkbit.artifact.s3.secret-key     — Secret key (or use AWS_SECRET_ACCESS_KEY env)
+ * <p>CDN download (optional): activated when {@code cdn-base-url} is set.
+ * Two modes:
+ * <ul>
+ *   <li>Mode A (CloudFront RSA): cdn-key-pair-id is set</li>
+ *   <li>Mode B (R2 HMAC): cdn-key-pair-id is empty</li>
+ * </ul>
+ * When no CDN is configured, hawkBit's default URL resolver is used.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "org.eclipse.hawkbit.artifact.s3", name = "enabled", havingValue = "true")
@@ -48,13 +52,13 @@ public class S3ArtifactStorageAutoConfiguration {
 
     private static final Logger LOG = LoggerFactory.getLogger(S3ArtifactStorageAutoConfiguration.class);
 
+    // ── S3 Client ─────────────────────────────────────────────
+
     @Bean
     public AmazonS3 amazonS3(final S3StorageProperties properties) {
         final AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard()
                 .withClientConfiguration(new ClientConfiguration());
 
-        // Credentials: explicit > anonymous (S3-compatible: SeaweedFS, MinIO)
-        // For AWS S3 / Cloudflare R2, always set access-key + secret-key
         final AWSCredentialsProvider credentialsProvider;
         if (StringUtils.hasLength(properties.getAccessKey())) {
             credentialsProvider = new AWSStaticCredentialsProvider(
@@ -63,7 +67,6 @@ public class S3ArtifactStorageAutoConfiguration {
                         @Override public String getAWSSecretKey() { return properties.getSecretKey(); }
                     });
         } else if (StringUtils.hasLength(properties.getEndpoint())) {
-            // S3-compatible services (SeaweedFS standard IAM) — anonymous access
             credentialsProvider = new AWSStaticCredentialsProvider(
                     new AWSCredentials() {
                         @Override public String getAWSAccessKeyId() { return ""; }
@@ -71,12 +74,10 @@ public class S3ArtifactStorageAutoConfiguration {
                     });
             LOG.info("S3 artifact storage: using anonymous credentials (no access-key configured)");
         } else {
-            // AWS S3 with IAM role / env vars
             credentialsProvider = new DefaultAWSCredentialsProviderChain();
         }
         builder.withCredentials(credentialsProvider);
 
-        // Custom endpoint (SeaweedFS, MinIO, Cloudflare R2)
         if (StringUtils.hasLength(properties.getEndpoint())) {
             final String region = StringUtils.hasLength(properties.getRegion())
                     ? properties.getRegion() : "";
@@ -94,11 +95,12 @@ public class S3ArtifactStorageAutoConfiguration {
         return builder.build();
     }
 
+    // ── Artifact Storage ──────────────────────────────────────
+
     @Bean
     public ArtifactStorage artifactStorage(final AmazonS3 amazonS3, final S3StorageProperties properties) {
         LOG.info("Using S3 artifact storage (bucket: {})", properties.getBucketName());
 
-        // Ensure bucket exists (non-fatal — bucket may be pre-created)
         try {
             if (!amazonS3.doesBucketExistV2(properties.getBucketName())) {
                 amazonS3.createBucket(properties.getBucketName());
@@ -110,5 +112,49 @@ public class S3ArtifactStorageAutoConfiguration {
         }
 
         return new S3ArtifactStorage(amazonS3, properties);
+    }
+
+    // ── CDN URL Resolvers ─────────────────────────────────────
+
+    /**
+     * Mode A (AWS CloudFront): RSA Signed URLs.
+     * Activated when both cdn-base-url AND cdn-key-pair-id are set.
+     * Takes priority over Mode B when both conditions are met.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "org.eclipse.hawkbit.artifact.s3",
+            name = {"cdn-base-url", "cdn-key-pair-id"})
+    public ArtifactUrlResolver cloudFrontArtifactUrlResolver(final S3StorageProperties props) {
+        LOG.info("[CDN] Mode A (CloudFront RSA): baseUrl={}, keyPairId={}, expiry={}s",
+                props.getCdnBaseUrl(), props.getCdnKeyPairId(), props.getCdnExpirySec());
+
+        final String privateKeyPem;
+        try {
+            privateKeyPem = Files.readString(Path.of(props.getCdnPrivateKeyPath()));
+        } catch (final Exception e) {
+            throw new RuntimeException(
+                    "Failed to read CloudFront private key from: " + props.getCdnPrivateKeyPath(), e);
+        }
+
+        return new CdnArtifactUrlResolver(
+                props.getCdnBaseUrl(), props.getCdnKeyPairId(), privateKeyPem, props.getCdnExpirySec());
+    }
+
+    /**
+     * Mode B (Cloudflare R2): HMAC Pre-signed URLs via S3 SDK.
+     * Activated when cdn-base-url is set but cdn-key-pair-id is NOT set.
+     * Uses the existing AmazonS3 client — zero extra infra needed.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "org.eclipse.hawkbit.artifact.s3", name = "cdn-base-url")
+    @ConditionalOnMissingBean(ArtifactUrlResolver.class)
+    public ArtifactUrlResolver r2ArtifactUrlResolver(
+            final AmazonS3 amazonS3, final S3StorageProperties properties) {
+        LOG.info("[CDN] Mode B (R2 HMAC): baseUrl={}, bucket={}, expiry={}s",
+                properties.getCdnBaseUrl(), properties.getBucketName(), properties.getCdnExpirySec());
+
+        return new CdnArtifactUrlResolver(
+                properties.getCdnBaseUrl(), properties.getCdnExpirySec(),
+                amazonS3, properties.getBucketName());
     }
 }

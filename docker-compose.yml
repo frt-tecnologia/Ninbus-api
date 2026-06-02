@@ -6,13 +6,13 @@
 #   Internet → [Ninbus API :8081] → [hawkBit :8080]
 #                    │                      │
 #                    │                      ├── Neon PostgreSQL (cloud)
-#                    │                      └── MinIO :9000 (S3 artifact storage)
+#                    │                      └── AWS S3 / Cloudflare R2 (artifact storage)
 #                    │
 #                    └── Neon PostgreSQL (cloud)
 #
-# Swap guide (just change env vars in .env.docker):
-#   Storage: MinIO → Cloudflare R2
-#     → change S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION
+# Swap guide (just change env vars in .env):
+#   Storage: AWS S3 → Cloudflare R2
+#     → change S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION=auto
 #   DB hawkBit: Neon → local PG
 #     → change HAWKBIT_DATABASE_URL, HAWKBIT_DB_USER, HAWKBIT_DB_PASS
 #   DB Ninbus:  Neon → local PG
@@ -20,7 +20,7 @@
 #
 # Usage:
 #   docker compose up -d                    # all services
-#   docker compose up -d api hawkbit        # without S3 storage
+#   docker compose up -d api hawkbit        # without S3 pre-signed URLs
 #   docker compose logs -f api              # follow logs
 #   docker compose build hawkbit            # rebuild custom hawkBit image
 # ═══════════════════════════════════════════════════════════════════════
@@ -75,6 +75,8 @@ services:
       SSE_ENABLED: ${SSE_ENABLED:-true}
       SSE_HEARTBEAT_SEC: ${SSE_HEARTBEAT_SEC:-30}
       SSE_MAX_CONNECTIONS_PER_COMPANY: ${SSE_MAX_CONNECTIONS_PER_COMPANY:-50}
+
+
     depends_on:
       hawkbit:
         condition: service_healthy
@@ -92,9 +94,9 @@ services:
   # Built from: docker/hawkbit/Dockerfile
   # Source: docker/hawkbit/s3-extension/
   #
-  # Artifact storage backends (controlled by HAWKBIT_S3_ENABLED):
-  #   Filesystem (default): /app/artifactrepo/ → Docker volume
-  #   S3 (when enabled):    MinIO / Cloudflare R2 / AWS S3
+  # Artifact storage: AWS S3 / Cloudflare R2 (private bucket).
+  # CDN download (CloudFront or R2) configured via HAWKBIT_CDN_* vars.
+  # When S3 is disabled, uses local filesystem (Docker volume).
   hawkbit:
     build:
       context: .
@@ -135,12 +137,22 @@ services:
       ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_REGION: ${S3_REGION:-}
+      # ── CDN Download (CloudFront or R2) ──
+      # When set, DDI artifact download URLs point to CDN instead of hawkBit.
+      # Mode A (CloudFront RSA): set HAWKBIT_CDN_KEY_PAIR_ID + HAWKBIT_CDN_PRIVATE_KEY_PATH
+      # Mode B (R2 HMAC):        set only HAWKBIT_CDN_BASE_URL (no key-pair-id)
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_BASE_URL: ${HAWKBIT_CDN_BASE_URL:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_KEY_PAIR_ID: ${HAWKBIT_CDN_KEY_PAIR_ID:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_PRIVATE_KEY_PATH: ${HAWKBIT_CDN_PRIVATE_KEY_PATH:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_EXPIRY_SEC: ${HAWKBIT_CDN_EXPIRY_SEC:-3600}
 
       # ── Java memory ──
       X_MS: ${HAWKBIT_XMS:-512m}
       X_MX: ${HAWKBIT_XMX:-768m}
       GC: G1
     volumes:
+      # CloudFront private key (mount PEM file for Mode A)
+      - ./private_key.pem:/run/secrets/cf-private-key.pem:ro
       # Artifact binary storage (fallback when S3 is disabled)
       - hawkbit-artifacts:/app/artifactrepo
     healthcheck:
@@ -149,9 +161,6 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 5
-    depends_on:
-      s3:
-        condition: service_healthy
     # ── Resource limits & security ──
     mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
     cpus: ${HAWKBIT_CPUS:-1.0}
@@ -159,44 +168,6 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # ── MinIO (S3-compatible object storage) ─────────────────────────────
-  # Stores hawkBit artifact binaries. Tested and verified working.
-  #
-  # Swap to Cloudflare R2 for production:
-  #   S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-  #   S3_ACCESS_KEY=<r2-access-key-id>
-  #   S3_SECRET_KEY=<r2-secret-access-key>
-  #   S3_BUCKET=ninbus-artifacts
-  #   S3_REGION=auto
-  #   HAWKBIT_S3_ENABLED=true
-  s3:
-    image: minio/minio:RELEASE.2025-07-18T21-56-31Z
-    container_name: minio
-    restart: unless-stopped
-    ports:
-      - "${S3_PORT:-8333}:9000"
-      - "${S3_CONSOLE_PORT:-9001}:9001"
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-admin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-secret123}
-    command: server /data --console-address ":9001"
-    volumes:
-      - s3-data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    # ── Resource limits & security ──
-    mem_limit: ${S3_MEM_LIMIT:-256m}
-    cpus: ${S3_CPUS:-0.25}
-    pids_limit: 50
-    security_opt:
-      - no-new-privileges:true
-
 volumes:
   hawkbit-artifacts:
-    driver: local
-  s3-data:
     driver: local

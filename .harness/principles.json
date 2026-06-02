@@ -647,6 +647,46 @@
       "category": "architecture",
       "learnedAt": "2026-05-26T20:27:15.360Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-phase-names-match-ui",
+      "rule": "API phase values should match what the frontend displays, not internal protocol terminology. 'retrieved' (DDI) → 'pending' (UI), 'finished' (hawkBit) → 'installed' (UI). Phase values are the contract between API and frontend. Document the full mapping in docs/ so both backend and frontend teams share a single source of truth.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-28T14:00:21.144Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-presigned-architecture",
+      "rule": "S3 pre-signed URLs for device downloads follow the pattern: device → API (auth + 302 redirect) → S3 direct. The API never proxies the binary. Key format must match the hawkBit S3 extension: {tenant}/{sha1}. AWS SDK v3 generates pre-signed URLs locally (HMAC-SHA256) with zero HTTP calls to S3. S3_PRESIGNED_ENABLED feature flag gates the entire flow — returns 503 when disabled.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-31T10:27:53.937Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-env-division",
+      "rule": "S3_PRESIGNED_EXPIRY_SEC is in seconds (API uses it directly). The hawkBit Java extension uses minutes (presignedExpiryMinutes). In docker-compose.yml, pass S3_PRESIGNED_EXPIRY_SEC to both services — the hawkBit extension must internally divide by 60 OR the docker-compose can map appropriately. Keep the env var in seconds (standard) and convert in each consumer.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-31T10:28:04.462Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-token-cache-at-scale",
+      "rule": "When an auth mechanism requires external API calls per request (e.g., validating TargetToken against hawkBit), and the system must scale beyond 1k concurrent requests, use an in-memory cache (Map<key, token>) populated by the sync engine. At 55k devices: 55k API calls per mass download = hawkBit overload. Cache reduces auth latency from ~150ms to ~1ms. Cache MISS falls back to API call + populate. Sync engine refreshes cache every 30s (already fetches all targets). Cache size: 55k entries × ~64 bytes = ~3.5MB (trivial). For timing-attack prevention, use crypto.timingSafeEqual() in production.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-01T19:54:41.330Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-cdn-url-in-artifact-server",
+      "rule": "CDN URL generation for artifact downloads belongs in the artifact server (hawkBit), NOT the API (Ninbus). hawkBit 1.0.3 has a native ArtifactUrlResolver interface — custom implementations intercept DDI deploymentBase URL generation. The device follows URLs from deploymentBase without knowing if it downloads from hawkBit, CloudFront, or R2. When a custom ArtifactUrlResolver bean is registered, it replaces the default PropertyBasedArtifactUrlResolver. Use @ConditionalOnProperty for automatic mode selection (CloudFront RSA when key-pair-id is set, R2 HMAC when only base-url is set).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-01T22:15:29.169Z",
+      "reinforcementCount": 1
     }
   ]
 }

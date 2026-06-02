@@ -149,4 +149,6 @@ public class S3ArtifactStorage extends AbstractArtifactStorage {
     private String objectKey(final String tenant, final String sha1Hash) {
         return sanitizeTenant(tenant) + "/" + sha1Hash;
     }
+
+
 }

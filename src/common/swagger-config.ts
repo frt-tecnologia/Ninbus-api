@@ -23,6 +23,14 @@ export const swaggerConfig = {
 						'Session cookie obtained via POST /api/auth/sign-in/email. ' +
 						'Sign in first, then the browser will send the cookie automatically.',
 				},
+				bearerAuth: {
+					type: 'http' as const,
+					scheme: 'bearer' as const,
+					description:
+						'Bearer token from sign-in response (token field). ' +
+						'Send as: Authorization: Bearer <token>. ' +
+						'Use this for mobile apps and API clients that cannot manage cookies.',
+				},
 			},
 		},
 		tags: [

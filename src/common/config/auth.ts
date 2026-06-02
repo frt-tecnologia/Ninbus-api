@@ -1,6 +1,7 @@
 import { db } from '@common/db';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { bearer } from 'better-auth/plugins/bearer';
 import { sendEmail } from './email';
 import { env } from './env';
 
@@ -53,6 +54,9 @@ export const auth = betterAuth({
 				`,
 			});
 		},
+	},
+	plugins: {
+		bearer: bearer(),
 	},
 	session: {
 		expiresIn: 60 * 60 * 24 * 7, // 7 days

@@ -3,6 +3,7 @@ import { companyMembers } from '@common/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@common/config/auth';
 import { env } from '@common/config/env';
+import { serializeSignedCookie } from 'better-call';
 import type { Elysia } from 'elysia';
 
 /**
@@ -41,8 +42,25 @@ export function isSuperAdmin(email: string | null | undefined): boolean {
 export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(app: T) {
 	return app
 		.derive(async ({ request }) => {
+			let sessionHeaders = request.headers;
+
+			// Bearer token support (mobile/API clients)
+			// The bearer plugin hooks only run during auth.handler() pipeline,
+			// not during direct auth.api.getSession() calls — so we convert here.
+			const authHeader = request.headers.get('authorization');
+			if (authHeader?.startsWith('Bearer ')) {
+				const token = authHeader.slice(7);
+				// If already signed (contains dot), use as-is; otherwise sign it
+				const signedToken = token.includes('.')
+					? token
+					: (await serializeSignedCookie('', token, env.BETTER_AUTH_SECRET!)).replace('=', '');
+				const newHeaders = new Headers(request.headers);
+				newHeaders.append('cookie', `auth.session_token=${signedToken}`);
+				sessionHeaders = newHeaders;
+			}
+
 			const session = await auth.api.getSession({
-				headers: request.headers,
+				headers: sessionHeaders,
 			});
 
 			return {

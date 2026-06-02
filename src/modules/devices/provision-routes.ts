@@ -48,7 +48,7 @@ export const provisioningRoutes = withAuth(
 			detail: {
 				tags: ['Provisioning'],
 				summary: 'Pre-register device in hawkBit (super admin only)',
-				security: [{ cookieAuth: [] }],
+				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				description: 'Creates hawkBit target + local device as "unclaimed". Serial formats: hex or dotted (e.g. 25.5F.FF.FF.FF.FF.FF.FF). API normalizes to uppercase hex. Super admin only.',
 			},
 			response: {
@@ -72,7 +72,7 @@ export const provisioningRoutes = withAuth(
 			superAdmin: true,
 			detail: {
 				tags: ['Provisioning'],
-				security: [{ cookieAuth: [] }],
+				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'List unclaimed devices (super admin only)',
 				description: 'All provisioned devices not yet claimed by any company. Super admin only.',
 			},
@@ -113,7 +113,7 @@ export const provisioningRoutes = withAuth(
 			superAdmin: true,
 			detail: {
 				tags: ['Provisioning'],
-				security: [{ cookieAuth: [] }],
+				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'Sync auto-provisioned devices from hawkBit (super admin only)',
 				description:
 					'Discovers auto-provisioned hawkBit targets not yet in local DB. ' +
@@ -167,7 +167,7 @@ export const provisioningRoutes = withAuth(
 			}),
 			detail: {
 				tags: ['Provisioning'],
-				security: [{ cookieAuth: [] }],
+				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'Search devices by serialNumber (super admin only)',
 				description:
 					'Search ALL devices (all companies + unclaimed) by serial number. ' +
@@ -233,7 +233,7 @@ export const provisioningRoutes = withAuth(
 			}),
 			detail: {
 				tags: ['Provisioning'],
-				security: [{ cookieAuth: [] }],
+				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'Deprovision device from hawkBit (super admin only)',
 				description:
 					'Permanently removes device from hawkBit + local DB. The ONLY way to delete a hawkBit target. ' +

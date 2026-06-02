@@ -52,7 +52,7 @@ export const hawkbitConfig = {
 	},
 	/** Background sync interval in seconds. */
 	get syncIntervalSec(): number {
-		return env.HAWKBIT_SYNC_INTERVAL_SEC ?? 10;
+		return env.HAWKBIT_SYNC_INTERVAL_SEC ?? 30;
 	},
 	/** Stale threshold in seconds for on-demand single-device sync. */
 	get syncStaleSec(): number {

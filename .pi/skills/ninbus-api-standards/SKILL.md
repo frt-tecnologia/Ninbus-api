@@ -10,7 +10,7 @@ description: >
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Runtime | Bun ≥1.3 |
+| Runtime | Bun ≥1.1 |
 | Framework | Elysia.js |
 | ORM | Drizzle ORM + postgres.js |
 | Auth | Better Auth (cookie sessions) |
@@ -37,25 +37,53 @@ src/
 ├── index.ts              # Entry + graceful shutdown
 ├── app.ts                # Composition root
 ├── common/
-│   ├── config/           # env.ts (fonte única), hawkbit.ts, auth.ts
+│   ├── config/           # env.ts (fonte única), hawkbit.ts, auth.ts, auth-client.ts, email.ts
 │   ├── db/schema/        # auth, companies, categories, devices, posts
-│   ├── hawkbit/          # client.ts, http.ts, targets.ts, distribution-sets.ts, software-modules.ts
-│   ├── middleware/        # auth-guard, company-guard, rate-limiter, logger, request-logger
+│   ├── hawkbit/          # client.ts, http.ts, targets.ts, distribution-sets.ts, software-modules.ts, constants.ts, types.ts
+│   ├── middleware/        # auth-guard, company-guard, company-check, rate-limiter, request-logger
 │   ├── schemas/          # ErrorResponse, GenericActionResponse
-│   ├── utils/            # serial-number normalization
-│   └── swagger-config.ts  # OpenAPI/Scalar configuration (extracted from app.ts)
+│   ├── sse/              # emitter.ts, index.ts
+│   ├── types/            # deployment-status.ts, deployment-status-helpers.ts
+│   ├── utils/            # serial-number.ts
+│   ├── logger/           # Pino (JSON em prod)
+│   └── swagger-config.ts  # OpenAPI/Scalar configuration
 ├── modules/
 │   ├── auth/             # Better Auth routes
 │   ├── companies/        # Multi-tenancy + RBAC + members
 │   ├── categories/       # Device grouping
 │   ├── devices/          # Registry + provisioning + hawkBit sync
-│   │   ├── sync.ts          # Engine orchestrator (<150 lines)
-│   │   ├── sync-core.ts     # Types, status protection, single-device sync
-│   │   ├── sync-fetch.ts    # hawkBit paginated target queries
-│   │   ├── sync-helpers.ts  # Batch DB ops, on-demand sync, re-exports
+│   │   ├── index.ts          # CRUD routes (list, claim, get, update, delete, link)
+│   │   ├── hawkbit-routes.ts # hawkBit ops (attributes, actions, ddi-check)
+│   │   ├── category-routes.ts # Device ↔ category assignment
+│   │   ├── provision-routes.ts # Super admin: provision, unclaimed, sync, deprovision
+│   │   ├── provisioning.ts   # Provision/unclaim/deprovision logic
+│   │   ├── service.ts        # Business logic + hawkBit calls
+│   │   ├── auth.ts           # Device auth helpers
+│   │   ├── schemas.ts        # Body/param/response schemas
+│   │   ├── sync.ts           # Engine orchestrator (<150 lines)
+│   │   ├── sync-core.ts      # Types, status protection, single-device sync
+│   │   ├── sync-fetch.ts     # hawkBit paginated target queries
+│   │   ├── sync-helpers.ts   # Batch DB ops, on-demand sync, re-exports
 │   │   └── sync-strategies.ts # Periodic/hybrid strategies, SSE helpers
-│   ├── deployments/      # OTA: index.ts, device-routes.ts, service.ts, actions.ts, enrichment.ts, schemas.ts
-│   ├── artifacts/        # Firmware: index.ts, manage-routes.ts, service.ts, schemas.ts
+│   ├── deployments/      # OTA via hawkBit Distribution Sets
+│   │   ├── index.ts           # Create, list, get, delete
+│   │   ├── device-routes.ts   # Statistics, targets, actions, trail, ddi-check
+│   │   ├── service.ts         # Deployment business logic
+│   │   ├── schemas.ts         # All deployment schemas
+│   │   ├── actions.ts         # Action management (cancel, force-close)
+│   │   ├── enrichment.ts      # Status computation + hawkBit statistics
+│   │   ├── helpers.ts         # Shared deployment helpers
+│   │   ├── trail.ts           # Target status trail (timeline)
+│   │   ├── trail-schemas.ts   # Trail-specific schemas
+│   │   ├── ddi-diagnostics.ts # DDI readiness check logic
+│   │   └── deployment.test.ts # Unit tests (71 tests, 95 assertions)
+│   ├── artifacts/        # Firmware via hawkBit Software Modules
+│   │   ├── index.ts           # Upload + types
+│   │   ├── manage-routes.ts   # List, get, update, delete, download
+│   │   ├── service.ts         # Upload + enrichment + tar packaging
+│   │   ├── schemas.ts         # Artifact schemas
+│   │   └── tar-packager.ts    # .tar archive generator for embedded device
+│   ├── sse/              # SSE routes (index.ts + test-routes.ts)
 │   ├── health/           # GET /health (sync state)
 │   └── posts/            # CRUD reference
 ```
@@ -74,7 +102,7 @@ src/
 
 | Ação | Quem | hawkBit | DB Local |
 |------|------|---------|----------|
-| Provision | Any auth | Cria target | Cria device (unclaimed) |
+| Provision | Super admin | Cria target | Cria device (unclaimed) |
 | Claim | Company member | Nada | companyId set, status=accepted |
 | Unclaim (DELETE from company) | Admin | **PRESERVADO** | companyId=null |
 | Deprovision | Super admin | **DELETADO** | **DELETADO** |
@@ -317,8 +345,13 @@ response.data!.stream.listen((chunk) {
 - **Separate test DB** via `.env.test`
 - **`afterAll(() => cleanAll())`** em cada suite
 - **HAWKBIT_ENABLED=false** nos testes
-- **174 testes**, 11 arquivos (174 `it()` blocos, 272 `expect()` assertions)
-- **Test runner issue:** Bun 1.3.12 on Windows has ENOENT bug with tsconfig path aliases. Tests are structurally valid but cannot execute locally. Verify via `bun build` and Docker.
+- **174 testes** em 10 arquivos na pasta `tests/` (174 `it()` blocos, 272 `expect()` assertions)
+- **+71 unit tests** em `src/modules/deployments/deployment.test.ts` (status helpers, phase computation)
+- **Total:** 245 testes, 11 arquivos
+
+```bash
+bun test --env-file=.env.test
+```
 
 ```bash
 bun test --env-file=.env.test

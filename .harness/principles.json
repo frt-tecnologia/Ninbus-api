@@ -10,7 +10,7 @@
     },
     {
       "id": "p-shared-auth-helpers",
-      "rule": "Extract repeated authorization checks (company membership, device ownership, Mender link verification) into shared helpers. This reduces route handler code by 40-60% and eliminates copy-paste errors. Each helper returns either an error response or null.",
+      "rule": "Extract repeated authorization checks (company membership, device ownership, hawkBit link verification) into shared helpers. This reduces route handler code by 40-60% and eliminates copy-paste errors. Each helper returns either an error response or null.",
       "origin": "learned",
       "category": "architecture",
       "learnedAt": "2026-04-28T20:20:48.979Z",
@@ -26,7 +26,7 @@
     },
     {
       "id": "p-split-routes-by-operation",
-      "rule": "When a route handler file exceeds 200 lines, split by operation type: CRUD routes in index.ts, external API operations (Mender approve/reject/decommission) in a separate file. Both files use the same prefix and share auth helpers.",
+      "rule": "When a route handler file exceeds 200 lines, split by operation type: CRUD routes in index.ts, external API operations (hawkBit actions, diagnostics) in a separate file. Both files use the same prefix and share auth helpers.",
       "origin": "learned",
       "category": "process",
       "learnedAt": "2026-04-28T20:21:09.794Z",
@@ -49,16 +49,8 @@
       "reinforcementCount": 1
     },
     {
-      "id": "p-presigned-upload-default-off",
-      "rule": "Mender's pre-signed URL upload (POST /artifacts/directupload) is DISABLED by default (SettingStorageEnableDirectUploadDefault = false). Direct multipart upload (POST /artifacts) is the only guaranteed-available upload method. Implement direct upload first; add pre-signed URL as optional enhancement later.",
-      "origin": "learned",
-      "category": "architecture",
-      "learnedAt": "2026-04-28T23:35:42.890Z",
-      "reinforcementCount": 1
-    },
-    {
       "id": "p-single-env-source-of-truth",
-      "rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like menderConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults — let env be the only source.",
+      "rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like hawkbitConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults � let env be the only source.",
       "origin": "learned",
       "category": "architecture",
       "learnedAt": "2026-04-28T23:52:45.154Z",
@@ -90,34 +82,10 @@
     },
     {
       "id": "p-sync-guard-mender-enabled",
-      "rule": "Any code that calls Mender APIs MUST check menderConfig.enabled first. The sync engine, background jobs, and event handlers all need this guard. When MENDER_ENABLED=false (tests, local dev), no Mender HTTP requests should be attempted. Without this guard, \"Body already used\" and connection refused errors cascade.",
+      "rule": "Any code that calls hawkBit APIs MUST check hawkbitConfig.enabled first. The sync engine, background jobs, and event handlers all need this guard. When HAWKBIT_ENABLED=false (tests, local dev), no hawkBit HTTP requests should be attempted. Without this guard, connection refused errors cascade.",
       "origin": "learned",
       "category": "architecture",
       "learnedAt": "2026-04-29T02:54:45.129Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-mender-artifact-type-in-updates",
-      "rule": "Mender artifact type (e.g., 'firmware-ninbus') is stored in `updates[0].type_info.type` inside the Mender API response — NOT in a top-level `type` field. The .mender file is a gzipped tar created by `mender-artifact` CLI (`-T` flag sets the type). The Mender server does NOT convert raw files — users must create .mender files before uploading. Use resolveArtifactType() with fallback chain: updates[0].type_info.type → artifact_provides['type'] → null.",
-      "origin": "learned",
-      "category": "architecture",
-      "learnedAt": "2026-04-29T03:56:47.786Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-mender-generate-single-file-only",
-      "rule": "Mender's POST /artifacts/generate endpoint only supports type=single_file (hardcoded in create-artifact-worker). It CANNOT generate artifacts with custom module types like firmware-ninbus. For custom types, implement .mender format generation in the API itself (tar+gzip with v3 headers) or use mender-artifact CLI. The .mender v3 format: outer tar → version(3) + header.tar.gz(artifact metadata with type_info.type) + data/0000.tar.gz(raw payload) + manifest(SHA-256 checksums).",
-      "origin": "learned",
-      "category": "architecture",
-      "learnedAt": "2026-04-29T04:42:12.285Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-mender-deployment-statuses-complete",
-      "rule": "Mender v4.1.1 returns 13 device deployment statuses in statistics (map[string]int): success, pending, failure, downloading, installing, rebooting, noartifact, already-installed, aborted, decommissioned, pause_before_installing, pause_before_committing, pause_before_rebooting. The deployment device response includes `image` (full MenderArtifact), `log` (boolean), and `substate`. Device history is nested {id, deployment: MenderDeployment, device: MenderDeploymentDevice}, NOT flat. Always verify against the live Mender API or Go source code, never assume.",
-      "origin": "learned",
-      "category": "architecture",
-      "learnedAt": "2026-05-03T23:00:08.623Z",
       "reinforcementCount": 1
     },
     {

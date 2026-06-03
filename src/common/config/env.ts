@@ -168,9 +168,9 @@ const EnvSchema = Type.Object({
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
 	RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
-	RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 100 })),
+	RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 150 })),
 	AUTH_RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
-	AUTH_RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 10 })),
+	AUTH_RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 20 })),
 });
 
 export type Env = Static<typeof EnvSchema>;

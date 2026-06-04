@@ -273,25 +273,31 @@ export async function deleteDeployment(dsId: number, companyId: string): Promise
 /** List deployments for a specific company (like getCompanyDevices). */
 export async function listDeployments(companyId: string, _params?: { offset?: number; limit?: number }) {
 	// 1. Get local deployment records for this company
-	const localDeployments = await db
-		.select()
-		.from(deployments)
-		.where(eq(deployments.companyId, companyId));
+	let localDeployments: any[];
+	try {
+		localDeployments = await db
+			.select()
+			.from(deployments)
+			.where(eq(deployments.companyId, companyId));
+	} catch (dbError: any) {
+		appLogger.error({ err: dbError }, '[DEPLOYMENTS] DB query failed for company %s: %s', companyId, dbError?.message ?? 'unknown');
+		return { data: [], total: 0 };
+	}
 
 	if (localDeployments.length === 0) {
 		return { data: [], total: 0 };
 	}
 
 	// 2. Fetch DS data from hawkBit by IDs (company-scoped)
-	const dsIds = localDeployments.map((d) => d.hawkbitDsId);
+	const dsIds = localDeployments.map((d: any) => d.hawkbitDsId);
 	try {
 		const hawkbitDSs = await hawkbitDistributionSets.listByIds(dsIds);
 		// Filter out soft-deleted DSes
 		const active = hawkbitDSs.filter((ds) => !ds.deleted);
 		const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
 		return { data: enriched, total: enriched.length };
-	} catch {
-		appLogger.warn('[DEPLOYMENTS] hawkBit unavailable, returning empty list');
+	} catch (hbError: any) {
+		appLogger.warn({ err: hbError }, '[DEPLOYMENTS] hawkBit unavailable for company %s: %s', companyId, hbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 }

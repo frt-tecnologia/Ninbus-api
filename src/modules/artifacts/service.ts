@@ -232,25 +232,30 @@ export async function listArtifacts(companyId: string, _params?: {
 	limit?: number;
 }): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
 	// 1. Get local artifact records for this company
-	const localArtifacts = await db
-		.select()
-		.from(artifacts)
-		.where(eq(artifacts.companyId, companyId));
+	let localArtifacts: any[];
+	try {
+		localArtifacts = await db
+			.select()
+			.from(artifacts)
+			.where(eq(artifacts.companyId, companyId));
+	} catch (dbError: any) {
+		appLogger.error({ err: dbError }, '[ARTIFACTS] DB query failed for company %s: %s', companyId, dbError?.message ?? 'unknown');
+		return { data: [], total: 0 };
+	}
 
 	if (!hawkbitConfig.enabled || localArtifacts.length === 0) {
 		return { data: [], total: 0 };
 	}
 
 	// 2. Fetch SM data from hawkBit by IDs (company-scoped)
-	const smIds = localArtifacts.map((a) => a.hawkbitSmId);
+	const smIds = localArtifacts.map((a: any) => a.hawkbitSmId);
 	try {
 		const hawkbitSMs = await hawkbitSoftwareModules.listByIds(smIds);
 		// 3. Build lookup by hawkbitSmId for enrichment
 		const enriched = await Promise.all(hawkbitSMs.map(enrichSoftwareModule));
 		return { data: enriched, total: enriched.length };
-	} catch {
-		// If hawkBit is unavailable, return local data without enrichment
-		appLogger.warn('[ARTIFACTS] hawkBit unavailable, returning local data only');
+	} catch (hbError: any) {
+		appLogger.warn({ err: hbError }, '[ARTIFACTS] hawkBit unavailable for company %s: %s', companyId, hbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 }

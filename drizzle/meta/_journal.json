@@ -50,6 +50,13 @@
 			"when": 1746820000000,
 			"tag": "0007_hawkbit_sync_columns",
 			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1749600000000,
+			"tag": "0008_artifacts_deployments_isolation",
+			"breakpoints": true
 		}
 	]
 }

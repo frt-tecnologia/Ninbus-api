@@ -239,7 +239,7 @@ export async function listArtifacts(companyId: string, _params?: {
 			.from(artifacts)
 			.where(eq(artifacts.companyId, companyId));
 	} catch (dbError: any) {
-		appLogger.error({ err: dbError }, '[ARTIFACTS] DB query failed for company %s: %s', companyId, dbError?.message ?? 'unknown');
+		appLogger.error('[ARTIFACTS] DB query failed: %s', dbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 
@@ -255,7 +255,7 @@ export async function listArtifacts(companyId: string, _params?: {
 		const enriched = await Promise.all(hawkbitSMs.map(enrichSoftwareModule));
 		return { data: enriched, total: enriched.length };
 	} catch (hbError: any) {
-		appLogger.warn({ err: hbError }, '[ARTIFACTS] hawkBit unavailable for company %s: %s', companyId, hbError?.message ?? 'unknown');
+		appLogger.warn('[ARTIFACTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 }

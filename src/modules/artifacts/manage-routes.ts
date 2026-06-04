@@ -37,7 +37,7 @@ export const artifactManageRoutes = withAuth(
 				});
 				return result;
 			} catch (error: any) {
-				appLogger.error({ err: error }, '[ARTIFACTS] Failed to list artifacts: %s', error?.message ?? 'unknown');
+				appLogger.error('[ARTIFACTS] Failed to list artifacts: %s', error?.message ?? 'unknown');
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}

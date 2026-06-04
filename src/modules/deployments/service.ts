@@ -280,7 +280,7 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 			.from(deployments)
 			.where(eq(deployments.companyId, companyId));
 	} catch (dbError: any) {
-		appLogger.error({ err: dbError }, '[DEPLOYMENTS] DB query failed for company %s: %s', companyId, dbError?.message ?? 'unknown');
+		appLogger.error('[DEPLOYMENTS] DB query failed: %s', dbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 
@@ -297,7 +297,7 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 		const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
 		return { data: enriched, total: enriched.length };
 	} catch (hbError: any) {
-		appLogger.warn({ err: hbError }, '[DEPLOYMENTS] hawkBit unavailable for company %s: %s', companyId, hbError?.message ?? 'unknown');
+		appLogger.warn('[DEPLOYMENTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
 	}
 }

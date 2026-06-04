@@ -8,6 +8,17 @@ import { runStartupMigrations } from './scripts/migrate';
 // Run migrations before starting the server
 await runStartupMigrations();
 
+// Verify critical tables exist
+try {
+	const { db } = await import('@common/db');
+	const testResult = await db.execute({ sql: 'SELECT count(*) as cnt FROM artifacts' });
+	appLogger.info('[STARTUP] artifacts table OK (%s rows)', testResult[0]?.cnt ?? 0);
+	const testResult2 = await db.execute({ sql: 'SELECT count(*) as cnt FROM deployments' });
+	appLogger.info('[STARTUP] deployments table OK (%s rows)', testResult2[0]?.cnt ?? 0);
+} catch (e: any) {
+	appLogger.error({ err: e }, '[STARTUP] CRITICAL: artifacts/deployments table check failed: %s', e?.message);
+}
+
 // App entrypoint
 const app = createApp();
 

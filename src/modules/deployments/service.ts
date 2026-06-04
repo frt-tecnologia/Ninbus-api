@@ -1,5 +1,5 @@
 import { db } from '@common/db';
-import { devices } from '@common/db/schema';
+import { deployments, devices } from '@common/db/schema';
 import {
 	type NinbusArtifactType,
 	getOrCreateDistributionSetType,
@@ -9,7 +9,7 @@ import {
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { randomUUID } from 'crypto';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { enrichDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
@@ -21,6 +21,36 @@ import { resolveHawkbitTargetIds, findSoftwareModule } from './helpers';
 export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
 
+// ---------------------------------------------------------------------------
+// Error classes
+// ---------------------------------------------------------------------------
+
+export class DeploymentNotFoundError extends Error {
+	constructor(message = 'Deployment not found') {
+		super(message);
+		this.name = 'DeploymentNotFoundError';
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ownership check (same pattern as artifacts)
+// ---------------------------------------------------------------------------
+
+async function requireOwnership(companyId: string, hawkbitDsId: number): Promise<void> {
+	const [local] = await db
+		.select({ companyId: deployments.companyId })
+		.from(deployments)
+		.where(eq(deployments.hawkbitDsId, hawkbitDsId));
+
+	if (!local || local.companyId !== companyId) {
+		throw new DeploymentNotFoundError(`Deployment #${hawkbitDsId} not found in this company`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CRUD — all scoped by companyId
+// ---------------------------------------------------------------------------
+
 export interface CreateDeploymentInput {
 	name: string;
 	artifactName: string;
@@ -31,7 +61,7 @@ export interface CreateDeploymentInput {
 	allDevices?: boolean;
 }
 
-export async function createDeployment(companyId: string, data: CreateDeploymentInput) {
+export async function createDeployment(companyId: string, userId: string, data: CreateDeploymentInput) {
 	const targetIds = await resolveHawkbitTargetIds(companyId, {
 		deviceIds: data.deviceIds,
 		categoryIds: data.categoryIds,
@@ -54,8 +84,8 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 	// Verify SM has at least one artifact (binary file)
 	let smHasArtifacts = true;
 	try {
-		const artifacts = await hawkbitSoftwareModules.listArtifacts(sm.id);
-		if (artifacts.length === 0) smHasArtifacts = false;
+		const smFiles = await hawkbitSoftwareModules.listArtifacts(sm.id);
+		if (smFiles.length === 0) smHasArtifacts = false;
 	} catch {
 		smHasArtifacts = false;
 	}
@@ -120,6 +150,17 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 		}
 	}
 
+	// Write-through: register in local DB
+	await db.insert(deployments).values({
+		companyId,
+		hawkbitDsId: ds.id,
+		name: data.name,
+		artifactType: data.artifactType,
+		createdBy: userId,
+	});
+
+	appLogger.info('[DEPLOY] Registered DS %d for company %s', ds.id, companyId);
+
 	appLogger.info(
 		`[DEPLOY] "${data.name}" (DS #${ds.id}): ${verifiedCount}/${targetIds.length} verified.`,
 	);
@@ -131,7 +172,9 @@ export async function createDeployment(companyId: string, data: CreateDeployment
 	};
 }
 
-export async function getDeployment(dsId: number) {
+/** Get deployment — verify ownership first. */
+export async function getDeployment(companyId: string, dsId: number) {
+	await requireOwnership(companyId, dsId);
 	return enrichDeployment(await hawkbitDistributionSets.get(dsId));
 }
 
@@ -147,16 +190,11 @@ export async function getDeploymentStatistics(dsId: number) {
 }
 
 /**
- * Delete a deployment — properly stops it so it doesn't come back.
- *
- * Steps:
- * 1. Get all targets assigned to this DS
- * 2. Force-close ALL their active actions (update + cancel)
- * 3. Delete the DS from hawkBit (soft-delete)
- * 4. Clear local device status for affected targets (pending → in_sync)
- * 5. Emit SSE events so frontend updates immediately
+ * Delete a deployment — verify ownership, then stop + delete + clean up.
  */
-export async function deleteDeployment(dsId: number, companyId?: string): Promise<void> {
+export async function deleteDeployment(dsId: number, companyId: string): Promise<void> {
+	await requireOwnership(companyId, dsId);
+
 	appLogger.info('[DEPLOY] Deleting deployment DS #%d...', dsId);
 
 	// Step 1: Collect target IDs before force-closing
@@ -178,8 +216,10 @@ export async function deleteDeployment(dsId: number, companyId?: string): Promis
 	await hawkbitDistributionSets.delete(dsId);
 	appLogger.info('[DEPLOY] DS #%d deleted from hawkBit', dsId);
 
-	// Step 4: Clear local device status for affected targets
-	// After deleting the DS, devices that were "pending" should go back to "in_sync"
+	// Step 4: Delete local record
+	await db.delete(deployments).where(eq(deployments.hawkbitDsId, dsId));
+
+	// Step 5: Clear local device status for affected targets
 	if (targetControllerIds.length > 0) {
 		try {
 			await db
@@ -196,7 +236,6 @@ export async function deleteDeployment(dsId: number, companyId?: string): Promis
 			);
 
 			// Protect these targets from sync engine overwriting status back to 'pending'
-			// hawkBit may still report 'pending' for a few cycles after DS deletion
 			const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
 			protectTargetStatuses(targetControllerIds, 'in_sync');
 		} catch (e) {
@@ -204,16 +243,14 @@ export async function deleteDeployment(dsId: number, companyId?: string): Promis
 		}
 	}
 
-	// Step 5: Emit SSE events so frontend updates immediately
-	if (companyId && targetControllerIds.length > 0) {
+	// Step 6: Emit SSE events so frontend updates immediately
+	if (targetControllerIds.length > 0) {
 		try {
 			const { sseEmitter } = await import('@common/sse');
-			// Notify that deployment was deleted
 			sseEmitter.emit(companyId, 'deployment.deleted', {
 				deploymentId: dsId,
 				timestamp: new Date().toISOString(),
 			});
-			// Notify each device status changed
 			const localDevices = await db
 				.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId })
 				.from(devices)
@@ -233,12 +270,30 @@ export async function deleteDeployment(dsId: number, companyId?: string): Promis
 	appLogger.info('[DEPLOY] Deployment DS #%d fully deleted and cleaned up', dsId);
 }
 
-export async function listDeployments(params?: { offset?: number; limit?: number }) {
-	const result = await hawkbitDistributionSets.list(params);
-	// Filter out soft-deleted DSes
-	const active = result.content.filter((ds) => !ds.deleted);
-	const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
-	return { data: enriched, total: enriched.length };
+/** List deployments for a specific company (like getCompanyDevices). */
+export async function listDeployments(companyId: string, _params?: { offset?: number; limit?: number }) {
+	// 1. Get local deployment records for this company
+	const localDeployments = await db
+		.select()
+		.from(deployments)
+		.where(eq(deployments.companyId, companyId));
+
+	if (localDeployments.length === 0) {
+		return { data: [], total: 0 };
+	}
+
+	// 2. Fetch DS data from hawkBit by IDs (company-scoped)
+	const dsIds = localDeployments.map((d) => d.hawkbitDsId);
+	try {
+		const hawkbitDSs = await hawkbitDistributionSets.listByIds(dsIds);
+		// Filter out soft-deleted DSes
+		const active = hawkbitDSs.filter((ds) => !ds.deleted);
+		const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
+		return { data: enriched, total: enriched.length };
+	} catch {
+		appLogger.warn('[DEPLOYMENTS] hawkBit unavailable, returning empty list');
+		return { data: [], total: 0 };
+	}
 }
 
 export async function getDeploymentTargets(dsId: number, params?: { offset?: number; limit?: number }) {

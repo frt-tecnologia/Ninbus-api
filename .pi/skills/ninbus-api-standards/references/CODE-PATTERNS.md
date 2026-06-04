@@ -148,3 +148,48 @@ Better Auth lê `request.json()` internamente — Elysia body schemas causam "Bo
   })
 )
 ```
+
+---
+
+## 10. Tenant Isolation (Write-Through Pattern)
+
+hawkBit é global — não tem conceito de empresa. O isolamento é garantido pelo banco local.
+
+```typescript
+// Schema — tabela local com companyId + hawkBit ID
+export const artifacts = pgTable('artifacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  hawkbitSmId: integer('hawkbit_sm_id').notNull(),  // UNIQUE index
+  name: text('name').notNull(),
+  // ...
+}, (table) => [uniqueIndex('idx_artifacts_hawkbit_sm_id').on(table.hawkbitSmId)]);
+
+// Service — ownership check antes de qualquer operação
+async function requireOwnership(companyId: string, hawkbitSmId: number) {
+  const [local] = await db.select({ companyId: artifacts.companyId })
+    .from(artifacts).where(eq(artifacts.hawkbitSmId, hawkbitSmId));
+  if (!local || local.companyId !== companyId)
+    throw new ArtifactNotFoundError('Artifact not found in this company');
+}
+
+// Service — write-through: hawkBit + banco local
+export async function uploadArtifact(companyId, userId, file, ...) {
+  const sm = await hawkbitSoftwareModules.create({...});  // hawkBit
+  await db.insert(artifacts).values({ companyId, hawkbitSmId: sm.id, ... });  // local
+}
+
+// Service — list filtrado
+export async function listArtifacts(companyId) {
+  const local = await db.select().from(artifacts).where(eq(artifacts.companyId, companyId));
+  if (local.length === 0) return { data: [], total: 0 };
+  const hawkbitData = await hawkbitSoftwareModules.listByIds(local.map(a => a.hawkbitSmId));
+  return { data: enrich(hawkbitData), total: hawkbitData.length };
+}
+
+// Route — passa companyId + userId
+.get('/', ({ params }) => service.listArtifacts(params.companyId), { companyRole: 'viewer' })
+.post('/', ({ params, user }) => service.uploadArtifact(params.companyId, user.id, ...), { companyRole: 'operator' })
+```
+
+Mesmo padrão para devices (já existia) e deployments (adicionado junto com artifacts).

@@ -10,6 +10,7 @@ import {
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
 import { Elysia, t } from 'elysia';
+import { ArtifactNotFoundError, ArtifactValidationError } from './service';
 import * as service from './service';
 
 /**
@@ -25,12 +26,12 @@ import * as service from './service';
 export const artifactManageRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/artifacts' }),
 )
-	// GET / — List software modules (artifacts)
+	// GET / — List software modules (artifacts) for this company only
 	.get(
 		'/',
 		async ({ params, query, set }) => {
 			try {
-				const result = await service.listArtifacts({
+				const result = await service.listArtifacts(params.companyId, {
 					offset: query?.offset,
 					limit: query?.limit,
 				});
@@ -52,7 +53,7 @@ export const artifactManageRoutes = withAuth(
 			detail: {
 				tags: ['Artifacts'],
 				summary: 'List OTA artifacts (Software Modules)',
-				description: 'Lists all software modules from hawkBit enriched with Ninbus type metadata',
+				description: 'Lists software modules belonging to this company from hawkBit enriched with Ninbus type metadata',
 			},
 			response: {
 				200: ArtifactListResponseSchema,
@@ -67,10 +68,14 @@ export const artifactManageRoutes = withAuth(
 		'/:artifactId',
 		async ({ params, set }) => {
 			try {
-				const artifact = await service.getArtifact(Number(params.artifactId));
+				const artifact = await service.getArtifact(params.companyId, Number(params.artifactId));
 				return { data: artifact };
 			} catch (error) {
-				if (error instanceof service.ArtifactValidationError) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
@@ -104,10 +109,14 @@ export const artifactManageRoutes = withAuth(
 		'/:artifactId',
 		async ({ params, set }) => {
 			try {
-				const result = await service.deleteArtifact(Number(params.artifactId));
+				const result = await service.deleteArtifact(params.companyId, Number(params.artifactId));
 				return { message: result.message };
 			} catch (error) {
-				if (error instanceof service.ArtifactValidationError) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
@@ -141,10 +150,14 @@ export const artifactManageRoutes = withAuth(
 		'/:artifactId',
 		async ({ params, body, set }) => {
 			try {
-				await service.updateArtifact(Number(params.artifactId), body.description);
+				await service.updateArtifact(params.companyId, Number(params.artifactId), body.description);
 				return { message: 'Artifact updated successfully' };
 			} catch (error) {
-				if (error instanceof service.ArtifactValidationError) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
@@ -180,12 +193,17 @@ export const artifactManageRoutes = withAuth(
 		async ({ params, query, set }) => {
 			try {
 				const downloadInfo = await service.getArtifactDownloadUrl(
+					params.companyId,
 					Number(params.artifactId),
 					Number(query?.artifactFileId ?? 0),
 				);
 				return { data: downloadInfo };
 			} catch (error) {
-				if (error instanceof service.ArtifactValidationError) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}

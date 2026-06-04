@@ -42,6 +42,41 @@ Flutter → Ninbus API (Cookie/Bearer) → hawkBit Management (Basic Auth)
 
 Rotas sem `:companyId` NUNCA usam `companyRole`.
 
+### ⚠️ companyRole NÃO verifica ownership de dados
+
+O `companyRole` macro verifica apenas se o usuário é **membro** da empresa. Ele **NÃO** verifica se os **dados acessados pertencem àquela empresa**. O service layer deve sempre:
+
+1. Receber `companyId` como parâmetro
+2. Filtrar/buscar com `WHERE company_id = :companyId`
+3. Verificar ownership via `requireOwnership(companyId, hawkbitId)` antes de qualquer mutation
+
+### Tenant Isolation Pattern (Write-Through)
+
+Todos os recursos do hawkBit têm tabela local com `companyId`:
+
+| Recurso | Tabela | Campo hawkBit | Padrão |
+|---------|--------|---------------|--------|
+| Device | `devices` | `hawkbitTargetId` | claim → set companyId |
+| Artifact | `artifacts` | `hawkbitSmId` (UNIQUE) | upload → insert com companyId |
+| Deployment | `deployments` | `hawkbitDsId` (UNIQUE) | create → insert com companyId |
+
+```typescript
+// Service — ownership check (throws 404 se não pertence)
+async function requireOwnership(companyId: string, hawkbitSmId: number) {
+  const [local] = await db.select({ companyId: artifacts.companyId })
+    .from(artifacts).where(eq(artifacts.hawkbitSmId, hawkbitSmId));
+  if (!local || local.companyId !== companyId)
+    throw new ArtifactNotFoundError('Artifact not found in this company');
+}
+
+// Service — write-through (cria no hawkBit + registra no banco local)
+await db.insert(artifacts).values({ companyId, hawkbitSmId: sm.id, ... });
+
+// Service — list filtrado por empresa
+const local = await db.select().from(artifacts).where(eq(artifacts.companyId, companyId));
+const hawkbitData = await hawkbitSoftwareModules.listByIds(local.map(a => a.hawkbitSmId));
+```
+
 ---
 
 ## Auth — Better Auth

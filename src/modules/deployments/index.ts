@@ -12,6 +12,7 @@ import {
 	createOtaDeploymentSchema,
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
+import { DeploymentNotFoundError } from './service';
 import * as service from './service';
 
 /**
@@ -58,7 +59,7 @@ export const deploymentsModule = withAuth(
 	// POST / — Create OTA deployment
 	.post(
 		'/',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			if (!body.deviceIds && !body.categoryIds && !body.allDevices) {
 				set.status = 400;
 				return {
@@ -67,7 +68,7 @@ export const deploymentsModule = withAuth(
 				};
 			}
 			try {
-				const deployment = await service.createDeployment(params.companyId, {
+				const deployment = await service.createDeployment(params.companyId, user.id, {
 					name: body.name,
 					artifactName: body.artifactName,
 					artifactType: body.artifactType,
@@ -135,12 +136,12 @@ export const deploymentsModule = withAuth(
 		},
 	)
 
-	// GET / — List deployments
+	// GET / — List deployments for this company only
 	.get(
 		'/',
-		async ({ query, set }) => {
+		async ({ params, query, set }) => {
 			try {
-				const result = await service.listDeployments({
+				const result = await service.listDeployments(params.companyId, {
 					offset: query?.offset,
 					limit: query?.limit,
 				});
@@ -159,7 +160,7 @@ export const deploymentsModule = withAuth(
 				offset: t.Optional(t.Number()),
 				limit: t.Optional(t.Number({ maximum: 500 })),
 			}),
-			detail: { tags: ['Deployments'], summary: 'List deployments (Distribution Sets)' },
+			detail: { tags: ['Deployments'], summary: 'List deployments (Distribution Sets) for this company' },
 			response: {
 				200: DeploymentListResponseSchema,
 				403: ErrorResponseSchema,
@@ -173,9 +174,13 @@ export const deploymentsModule = withAuth(
 		'/:deploymentId',
 		async ({ params, set }) => {
 			try {
-				const deployment = await service.getDeployment(Number(params.deploymentId));
+				const deployment = await service.getDeployment(params.companyId, Number(params.deploymentId));
 				return { data: deployment };
-			} catch {
+			} catch (error) {
+				if (error instanceof DeploymentNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
 				set.status = 404;
 				return { error: 'Not Found', message: 'Deployment not found' };
 			}
@@ -205,6 +210,10 @@ export const deploymentsModule = withAuth(
 				await service.deleteDeployment(Number(params.deploymentId), params.companyId);
 				return { message: 'Deployment deleted successfully' };
 			} catch (error: any) {
+				if (error instanceof DeploymentNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
 				if (error?.status === 404) {
 					set.status = 404;
 					return { error: 'Not Found', message: 'Deployment not found' };

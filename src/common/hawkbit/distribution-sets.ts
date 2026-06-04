@@ -44,6 +44,24 @@ export const hawkbitDistributionSets = {
 		return hawkbitRequest({ method: 'DELETE', path: `/rest/v1/distributionsets/${dsId}` });
 	},
 
+	/** Fetch multiple distribution sets by ID (for company-scoped listing via RSQL). */
+	async listByIds(dsIds: number[]): Promise<HawkbitDistributionSet[]> {
+		if (dsIds.length === 0) return [];
+		const batchSize = 100;
+		const all: HawkbitDistributionSet[] = [];
+		for (let i = 0; i < dsIds.length; i += batchSize) {
+			const batch = dsIds.slice(i, i + batchSize);
+			const q = `id=in=(${batch.join(',')})`;
+			const result = await hawkbitRequest<HawkbitPagedResponse<HawkbitDistributionSet>>({
+				method: 'GET',
+				path: '/rest/v1/distributionsets',
+				query: { q, limit: batchSize },
+			});
+			all.push(...result.content);
+		}
+		return all;
+	},
+
 	/** Assign multiple targets to a distribution set (creates deployments). */
 	assignTargets(dsId: number, targetIds: string[], params?: { offline?: boolean; type?: 'forced' | 'soft' | 'timeforced' | 'downloadonly' }): Promise<void> {
 		return hawkbitRequest({

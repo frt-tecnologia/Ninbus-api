@@ -202,6 +202,26 @@ curl http://localhost:8081/api/companies \
 
 ---
 
+## Tenant Isolation (Multi-tenancy)
+
+Todos os dados sensíveis (devices, artifacts, deployments) são isolados por empresa via banco local.
+
+```
+Request: GET /api/companies/{companyId}/artifacts
+  1. companyRole macro → verifica se usuário é membro da empresa
+  2. Service layer → SELECT * FROM artifacts WHERE company_id = :companyId
+  3. hawkBit → busca apenas IDs pertencentes à empresa
+  → Retorna SOMENTE artefatos daquela empresa
+```
+
+| Recurso | Tabela Local | Campo hawkBit | Isolamento |
+|---------|-------------|---------------|------------|
+| Devices | `devices` | `hawkbitTargetId` | ✅ `WHERE company_id` |
+| Artifacts | `artifacts` | `hawkbitSmId` (UNIQUE) | ✅ `WHERE company_id` |
+| Deployments | `deployments` | `hawkbitDsId` (UNIQUE) | ✅ `WHERE company_id` |
+
+**Write-through:** Toda criação no hawkBit grava também no banco local com `companyId`. O hawkBit é global — o banco local é quem garante o isolamento.
+
 ## RBAC
 
 ```
@@ -373,7 +393,7 @@ src/
 ├── app.ts                           # Composition root
 ├── common/
 │   ├── config/                      # env.ts · hawkbit.ts · auth.ts · email.ts
-│   ├── db/schema/                   # Drizzle tables (auth · companies · categories · devices · posts)
+│   ├── db/schema/                   # Drizzle tables (auth · companies · categories · devices · posts · artifacts · deployments)
 │   ├── hawkbit/                     # Client split by domain
 │   │   ├── client.ts                # Barrel re-export
 │   │   ├── http.ts                  # HTTP infrastructure + error class

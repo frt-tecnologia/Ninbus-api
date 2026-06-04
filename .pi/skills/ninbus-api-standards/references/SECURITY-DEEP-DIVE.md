@@ -43,10 +43,46 @@
 
 ## Multi-Tenant Isolation
 
-- `companyRole` macro em todas as rotas de empresa
-- Super admin bypassa checks de company
+### 3 Layers de isolamento
+
+1. **`companyRole` macro** — verifica se usuário é membro da empresa (403 se não)
+2. **Ownership check no service** — `requireOwnership(companyId, hawkbitId)` verifica que o recurso pertence à empresa (404 se não)
+3. **Write-through** — toda criação no hawkBit registra no banco local com `companyId`
+
+### Tabelas de isolamento
+
+| Recurso | Tabela | Campo hawkBit | UNIQUE |
+|---------|--------|---------------|--------|
+| Device | `devices` | `hawkbitTargetId` | — |
+| Artifact | `artifacts` | `hawkbitSmId` | ✅ |
+| Deployment | `deployments` | `hawkbitDsId` | ✅ |
+
+### Fluxo de isolamento
+
+```
+GET /api/companies/{companyId}/artifacts
+  → companyRole: verifica membership
+  → service.listArtifacts(companyId)
+    → SELECT FROM artifacts WHERE company_id = :companyId
+    → hawkbitSoftwareModules.listByIds(smIds)  // busca só os IDs da empresa
+  → Retorna SOMENTE artefatos da empresa
+```
+
+### Cross-tenant access → 404
+
+Se empresa B tenta acessar artefato da empresa A:
+- `requireOwnership(companyB, smId)` → não encontrado no banco local → 404
+- Mesmo que o SM exista no hawkBit, o banco local não tem registro → isolamento garantido
+
+### Super admin bypass
+
+Super admins bypassam membership checks mas continuam passando pelo service layer com companyId. Eles podem ver dados de qualquer empresa porque o `companyRole` macro retorna `owner` para qualquer companyId.
+
+### Outras regras
+
 - Device delete = unclaim (hawkBit target preservado)
 - Apenas deprovision (super admin) remove do hawkBit
+- hawkBit é global — banco local é a fonte de verdade para ownership
 
 ---
 

@@ -671,6 +671,14 @@
       "category": "process",
       "learnedAt": "2026-06-02T19:38:20.343Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-tenant-isolation-via-local-table",
+      "rule": "All hawkBit resources (artifacts=Software Modules, deployments=Distribution Sets) MUST have a local DB record with companyId for tenant isolation. The hawkBit API is shared/global — it has no concept of company. Create local tables (artifacts, deployments) with hawkbitSmId/hawkbitDsId + companyId. Use write-through: create in hawkBit + insert local record. All reads filter by companyId (like devices). All mutations verify ownership via requireOwnership(companyId, hawkbitId) before accessing hawkBit. The companyRole macro only verifies membership — it does NOT verify data ownership.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-04T15:24:21.100Z",
+      "reinforcementCount": 1
     }
   ]
 }

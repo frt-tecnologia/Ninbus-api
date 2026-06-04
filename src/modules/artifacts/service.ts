@@ -1,3 +1,5 @@
+import { db } from '@common/db';
+import { artifacts } from '@common/db/schema';
 import {
 	type HawkbitArtifact,
 	type HawkbitSoftwareModule,
@@ -10,6 +12,7 @@ import {
 import { HawkbitApiError } from '@common/hawkbit/http';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 import { packageArtifact } from './tar-packager';
@@ -43,6 +46,54 @@ export interface EnrichedSoftwareModule extends HawkbitSoftwareModule {
 	size?: number;
 }
 
+// Error classes
+
+export class ArtifactValidationError extends Error {
+	constructor(
+		message: string,
+		public readonly code:
+			| 'INVALID_EXTENSION'
+			| 'FILE_TOO_LARGE'
+			| 'EMPTY_FILE'
+			| 'MISSING_FILE'
+			| 'HAWKBIT_NOT_ENABLED'
+			| 'NOT_FOUND',
+	) {
+		super(message);
+		this.name = 'ArtifactValidationError';
+	}
+}
+
+export class ArtifactNotFoundError extends Error {
+	constructor(message = 'Artifact not found') {
+		super(message);
+		this.name = 'ArtifactNotFoundError';
+	}
+}
+
+// Guards
+
+function requireHawkbit(): void {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
+}
+
+/**
+ * Verify that a hawkBit Software Module belongs to the given company.
+ * Throws ArtifactNotFoundError if not owned by the company.
+ */
+async function requireOwnership(companyId: string, hawkbitSmId: number): Promise<void> {
+	const [local] = await db
+		.select({ companyId: artifacts.companyId })
+		.from(artifacts)
+		.where(eq(artifacts.hawkbitSmId, hawkbitSmId));
+
+	if (!local || local.companyId !== companyId) {
+		throw new ArtifactNotFoundError(`Artifact #${hawkbitSmId} not found in this company`);
+	}
+}
+
 // Helpers
 
 /** Extract user-visible artifactName from SM description (stored as "artifactName: X"). */
@@ -55,9 +106,9 @@ function extractDisplayName(sm: HawkbitSoftwareModule): string {
 /** Enrich SM with Ninbus metadata + artifact binaries (file sizes, hashes). */
 export async function enrichSoftwareModule(sm: HawkbitSoftwareModule): Promise<EnrichedSoftwareModule> {
 	const artifactType = resolveArtifactType(sm);
-	let artifacts: HawkbitArtifact[] = [];
-	try { artifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
-	const totalSize = artifacts.reduce((s, a) => s + (a.size ?? 0), 0);
+	let smArtifacts: HawkbitArtifact[] = [];
+	try { smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
+	const totalSize = smArtifacts.reduce((s, a) => s + (a.size ?? 0), 0);
 	return {
 		...sm,
 		name: extractDisplayName(sm),
@@ -65,7 +116,7 @@ export async function enrichSoftwareModule(sm: HawkbitSoftwareModule): Promise<E
 		lastModifiedAt: sm.lastModifiedAt ? new Date(sm.lastModifiedAt).toISOString() as any : undefined,
 		ninbusType: artifactType,
 		ninbusMeta: artifactType ? NINBUS_ARTIFACT_TYPE_META[artifactType] : null,
-		artifacts: artifacts.map((a) => ({ id: a.id, filename: a.providedFilename ?? undefined, size: a.size ?? undefined, hashes: a.hashes ?? undefined })),
+		artifacts: smArtifacts.map((a) => ({ id: a.id, filename: a.providedFilename ?? undefined, size: a.size ?? undefined, hashes: a.hashes ?? undefined })),
 		size: totalSize || undefined,
 	};
 }
@@ -99,38 +150,17 @@ export function validateFileSize(
 	return size;
 }
 
-// Error
-
-export class ArtifactValidationError extends Error {
-	constructor(
-		message: string,
-		public readonly code:
-			| 'INVALID_EXTENSION'
-			| 'FILE_TOO_LARGE'
-			| 'EMPTY_FILE'
-			| 'MISSING_FILE'
-			| 'HAWKBIT_NOT_ENABLED'
-
-	) {
-		super(message);
-		this.name = 'ArtifactValidationError';
-	}
-}
-
-// Guards
-
-function requireHawkbit(): void {
-	if (!hawkbitConfig.enabled) {
-		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
-	}
-}
+// ---------------------------------------------------------------------------
+// CRUD — all scoped by companyId (same pattern as devices/service.ts)
+// ---------------------------------------------------------------------------
 
 /**
- * Upload raw firmware file to hawkBit.
- * SM name is UUID-based (sm-{uuid}) to avoid hawkBit UNIQUE(name,version,type) constraints.
- * hawkBit soft-delete keeps rows with UNIQUE constraint — UUID names prevent all conflicts.
+ * Upload raw firmware file to hawkBit + register in local DB.
+ * Write-through: creates SM in hawkBit AND inserts local artifact record.
  */
 export async function uploadArtifact(
+	companyId: string,
+	userId: string,
 	file: File,
 	artifactName: string,
 	artifactType: NinbusArtifactType,
@@ -173,13 +203,21 @@ export async function uploadArtifact(
 		`(expected ~${packaged.size} bytes)`,
 	);
 
-	if (!artifact.size || artifact.size === 0) {
-		appLogger.error(
-			`[ARTIFACT] WARNING: hawkBit returned size=0 for artifact #${artifact.id}. ` +
-			`The embedded device will not be able to calculate download progress ("?KB"). ` +
-			`This indicates the multipart upload did not correctly communicate the file size to Spring Boot.`,
-		);
-	}
+	// Write-through: register in local DB (like claimDevice writes companyId)
+	await db.insert(artifacts).values({
+		companyId,
+		hawkbitSmId: sm.id,
+		name: artifactName,
+		artifactType,
+		version: sm.version,
+		description: description ?? `Ninbus OTA: ${artifactType}`,
+		originalFilename: file.name,
+		payloadSize: file.size,
+		packageSize: packaged.size,
+		createdBy: userId,
+	});
+
+	appLogger.info('[ARTIFACT] Registered SM %d for company %s', sm.id, companyId);
 
 	return {
 		smId: sm.id, artifactId: artifact.id, name: artifactName,
@@ -188,52 +226,88 @@ export async function uploadArtifact(
 	};
 }
 
-/** List software modules with Ninbus enrichment. */
-export async function listArtifacts(params?: {
+/** List artifacts for a specific company (like getCompanyDevices). */
+export async function listArtifacts(companyId: string, _params?: {
 	offset?: number;
 	limit?: number;
 }): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
-	if (!hawkbitConfig.enabled) {
+	// 1. Get local artifact records for this company
+	const localArtifacts = await db
+		.select()
+		.from(artifacts)
+		.where(eq(artifacts.companyId, companyId));
+
+	if (!hawkbitConfig.enabled || localArtifacts.length === 0) {
 		return { data: [], total: 0 };
 	}
-	const result = await hawkbitSoftwareModules.list(params);
-	const enriched = await Promise.all(result.content.map(enrichSoftwareModule));
-	return { data: enriched, total: result.total };
+
+	// 2. Fetch SM data from hawkBit by IDs (company-scoped)
+	const smIds = localArtifacts.map((a) => a.hawkbitSmId);
+	try {
+		const hawkbitSMs = await hawkbitSoftwareModules.listByIds(smIds);
+		// 3. Build lookup by hawkbitSmId for enrichment
+		const enriched = await Promise.all(hawkbitSMs.map(enrichSoftwareModule));
+		return { data: enriched, total: enriched.length };
+	} catch {
+		// If hawkBit is unavailable, return local data without enrichment
+		appLogger.warn('[ARTIFACTS] hawkBit unavailable, returning local data only');
+		return { data: [], total: 0 };
+	}
 }
 
-/** Get single software module with enrichment. */
-export async function getArtifact(smId: number): Promise<EnrichedSoftwareModule> {
+/** Get single artifact — verify ownership first (like getDeviceById). */
+export async function getArtifact(companyId: string, smId: number): Promise<EnrichedSoftwareModule> {
+	await requireOwnership(companyId, smId);
 	requireHawkbit();
 	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId));
 }
 
-/** Delete a software module. Verifies deletion in hawkBit. */
-export async function deleteArtifact(smId: number): Promise<{ deleted: boolean; message: string }> {
+/** Delete a software module — verify ownership, then delete from hawkBit + local DB. */
+export async function deleteArtifact(companyId: string, smId: number): Promise<{ deleted: boolean; message: string }> {
+	await requireOwnership(companyId, smId);
 	requireHawkbit();
+
 	try {
 		await hawkbitSoftwareModules.delete(smId);
 	} catch (error) {
 		if (error instanceof HawkbitApiError && error.status === 404) {
+			// SM already deleted in hawkBit — clean up local record
+			await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
 			return { deleted: true, message: 'Artifact already deleted' };
 		}
 		throw error;
 	}
-	// Verify deletion (hawkBit soft-deletes, get() may still return SM with deleted=true)
+
+	// Delete local record
+	await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
+
+	// Verify deletion in hawkBit
 	try {
 		const check = await hawkbitSoftwareModules.get(smId);
 		if (!check.deleted) appLogger.warn('[ARTIFACT] SM %d still active after delete', smId);
-	} catch { /* 404 = hard-deleted, even better */ }
+	} catch { /* 404 = hard-deleted */ }
+
 	return { deleted: true, message: 'Artifact deleted successfully' };
 }
 
-/** Update artifact description. */
-export async function updateArtifact(smId: number, description: string): Promise<void> {
+/** Update artifact description — verify ownership first. */
+export async function updateArtifact(companyId: string, smId: number, description: string): Promise<void> {
+	await requireOwnership(companyId, smId);
 	requireHawkbit();
-	return hawkbitSoftwareModules.update(smId, { description });
+
+	// Update hawkBit SM description
+	await hawkbitSoftwareModules.update(smId, { description });
+
+	// Update local record
+	await db
+		.update(artifacts)
+		.set({ description, updatedAt: new Date() })
+		.where(eq(artifacts.hawkbitSmId, smId));
 }
 
-/** Get download URL for an artifact. */
+/** Get download URL — verify ownership first. */
 export async function getArtifactDownloadUrl(
+	companyId: string,
 	smId: number,
 	artifactId: number,
 ): Promise<{
@@ -243,14 +317,16 @@ export async function getArtifactDownloadUrl(
 	size?: number;
 	downloadUrl: string;
 }> {
+	await requireOwnership(companyId, smId);
 	requireHawkbit();
-	const artifact = await hawkbitSoftwareModules.getArtifact(smId, artifactId);
+
+	const artifactFile = await hawkbitSoftwareModules.getArtifact(smId, artifactId);
 	const baseUrl = hawkbitConfig.baseUrl;
 	return {
 		smId,
-		artifactId: artifact.id,
-		filename: artifact.providedFilename,
-		size: artifact.size ?? undefined,
+		artifactId: artifactFile.id,
+		filename: artifactFile.providedFilename,
+		size: artifactFile.size ?? undefined,
 		downloadUrl: `${baseUrl}/rest/v1/softwaremodules/${smId}/artifacts/${artifactId}/download`,
 	};
 }

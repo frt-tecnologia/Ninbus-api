@@ -89,6 +89,24 @@ export const hawkbitSoftwareModules = {
 		});
 	},
 
+	/** Fetch multiple software modules by ID (for company-scoped listing via RSQL). */
+	async listByIds(smIds: number[]): Promise<HawkbitSoftwareModule[]> {
+		if (smIds.length === 0) return [];
+		const batchSize = 100;
+		const all: HawkbitSoftwareModule[] = [];
+		for (let i = 0; i < smIds.length; i += batchSize) {
+			const batch = smIds.slice(i, i + batchSize);
+			const q = `id=in=(${batch.join(',')})`;
+			const result = await hawkbitRequest<HawkbitPagedResponse<HawkbitSoftwareModule>>({
+				method: 'GET',
+				path: '/rest/v1/softwaremodules',
+				query: { q, limit: batchSize },
+			});
+			all.push(...result.content);
+		}
+		return all;
+	},
+
 	listArtifacts(smId: number): Promise<HawkbitArtifact[]> {
 		return hawkbitRequest({ method: 'GET', path: `/rest/v1/softwaremodules/${smId}/artifacts` });
 	},

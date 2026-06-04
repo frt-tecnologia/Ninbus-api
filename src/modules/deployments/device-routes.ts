@@ -20,6 +20,7 @@ import {
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
 import * as service from './service';
+const { DeploymentNotFoundError } = service;
 
 const deviceParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
@@ -34,9 +35,15 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/statistics',
 		async ({ params, set }) => {
 			try {
+				// Ownership check: verify deployment belongs to this company
+				await service.getDeployment(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentStatistics(Number(params.deploymentId));
 				return { data: result };
-			} catch {
+			} catch (error) {
+				if (error instanceof service.DeploymentNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
 				set.status = 404;
 				return { error: 'Not Found', message: 'Deployment not found' };
 			}
@@ -53,6 +60,8 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/target-statuses',
 		async ({ params, query, set }) => {
 			try {
+				// Ownership check
+				await service.getDeployment(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentTargetStatuses(
 					Number(params.deploymentId),
 					{ offset: query?.offset, limit: query?.limit },
@@ -84,6 +93,8 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/targets/:targetId/status-trail',
 		async ({ params, set }) => {
 			try {
+				// Ownership check
+				await service.getDeployment(params.companyId, Number(params.deploymentId));
 				const trail = await service.getTargetStatusTrail(params.targetId);
 				if (!trail) {
 					set.status = 404;
@@ -120,6 +131,8 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/targets',
 		async ({ params, query, set }) => {
 			try {
+				// Ownership check
+				await service.getDeployment(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentTargets(Number(params.deploymentId), {
 					offset: query?.offset, limit: query?.limit,
 				});

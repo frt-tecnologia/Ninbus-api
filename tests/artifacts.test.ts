@@ -284,4 +284,65 @@ describe('Artifacts Module', () => {
 			expect(response.status).toBe(400);
 		});
 	});
+
+	describe('Tenant Isolation', () => {
+		let otherCompanyId: string;
+
+		it('setup: creates second company', async () => {
+			otherCompanyId = await setupCompany(otherCookie);
+			expect(otherCompanyId).toBeDefined();
+		});
+
+		it('GET / returns empty list for company with no artifacts', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/artifacts`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.data).toEqual([]);
+			expect(body.total).toBe(0);
+		});
+
+		it('GET /:id returns 404 for artifact from another company (not registered locally)', async () => {
+			// Artifact #1 doesn't exist in local DB for otherCompany → 404
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/artifacts/99999`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('DELETE /:id returns 404 for artifact from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/artifacts/99999`, {
+					method: 'DELETE',
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('PUT /:id returns 404 for artifact from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/artifacts/99999`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json', Cookie: otherCookie },
+					body: JSON.stringify({ description: 'hacked!' }),
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('GET /:id/download returns 404 for artifact from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/artifacts/99999/download`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+	});
 });

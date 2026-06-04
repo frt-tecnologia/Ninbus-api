@@ -38,6 +38,8 @@ export const artifactsModule = withAuth(
 			}
 			try {
 				const result = await uploadArtifact(
+					params.companyId,
+					user.id,
 					artifactFile as File,
 					body.artifactName,
 					body.artifactType,

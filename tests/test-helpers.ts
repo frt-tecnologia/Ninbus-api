@@ -33,6 +33,8 @@ import { sql } from 'drizzle-orm';
 export async function cleanTestDatabase(): Promise<void> {
 	await db.execute(sql`TRUNCATE TABLE
 		device_category_assignments,
+		artifacts,
+		deployments,
 		devices,
 		company_members,
 		companies,

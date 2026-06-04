@@ -295,4 +295,53 @@ describe('Deployments Module', () => {
 			expect(response.status).toBe(401);
 		});
 	});
+
+	describe('Tenant Isolation', () => {
+		let otherCompanyId: string;
+
+		it('setup: creates second company', async () => {
+			otherCompanyId = await setupCompany(otherCookie);
+			expect(otherCompanyId).toBeDefined();
+		});
+
+		it('GET / returns empty list for company with no deployments', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.data).toEqual([]);
+			expect(body.total).toBe(0);
+		});
+
+		it('GET /:id returns 404 for deployment from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('DELETE /:id returns 404 for deployment from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999`, {
+					method: 'DELETE',
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('GET /:id/statistics returns 404 for deployment from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999/statistics`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+	});
 });

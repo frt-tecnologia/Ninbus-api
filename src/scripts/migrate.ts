@@ -1,41 +1,16 @@
 import { appLogger } from '@common/logger';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import fs from 'fs';
-import path from 'path';
 
 /**
  * Database Migration
  *
- * Runs all pending migrations from the ./drizzle folder.
- * Called automatically at startup (src/index.ts) and via: bun run db:migrate
+ * Applies pending migrations directly via SQL (bypassing Drizzle's migrator).
+ * Drizzle's migrate() doesn't work well when previous migrations were applied
+ * manually (creates tracking table in wrong schema, etc).
  *
- * Handles the case where previous migrations were applied manually
- * (without Drizzle's __drizzle_migrations tracking table).
+ * Each migration uses IF NOT EXISTS so it's safe to re-run.
  */
-
-const PREVIOUS_MIGRATIONS = [
-	'0000_easy_venom',
-	'0002_striped_robin_chapel',
-	'0003_mender_to_hawkbit_migration',
-	'0004_unclaimed_devices',
-	'0005_serial_display',
-	'0006_created_by_nullable',
-	'0007_hawkbit_sync_columns',
-];
-
-/** Tables created by each migration tag — used to verify they actually exist. */
-const MIGRATION_TABLES: Record<string, string[]> = {
-	'0000_easy_venom': ['account', 'session', 'user', 'verification'],
-	'0002_striped_robin_chapel': ['companies'],
-	'0003_mender_to_hawkbit_migration': [],
-	'0004_unclaimed_devices': [],
-	'0005_serial_display': [],
-	'0006_created_by_nullable': [],
-	'0007_hawkbit_sync_columns': [],
-	'0008_artifacts_deployments_isolation': ['artifacts', 'deployments'],
-};
 
 export async function runStartupMigrations(databaseUrl?: string) {
 	const url = databaseUrl || process.env['DATABASE_URL']!;
@@ -46,97 +21,76 @@ export async function runStartupMigrations(databaseUrl?: string) {
 	appLogger.info('[MIGRATION] Running database migrations...');
 
 	const client = postgres(url, { max: 1 });
-	const db = drizzle(client);
 
 	try {
-		// Check if __drizzle_migrations tracking table exists
-		const trackingResult = await client`
-			SELECT EXISTS (
-				SELECT FROM information_schema.tables
-				WHERE table_schema = 'public'
-				AND table_name = '__drizzle_migrations'
-			) as exists
+		// Read all migration SQL files from drizzle folder in order
+		const migrationsDir = './drizzle';
+		const journal = JSON.parse(fs.readFileSync(`${migrationsDir}/meta/_journal.json`, 'utf8'));
+
+		// Get list of existing tables to skip already-applied migrations
+		const existingTables = await client`
+			SELECT tablename FROM pg_tables WHERE schemaname = 'public'
 		`;
-		const trackingExists = trackingResult[0]?.exists;
+		const tableSet = new Set(existingTables.map((r: any) => r.tablename));
 
-		if (!trackingExists) {
-			// First time: previous migrations were applied manually.
-			// Create tracking table and register only the ones that actually exist.
-			appLogger.info('[MIGRATION] No tracking table found — verifying existing tables...');
+		for (const entry of journal.entries) {
+			const sqlFile = `${migrationsDir}/${entry.tag}.sql`;
 
-			// Get all existing tables in public schema
-			const existingTables = await client`
-				SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-			`;
-			const tableSet = new Set(existingTables.map((r: any) => r.tablename));
+			if (!fs.existsSync(sqlFile)) {
+				appLogger.info('[MIGRATION] Skipping %s (no SQL file)', entry.tag);
+				continue;
+			}
 
-			// Create tracking table
-			await client`
-				CREATE TABLE IF NOT EXISTS __drizzle_migrations (
-					id SERIAL PRIMARY KEY,
-					hash text NOT NULL UNIQUE,
-					created_at bigint NOT NULL,
-					tag text NOT NULL
-				)
-			`;
+			// Check if this migration's tables already exist
+			if (entry.tag === '0000_easy_venom' && tableSet.has('user')) {
+				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+				continue;
+			}
+			if (entry.tag === '0002_striped_robin_chapel' && tableSet.has('companies')) {
+				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+				continue;
+			}
+			if (entry.tag === '0008_artifacts_deployments_isolation' && tableSet.has('artifacts') && tableSet.has('deployments')) {
+				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+				continue;
+			}
 
-			// Register each migration as applied only if its tables exist
-			for (const tag of PREVIOUS_MIGRATIONS) {
-				const tables = MIGRATION_TABLES[tag] ?? [];
-				const allExist = tables.length === 0 || tables.every((t) => tableSet.has(t));
+			// Apply the migration
+			appLogger.info('[MIGRATION] Applying: %s', entry.tag);
+			const sql = fs.readFileSync(sqlFile, 'utf8');
 
-				if (allExist) {
-					await client`
-						INSERT INTO __drizzle_migrations (hash, created_at, tag)
-						VALUES (${tag + '_manual'}, ${Date.now()}, ${tag})
-						ON CONFLICT (hash) DO NOTHING
-					`;
-					appLogger.info('[MIGRATION] ✓ Registered as applied: %s', tag);
-				} else {
-					appLogger.info('[MIGRATION] ✗ Not applied (missing tables): %s', tag);
+			// Split by statement breakpoint and execute each
+			const statements = sql
+				.split('--> statement-breakpoint')
+				.map((s: string) => s.trim())
+				.filter((s: string) => s.length > 0 && !s.startsWith('--'));
+
+			for (const stmt of statements) {
+				try {
+					await client.unsafe(stmt);
+				} catch (err: any) {
+					// Ignore "already exists" errors
+					if (err?.code === '42P07' || err?.code === '42710' || err?.code === '42P06') {
+						// already exists — fine
+					} else {
+						throw err;
+					}
 				}
 			}
-		} else {
-			// Tracking table exists — check if any registered migrations have missing tables
-			// This handles the case where we incorrectly registered 0008 as applied
-			const registered = await client`
-				SELECT tag FROM __drizzle_migrations
-			`;
-			const registeredTags = new Set(registered.map((r: any) => r.tag));
 
-			for (const [tag, tables] of Object.entries(MIGRATION_TABLES)) {
-				if (!registeredTags.has(tag)) continue;
-				if (tables.length === 0) continue;
-
-				// Check if tables actually exist
-				const tableCheck = await client`
-					SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY(${tables})
-				`;
-				const foundTables = new Set(tableCheck.map((r: any) => r.tablename));
-				const missingTables = tables.filter((t) => !foundTables.has(t));
-
-				if (missingTables.length > 0) {
-					appLogger.info('[MIGRATION] Fixing: %s registered but tables missing (%s) — removing entry', tag, missingTables.join(', '));
-					await client`
-						DELETE FROM __drizzle_migrations WHERE tag = ${tag}
-					`;
-				}
-			}
+			appLogger.info('[MIGRATION] ✓ Applied: %s', entry.tag);
 		}
 
-		// Now run Drizzle migrate — will only execute migrations not in the tracking table
-		await migrate(db, { migrationsFolder: './drizzle' });
 		appLogger.info('[MIGRATION] Migrations completed successfully');
 	} catch (error: any) {
 		appLogger.error('[MIGRATION] Migration failed: %s', error?.message ?? 'unknown');
-		// Don't throw — allow server to start even if migration fails
-		// Defensive queries in service code handle missing tables gracefully
+		// Don't throw — allow server to start, defensive queries handle missing tables
 	} finally {
 		await client.end();
 	}
 }
 
-// Allow standalone execution: bun run db:migrate
+// Allow standalone execution
 const isDirectRun = import.meta.main || process.argv[1]?.endsWith('migrate.ts');
 if (isDirectRun) {
 	runStartupMigrations()

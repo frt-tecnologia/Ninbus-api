@@ -31,8 +31,9 @@ export const devices = pgTable('devices', {
 		.references(() => companies.id, { onDelete: 'cascade' }),
 	hawkbitTargetId: text('hawkbit_target_id'),
 	name: text('name').notNull(),
+	/** hawkBit controllerId — 16-char uppercase HEX (e.g. "1A50F00100309FFF"). Converted from decimal input via nibble packing. */
 	serialNumber: text('serial_number'),
-	/** Human-readable dotted format (e.g. "25.5F.FF.FF.FF.FF.FF.FF"). Auto-derived from serialNumber hex. */
+	/** User-visible display format (e.g. "26.6.15.001.00031"). Month uses hex: 0-9, A=Oct, B=Nov, C=Dec. Auto-derived from serialNumber HEX. */
 	serialDisplay: text('serial_display'),
 	status: deviceStatusEnum('status').notNull().default('pending'),
 	lastSeenAt: timestamp('last_seen_at'),

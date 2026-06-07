@@ -49,7 +49,7 @@ export const provisioningRoutes = withAuth(
 				tags: ['Provisioning'],
 				summary: 'Pre-register device in hawkBit (super admin only)',
 				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
-				description: 'Creates hawkBit target + local device as "unclaimed". Serial formats: hex or dotted (e.g. 25.5F.FF.FF.FF.FF.FF.FF). API normalizes to uppercase hex. Super admin only.',
+				description: 'Creates hawkBit target + local device as "unclaimed". Serial formats: display (26.6.15.001.00031) or HEX (1A61500100031FFF). Month accepts 0-9 and A/B/C. Display is converted to HEX via BCD packing. Super admin only.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -162,7 +162,7 @@ export const provisioningRoutes = withAuth(
 				serialNumber: t.String({
 					minLength: 1,
 					maxLength: 255,
-					description: 'Serial number to search for (hex or dotted format)',
+					description: 'Serial number to search for (display like 26.6.15.001.00031 or HEX like 1A61500100031FFF)',
 				}),
 			}),
 			detail: {
@@ -170,8 +170,8 @@ export const provisioningRoutes = withAuth(
 				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'Search devices by serialNumber (super admin only)',
 				description:
-					'Search ALL devices (all companies + unclaimed) by serial number. ' +
-					'Supports hex and dotted formats. Super admin only. Returns up to 50 results.',
+				'Search ALL devices (all companies + unclaimed) by serial number. ' +
+				'Supports display (26.6.15.001.00031) and HEX (1A61500100031FFF) formats. Super admin only. Returns up to 50 results.',
 			},
 			response: {
 				200: DeviceListResponseSchema,
@@ -228,7 +228,7 @@ export const provisioningRoutes = withAuth(
 				serialNumber: t.String({
 					minLength: 1,
 					maxLength: 255,
-					description: 'Device serial number (hex or dotted format)',
+					description: 'Device serial number — display (26.6.15.001.00031) or HEX (1A61500100031FFF)',
 				}),
 			}),
 			detail: {

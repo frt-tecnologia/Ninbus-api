@@ -14,9 +14,9 @@ export const provisionDeviceSchema = t.Object(
 			minLength: 1,
 			maxLength: 255,
 			description:
-				'Device serial number. Accepts hex format (255FFFFFFFFFFFF) or dotted display format (25.5F.FF.FF.FF.FF.FF.FF). ' +
-				'Must be exactly 16 hex chars (8 bytes from EEPROM). Stored as uppercase hex — same as hawkBit controllerId. ' +
-				'If all EEPROM bytes are 0xFF, firmware falls back to STM32 UID (also 16 hex chars).',
+				'Device serial number. Accepts display format (26.6.15.001.00031) or HEX format (1A61500100031FFF). ' +
+				'Month field accepts 0-9 and A(B=Nov, C=Dec). Display is converted to 16-char uppercase HEX ' +
+				'using BCD packing (each digit = 1 nibble). Stored as uppercase HEX in the database.'
 		}),
 		deviceKey: t.String({
 			minLength: 8,
@@ -28,13 +28,13 @@ export const provisionDeviceSchema = t.Object(
 		name: t.Optional(
 			t.String({
 				maxLength: 255,
-				description: 'Optional display name. Defaults to dotted serial format (e.g. 25.5F.FF.FF.FF.FF.FF.FF) if not provided.',
+				description: 'Optional display name. Defaults to serial display format (e.g. 26.6.15.001.00031) if not provided.',
 			}),
 		),
 	},
 	{
 		default: {
-			serialNumber: '255FFFFFFFFFFFF',
+			serialNumber: '26.6.15.001.00031',
 			deviceKey: 'factory-device-key-from-label',
 			name: 'Ninbus-veiculo-06',
 		},
@@ -48,11 +48,11 @@ export const registerDeviceSchema = t.Object(
 			minLength: 1,
 			maxLength: 255,
 			description:
-				'Device serial number. Accepts hex (255FFFFFFFFFFFF) or dotted format (25.5F.FF.FF.FF.FF.FF.FF). ' +
-				'Used to match with a pre-provisioned device in hawkBit.',
+				'Device serial number. Accepts display (26.6.15.001.00031) or HEX (1A61500100031FFF) format. ' +
+				'Month accepts 0-9 and A/B/C. Used to match with a pre-provisioned device in hawkBit.'
 		}),
 	},
-	{ default: { serialNumber: '255FFFFFFFFFFFF' } },
+	{ default: { serialNumber: '26.6.15.001.00031' } },
 );
 
 export const linkDeviceSchema = t.Object(
@@ -76,7 +76,7 @@ export const updateDeviceSchema = t.Object(
 		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
 		serialNumber: t.Optional(t.String({ maxLength: 255 })),
 	},
-	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '255FFFFFFFFFFFF' } },
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '26.6.15.001.00031' } },
 );
 
 export const assignCategoriesSchema = t.Object(

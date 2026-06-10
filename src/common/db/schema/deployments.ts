@@ -22,6 +22,16 @@ export const deployments = pgTable('deployments', {
 	name: text('name').notNull(),
 	/** Ninbus artifact type key used in this deployment. */
 	artifactType: text('artifact_type').notNull(),
+	/** Audit: artifact display name at deployment time. */
+	artifactName: text('artifact_name'),
+	/** Audit: artifact version at deployment time. */
+	artifactVersion: text('artifact_version'),
+	/** Audit: original uploaded filename (e.g. "firmware-v3.fir"). */
+	artifactOriginalFile: text('artifact_original_file'),
+	/** Audit: number of targets assigned. */
+	targetCount: integer('target_count').default(0),
+	/** Audit: JSON array of hawkBit target IDs assigned (controllerIds). */
+	targetIds: text('target_ids'),
 	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),

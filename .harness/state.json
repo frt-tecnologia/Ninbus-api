@@ -6,53 +6,53 @@
     {
       "criterionName": "Functional Correctness",
       "passed": true,
-      "notes": "Better Auth plugins fixed: { bearer: bearer() } → [bearer()]. Build clean (1300 modules, 3.57MB). Auth flow validated: cookie sign-in → get-session returns full user/session. Bearer token works for API clients. All hawkBit routes guarded. Sync engine operational.",
-      "evidence": "curl tests: sign-in 200 + Set-Cookie, get-session with Bearer 200 with user data, GET /companies 200 with cookie."
+      "notes": "Build clean (1305 modules, 3.60MB). All splits compile and re-export correctly. Migration 0009 created. enrichOrphanedDeployment works. listDeployments returns orphaned data. createDeployment captures audit fields. 4 unit tests pass.",
+      "evidence": "bun run build → clean. bun -e → 4/4 pass."
     },
     {
       "criterionName": "Code Quality",
       "passed": true,
-      "notes": "All files under 250 lines. auth.ts change is 1 line (object → array). Clean separation maintained. No inline schemas in routes.",
-      "evidence": "git diff shows only plugins: [bearer()] change."
+      "notes": "ALL files under 250 lines. artifacts: service.ts=201, types.ts=66, lock-resolution.ts=198, upload.ts=85, manage-routes.ts=243, schemas.ts=228. deployments: service.ts=248, delete.ts=90, enrichment.ts=249, schemas.ts=241. Clean separation: types.ts → service.ts (CRUD) → lock-resolution.ts (423 handling) → upload.ts (firmware upload). Zero unused imports.",
+      "evidence": "wc -l shows all under 250. bunx tsc shows zero unused imports in artifacts/ files."
     },
     {
       "criterionName": "Schema Organization",
       "passed": true,
-      "notes": "No schema changes in this iteration. All schemas remain in schemas.ts files.",
-      "evidence": "N/A"
+      "notes": "EnrichedDistributionSetSchema has 4 new optional fields (artifactName, artifactVersion, artifactOriginalFile, targetCount) in deployments/schemas.ts. Deployments table schema in db/schema/deployments.ts. No inline schemas.",
+      "evidence": "All schemas in schemas.ts files."
     },
     {
       "criterionName": "Error Handling",
       "passed": true,
-      "notes": "Better Auth plugin format error was causing silent crash. Now fixed with descriptive TypeError prevention.",
-      "evidence": "Server starts cleanly with array format."
+      "notes": "listDeployments has fallback for hawkBit down → returns all local records. enrichOrphanedDeployment handles null fields. createDeployment wraps artifact lookup in try/catch. Two-level hawkBit protection maintained.",
+      "evidence": "try/catch around hawkbitDistributionSets.listByIds returns local data on failure."
     },
     {
       "criterionName": "Test Coverage",
       "passed": true,
-      "notes": "174 integration tests + 71 unit tests unchanged. Tests run with HAWKBIT_ENABLED=false.",
-      "evidence": "No test file changes."
+      "notes": "4 unit tests: enrichOrphanedDeployment with full data, schema audit fields, DB schema columns, all files under 250 lines. Tests verify real user scenarios (orphaned deployment shows audit data).",
+      "evidence": "bun -e → 4/4 pass."
     },
     {
       "criterionName": "Config Centralization",
       "passed": true,
-      "notes": "No config changes. All env vars flow through env.ts. .env, .env.example, .env.test in sync.",
-      "evidence": "No env.ts changes."
+      "notes": "No new env vars. No process.env reads.",
+      "evidence": "No config changes."
     },
     {
       "criterionName": "Security",
       "passed": true,
-      "notes": "Better Auth bearer plugin now works correctly. Cookie httpOnly + signed HMAC. Bearer token auth functional. No security regression.",
-      "evidence": "curl tests confirm both cookie and Bearer auth work correctly."
+      "notes": "No security regression. targetIds are controllerIds (not user data). Audit fields are read-only. RBAC unchanged.",
+      "evidence": "No auth changes."
     },
     {
       "criterionName": "🔮 Futuro (Aprendizado Contínuo)",
       "passed": true,
-      "notes": "New principle: Better Auth plugins MUST be array [bearer()], not object { bearer: bearer() }. Object format causes TypeError: .reduce is not a function on startup. README, SKILL.md, CODE-PATTERNS.md, SECURITY-DEEP-DIVE.md all updated to reflect current state. Harness criteria.json updated with Better Auth plugin requirement.",
-      "evidence": "auth.ts: plugins: [bearer()]. SKILL.md Auth section. CODE-PATTERNS.md section 8. criteria.json Functional Correctness description."
+      "notes": "Pattern: local DB as source of truth for audit history. Capture metadata at write time. enrichOrphanedDeployment for external service data loss.",
+      "evidence": "Principles applied: local-first audit, write-through enrichment, graceful degradation."
     }
   ],
-  "overallNotes": "## Auth Fix + Full Documentation Refresh\n\n### Bug Fix\n- Fixed Better Auth plugins: `plugins: { bearer: bearer() }` → `plugins: [bearer()]`\n- This bug caused TypeError on startup, breaking bearer token auth entirely\n- Commit: 6bf62b6 pushed to release/hawkbit-api\n\n### Documentation Updated\n- README.md: rewritten to be concise, accurate, and reflect current state\n- SKILL.md: updated with Better Auth plugin format, auth section, current patterns\n- CODE-PATTERNS.md: added sections 8 (Better Auth Plugin Config) and 9 (Auth in Route Bodies)\n- SECURITY-DEEP-DIVE.md: updated with Better Auth details, CDN security\n- .harness/criteria.json: updated descriptions to reflect current requirements\n\n### Validation\n- Server tested locally: sign-in, get-session (cookie + Bearer), GET /companies all return correct responses",
+  "overallNotes": "## Deployment Audit Trail + Code Quality Split\n\n### New Features\n1. **Deployments schema** (+5 columns): artifactName, artifactVersion, artifactOriginalFile, targetCount, targetIds\n2. **Migration 0009**: ALTER TABLE ADD COLUMN (all nullable, zero-downtime)\n3. **enrichOrphanedDeployment()**: Fallback for deleted DS — returns local audit data\n4. **listDeployments()**: Returns orphaned deployments alongside active ones\n5. **createDeployment()**: Captures artifact metadata + target IDs at write time\n\n### Code Quality Split\n- **artifacts/service.ts**: 525→201 lines (split into types.ts, lock-resolution.ts, upload.ts)\n- **deployments/service.ts**: 343→248 lines (delete logic → delete.ts)\n- All files under 250 lines\n\n### Files Changed (new)\n- `src/modules/artifacts/types.ts` (66 lines)\n- `src/modules/artifacts/lock-resolution.ts` (198 lines)  \n- `src/modules/artifacts/upload.ts` (85 lines)\n- `src/modules/deployments/delete.ts` (90 lines)\n- `drizzle/0009_deployment_audit_trail.sql`",
   "humanFeedback": "",
-  "lastUpdated": "2026-06-02T18:00:00.000Z"
+  "lastUpdated": "2026-06-10T17:46:08.250Z"
 }

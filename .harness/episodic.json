@@ -1,3 +1,32 @@
 {
-  "entries": []
+  "entries": [
+    {
+      "id": "iteration-49-1780785021237",
+      "timestamp": 1780785021237,
+      "type": "evaluation",
+      "summary": "Iteration 49: 8/8 criteria passed. ## Serial Number Decimal→HEX Conversion\n\n### Changes Made\n1. **serial-number.ts** — Added `decimalSerialToHex()` (nibble packing), `hexToDecimalSerial()` (reverse extraction), `isDecimalSerial()`. Updated `normalizeSerial()` to detect decimal input first. Updated `hexToDisplay()` to convert serial HEX to decimal, falling back to dotted-hex for non-serial values (STM32 UID). File: 186 lines.\n\n2. **schemas.ts** — Updated descriptions and defaults from hex examples (255FFFFFFFFFFFF) to decimal (26.5.15.001.00777).\n\n3. **devices.ts** (DB schema) — Updated comments to reflect decimal display format.\n\n4. **provision-routes.ts** — Updated OpenAPI descriptions to document decimal input support.\n\n### Key Design Decisions\n- **Conversion in backend**, not frontend — single source of truth, testable, robust\n- **Reserved FFF nibble validation** — `hexToDecimalSerial()` rejects non-serial HEX (STM32 UID) by checking byte[6] low nibble = F and byte[7] = FF\n- **Backward compatible** — HEX input still works (tests, existing data, STM32 UID)\n- **Fallback for non-serial HEX** — dotted-hex display (AA.BB.CC.DD...) instead of nonsensical decimal\n\n### Validation\n- 31/31 unit tests pass (3 validated examples from embedded team + round-trip + edge cases)\n- Build clean\n- Server starts and connects to Neon DB\n- Bun test runner has a Windows segfault bug (Bun 1.3.12) — not related to code changes",
+      "allTestsPassed": true
+    },
+    {
+      "id": "iteration-49-1780847164400",
+      "timestamp": 1780847164400,
+      "type": "evaluation",
+      "summary": "Iteration 49: 8/8 criteria passed. ## BCD Packing Algorithm Correction\n\n### Critical Fix\nThe previous binary packing algorithm (bit shifts and masks) was **incorrect** — it did not match what the device actually stores in EEPROM. Validated with real EEPROM reads from the device.\n\n### Real Algorithm (BCD Packing)\n1. AA → binary byte (26 → 0x1A)\n2. M(1 char hex) + PP(2 digits) + SSS(3 digits) + NNNNN(5 digits) → nibble stream (11 nibbles)\n3. Append FFF reserved → 14 nibbles = 7 bytes\n4. Total: 1 + 7 = 8 bytes = 16 hex chars\n\n### Month Format\nM is 1 hex character: 0-9 (Jan-Sep), A (Oct), B (Nov), C (Dec).\n\n### Files Changed\n1. **serial-number.ts** (240 lines) — Rewrote decimalSerialToHex and hexToDecimalSerial with BCD packing\n2. **schemas.ts** (137 lines) — Updated descriptions and defaults\n3. **provision-routes.ts** (249 lines) — Updated OpenAPI descriptions\n\n### Validation\n- 36/36 unit tests pass\n- 3 real EEPROM-validated examples match exactly\n- Build clean",
+      "allTestsPassed": true
+    },
+    {
+      "id": "iteration-49-1781112589957",
+      "timestamp": 1781112589957,
+      "type": "evaluation",
+      "summary": "Iteration 49: 7/8 criteria passed. ## Deployment Audit Trail Implementation\n\n### Changes\n1. **deployments schema** (+5 columns): artifactName, artifactVersion, artifactOriginalFile, targetCount, targetIds\n2. **Migration 0009**: ALTER TABLE ADD COLUMN for all 5 fields\n3. **createDeployment()**: Captures artifact metadata + target IDs at deployment time\n4. **enrichOrphanedDeployment()**: New function — builds EnrichedDeployment from local data when DS deleted in hawkBit\n5. **listDeployments()**: Returns orphaned deployments (DS deleted) alongside active ones\n6. **EnrichedDistributionSetSchema**: 4 new optional fields for audit data\n\n### Known Issues (need next iteration)\n- deployments/service.ts = 343 lines → needs splitting (CRUD vs hawkBit operations)\n- artifacts/service.ts = 525 lines → needs splitting (was 498 before this iteration, already over limit)\n\n### Migration Guide\nSee migration tutorial in next message (docker local + Neon).",
+      "allTestsPassed": false
+    },
+    {
+      "id": "iteration-49-1781113568252",
+      "timestamp": 1781113568252,
+      "type": "evaluation",
+      "summary": "Iteration 49: 8/8 criteria passed. ## Deployment Audit Trail + Code Quality Split\n\n### New Features\n1. **Deployments schema** (+5 columns): artifactName, artifactVersion, artifactOriginalFile, targetCount, targetIds\n2. **Migration 0009**: ALTER TABLE ADD COLUMN (all nullable, zero-downtime)\n3. **enrichOrphanedDeployment()**: Fallback for deleted DS — returns local audit data\n4. **listDeployments()**: Returns orphaned deployments alongside active ones\n5. **createDeployment()**: Captures artifact metadata + target IDs at write time\n\n### Code Quality Split\n- **artifacts/service.ts**: 525→201 lines (split into types.ts, lock-resolution.ts, upload.ts)\n- **deployments/service.ts**: 343→248 lines (delete logic → delete.ts)\n- All files under 250 lines\n\n### Files Changed (new)\n- `src/modules/artifacts/types.ts` (66 lines)\n- `src/modules/artifacts/lock-resolution.ts` (198 lines)  \n- `src/modules/artifacts/upload.ts` (85 lines)\n- `src/modules/deployments/delete.ts` (90 lines)\n- `drizzle/0009_deployment_audit_trail.sql`",
+      "allTestsPassed": true
+    }
+  ]
 }

@@ -57,6 +57,13 @@
 			"when": 1749600000000,
 			"tag": "0008_artifacts_deployments_isolation",
 			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1749800000000,
+			"tag": "0009_deployment_audit_trail",
+			"breakpoints": true
 		}
 	]
 }

@@ -679,6 +679,38 @@
       "category": "security",
       "learnedAt": "2026-06-04T15:24:21.100Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-serial-decimal-hex-conversion",
+      "rule": "Serial numbers use decimal display format (AA.M.PP.SSS.NNNNN, e.g. 26.5.15.001.00777) converted to 16-char HEX controller ID (e.g. 1A50F00100309FFF) via EEPROM nibble packing. The conversion (decimalSerialToHex/hexToDecimalSerial) lives in src/common/utils/serial-number.ts. Reserved FFF nibbles (byte[6] low + byte[7]) validate that a HEX string is a real serial number — non-serial HEX (STM32 UID) falls back to dotted-hex display. The API accepts both decimal and HEX input for backward compatibility. The DB stores serialNumber=HEX (controllerId), serialDisplay=decimal.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-06T22:30:32.361Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-serial-bcd-packing",
+      "rule": "Serial numbers use BCD packing (NOT binary bit-shift packing). Algorithm: AA→binary byte, then M(1 hex char 0-C)+PP(2 digits)+SSS(3 digits)+NNNNNN(5 digits)→nibble stream+FFF reserved = 14 nibbles = 7 bytes. Total: 8 bytes = 16 hex chars. Month is 1 hex char: 0-9=Jan-Sep, A=Oct, B=Nov, C=Dec. Each display digit becomes exactly 1 nibble in the EEPROM. The previous binary packing algorithm (with bit shifts and masks) was INCORRECT — validated against real EEPROM reads from the device.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-07T15:46:20.929Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-push-without-approval",
+      "rule": "NEVER push to remote without explicit human approval. After implementing changes: (1) present plan, (2) wait for approval, (3) implement, (4) present results, (5) wait for explicit \"push\" authorization. Pushing without permission breaks trust and may deploy broken code to production.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-10T16:21:25.055Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-action-plan-before-code",
+      "rule": "ALWAYS present a structured action plan BEFORE writing any code. The plan must include: (1) problem analysis, (2) files to change with specific modifications, (3) estimated line count per file, (4) performance/cost impact, (5) test strategy, (6) risks and mitigations. Wait for human approval of the plan before implementing. Never start coding without an approved plan.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-10T16:21:38.258Z",
+      "reinforcementCount": 1
     }
   ]
 }

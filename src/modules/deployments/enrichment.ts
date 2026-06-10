@@ -40,6 +40,14 @@ export interface EnrichedDeployment {
 		complete: boolean;
 		valid: boolean;
 	};
+	/** Audit: artifact name at deployment time (survives artifact deletion). */
+	artifactName?: string;
+	/** Audit: artifact version at deployment time. */
+	artifactVersion?: string;
+	/** Audit: original uploaded filename. */
+	artifactOriginalFile?: string;
+	/** Audit: number of targets assigned. */
+	targetCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,9 +144,8 @@ export function summarizeStatistics(
 }
 
 // ---------------------------------------------------------------------------
-// Display name extraction
+// Display name extraction + Orphaned deployment fallback
 // ---------------------------------------------------------------------------
-
 /** Extract user-visible deployment name from DS description. Format: "{name} | artifact: ..." */
 function extractDeploymentDisplayName(ds: HawkbitDistributionSet): string | undefined {
 	const desc = ds.description ?? '';
@@ -146,7 +153,47 @@ function extractDeploymentDisplayName(ds: HawkbitDistributionSet): string | unde
 	return match ? match[1]!.trim() : undefined;
 }
 
-// ---------------------------------------------------------------------------
+export interface LocalDeploymentRecord {
+	id: string;
+	name: string;
+	hawkbitDsId: number;
+	artifactType: string;
+	artifactName: string | null;
+	artifactVersion: string | null;
+	artifactOriginalFile: string | null;
+	targetCount: number | null;
+	targetIds: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/** Enrich an orphaned deployment (DS deleted in hawkBit) using local DB data only.
+ *  Preserves full audit history after artifact deletion.
+ */
+export function enrichOrphanedDeployment(local: LocalDeploymentRecord): EnrichedDeployment {
+	const targetCount = local.targetCount ?? 0;
+	return {
+		id: local.hawkbitDsId,
+		name: local.name,
+		displayName: local.name,
+		status: 'completed' as DeploymentStatusType,
+		statistics: {
+			totalTargets: targetCount,
+			finished: targetCount,
+			failed: 0,
+			inProgress: 0,
+			pending: 0,
+			canceled: 0,
+		},
+		dsMetadata: { locked: false, complete: true, valid: true },
+		artifactName: local.artifactName ?? undefined,
+		artifactVersion: local.artifactVersion ?? undefined,
+		artifactOriginalFile: local.artifactOriginalFile ?? undefined,
+		targetCount: targetCount || undefined,
+		createdAt: local.createdAt.getTime(),
+		lastModifiedAt: local.updatedAt.getTime(),
+	};
+}
 // Enrichment: DS → EnrichedDeployment
 // ---------------------------------------------------------------------------
 

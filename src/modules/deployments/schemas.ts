@@ -105,6 +105,14 @@ export const EnrichedDistributionSetSchema = t.Object({
 	status: DeploymentStatusSchema,
 	statistics: DeploymentStatisticsSummarySchema,
 	dsMetadata: DSMetadataSchema,
+	/** Audit: artifact name at deployment time (survives artifact deletion). */
+	artifactName: t.Optional(t.String()),
+	/** Audit: artifact version at deployment time. */
+	artifactVersion: t.Optional(t.String()),
+	/** Audit: original uploaded filename. */
+	artifactOriginalFile: t.Optional(t.String()),
+	/** Audit: number of targets assigned. */
+	targetCount: t.Optional(t.Number()),
 });
 
 // ── hawkBit Action Schema ────────────────────────────────────────────

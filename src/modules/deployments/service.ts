@@ -1,5 +1,5 @@
 import { db } from '@common/db';
-import { deployments, devices } from '@common/db/schema';
+import { artifacts, deployments } from '@common/db/schema';
 import {
 	type NinbusArtifactType,
 	getOrCreateDistributionSetType,
@@ -8,13 +8,14 @@ import {
 	hawkbitTargets,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { and, eq, inArray } from 'drizzle-orm';
 
-import { enrichDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
+import { enrichDeployment, enrichOrphanedDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
+export { deleteDeployment, requireDeploymentOwnership } from './delete';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
-import { forceCloseActiveActions, forceCloseCancelActions, forceCloseActiveActionsForDS } from './actions';
+import { forceCloseActiveActions, forceCloseCancelActions } from './actions';
 export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
 import { resolveHawkbitTargetIds, findSoftwareModule } from './helpers';
 
@@ -29,21 +30,6 @@ export class DeploymentNotFoundError extends Error {
 	constructor(message = 'Deployment not found') {
 		super(message);
 		this.name = 'DeploymentNotFoundError';
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Ownership check (same pattern as artifacts)
-// ---------------------------------------------------------------------------
-
-async function requireOwnership(companyId: string, hawkbitDsId: number): Promise<void> {
-	const [local] = await db
-		.select({ companyId: deployments.companyId })
-		.from(deployments)
-		.where(eq(deployments.hawkbitDsId, hawkbitDsId));
-
-	if (!local || local.companyId !== companyId) {
-		throw new DeploymentNotFoundError(`Deployment #${hawkbitDsId} not found in this company`);
 	}
 }
 
@@ -150,12 +136,31 @@ export async function createDeployment(companyId: string, userId: string, data: 
 		}
 	}
 
-	// Write-through: register in local DB
+	// Write-through: register in local DB with audit data
+	// Resolve artifact metadata for audit trail
+	let artifactDisplayName = data.artifactName;
+	let artifactOrigFile: string | null = null;
+	try {
+		const [localArtifact] = await db
+			.select({ name: artifacts.name, originalFilename: artifacts.originalFilename })
+			.from(artifacts)
+			.where(eq(artifacts.hawkbitSmId, sm.id));
+		if (localArtifact) {
+			artifactDisplayName = localArtifact.name;
+			artifactOrigFile = localArtifact.originalFilename ?? null;
+		}
+	} catch { /* non-critical */ }
+
 	await db.insert(deployments).values({
 		companyId,
 		hawkbitDsId: ds.id,
 		name: data.name,
 		artifactType: data.artifactType,
+		artifactName: artifactDisplayName,
+		artifactVersion: sm.version,
+		artifactOriginalFile: artifactOrigFile,
+		targetCount: targetIds.length,
+		targetIds: JSON.stringify(targetIds),
 		createdBy: userId,
 	});
 
@@ -189,88 +194,10 @@ export async function getDeploymentStatistics(dsId: number) {
 	};
 }
 
-/**
- * Delete a deployment — verify ownership, then stop + delete + clean up.
+/** List deployments for a specific company (like getCompanyDevices).
+ *  Uses local DB as source of truth — hawkBit enrichment is optional.
+ *  Orphaned deployments (DS deleted) show audit data from local records.
  */
-export async function deleteDeployment(dsId: number, companyId: string): Promise<void> {
-	await requireOwnership(companyId, dsId);
-
-	appLogger.info('[DEPLOY] Deleting deployment DS #%d...', dsId);
-
-	// Step 1: Collect target IDs before force-closing
-	let targetControllerIds: string[] = [];
-	try {
-		const targets = await hawkbitDistributionSets.getAssignedTargets(dsId, { limit: 500 });
-		targetControllerIds = targets.content.map((t) => t.controllerId);
-		appLogger.info('[DEPLOY] DS #%d has %d assigned targets', dsId, targetControllerIds.length);
-	} catch (e) {
-		appLogger.warn('[DEPLOY] Could not list targets for DS #%d: %s', dsId, e);
-	}
-
-	// Step 2: Force-close ALL active actions for every target in this DS
-	if (targetControllerIds.length > 0) {
-		await forceCloseActiveActionsForDS(dsId);
-	}
-
-	// Step 3: Delete the DS from hawkBit
-	await hawkbitDistributionSets.delete(dsId);
-	appLogger.info('[DEPLOY] DS #%d deleted from hawkBit', dsId);
-
-	// Step 4: Delete local record
-	await db.delete(deployments).where(eq(deployments.hawkbitDsId, dsId));
-
-	// Step 5: Clear local device status for affected targets
-	if (targetControllerIds.length > 0) {
-		try {
-			await db
-				.update(devices)
-				.set({
-					hawkbitUpdateStatus: 'in_sync',
-					updatedAt: new Date(),
-				})
-				.where(
-					inArray(devices.hawkbitTargetId, targetControllerIds),
-				);
-			appLogger.info(
-				`[DEPLOY] Cleared pending status for ${targetControllerIds.length} local devices`,
-			);
-
-			// Protect these targets from sync engine overwriting status back to 'pending'
-			const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
-			protectTargetStatuses(targetControllerIds, 'in_sync');
-		} catch (e) {
-			appLogger.warn('[DEPLOY] Could not clear local device status: %s', e);
-		}
-	}
-
-	// Step 6: Emit SSE events so frontend updates immediately
-	if (targetControllerIds.length > 0) {
-		try {
-			const { sseEmitter } = await import('@common/sse');
-			sseEmitter.emit(companyId, 'deployment.deleted', {
-				deploymentId: dsId,
-				timestamp: new Date().toISOString(),
-			});
-			const localDevices = await db
-				.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId })
-				.from(devices)
-				.where(inArray(devices.hawkbitTargetId, targetControllerIds));
-			for (const d of localDevices) {
-				sseEmitter.emit(companyId, 'device.status', {
-					deviceId: d.id,
-					connectionStatus: 'disconnected',
-					hawkbitUpdateStatus: 'in_sync',
-					lastPollAt: null,
-					ipAddress: null,
-				});
-			}
-		} catch { /* SSE failure is non-critical */ }
-	}
-
-	appLogger.info('[DEPLOY] Deployment DS #%d fully deleted and cleaned up', dsId);
-}
-
-/** List deployments for a specific company (like getCompanyDevices). */
 export async function listDeployments(companyId: string, _params?: { offset?: number; limit?: number }) {
 	// 1. Get local deployment records for this company
 	let localDeployments: any[];
@@ -288,18 +215,32 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 		return { data: [], total: 0 };
 	}
 
-	// 2. Fetch DS data from hawkBit by IDs (company-scoped)
+	// 2. Try to fetch DS data from hawkBit
 	const dsIds = localDeployments.map((d: any) => d.hawkbitDsId);
+
+	let hawkbitDSs: any[] = [];
 	try {
-		const hawkbitDSs = await hawkbitDistributionSets.listByIds(dsIds);
-		// Filter out soft-deleted DSes
-		const active = hawkbitDSs.filter((ds) => !ds.deleted);
-		const enriched = await Promise.all(active.map((ds) => enrichDeployment(ds)));
-		return { data: enriched, total: enriched.length };
+		hawkbitDSs = await hawkbitDistributionSets.listByIds(dsIds);
 	} catch (hbError: any) {
 		appLogger.warn('[DEPLOYMENTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
-		return { data: [], total: 0 };
+		// hawkBit down — return all from local records as orphaned
+		const enriched = localDeployments.map((local) => enrichOrphanedDeployment(local));
+		return { data: enriched, total: enriched.length };
 	}
+
+	// 3. Enrich: active DSes from hawkBit + orphaned from local DB
+	const hawkbitMap = new Map(hawkbitDSs.filter((ds) => !ds.deleted).map((ds: any) => [ds.id, ds]));
+	const enriched = await Promise.all(
+		localDeployments.map(async (local) => {
+			const hawkbitDS = hawkbitMap.get(local.hawkbitDsId);
+			if (hawkbitDS) {
+				return enrichDeployment(hawkbitDS);
+			}
+			// DS deleted/orphaned — use local audit data
+			return enrichOrphanedDeployment(local);
+		}),
+	);
+	return { data: enriched, total: enriched.length };
 }
 
 export async function getDeploymentTargets(dsId: number, params?: { offset?: number; limit?: number }) {

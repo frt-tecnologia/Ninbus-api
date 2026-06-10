@@ -13,9 +13,8 @@ import {
 import { HawkbitApiError } from '@common/hawkbit/http';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { deployments } from '@common/db/schema';
 import { forceCloseActiveActionsForDS } from '@modules/deployments/actions';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 import { packageArtifact } from './tar-packager';
@@ -429,23 +428,19 @@ export async function deleteArtifact(
 			}
 		}
 
-		// Batch-delete local deployment records
-		if (cleanedUp.length > 0) {
-			try {
-				await db.delete(deployments).where(
-					inArray(deployments.hawkbitDsId, cleanedUp.map((c) => c.dsId)),
-				);
-			} catch (dbErr) {
-				appLogger.warn('[ARTIFACT] Could not clean local deployment records: %s', dbErr);
-			}
-		}
+		// Preserve local deployment records for history — only delete DS in hawkBit
+		// to unlock the SM. The local records keep name, artifactType, dates for audit.
+		appLogger.info(
+			'[ARTIFACT] Preserved %d local deployment records for history',
+			cleanedUp.length,
+		);
 
 		// Retry SM delete — now unlocked
 		await hawkbitSoftwareModules.delete(smId);
 		await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
 
 		const msg = cleanedUp.length > 0
-			? `Artefato deletado. ${cleanedUp.length} implantação(ões) concluída(s) foram removidas.`
+			? `Artefato deletado. ${cleanedUp.length} implantação(ões) concluída(s) desvinculada(s). O histórico de deployment foi preservado.`
 			: 'Artifact deleted successfully';
 
 		return { deleted: true, message: msg, cleanedUp: cleanedUp.length > 0 ? cleanedUp : undefined };

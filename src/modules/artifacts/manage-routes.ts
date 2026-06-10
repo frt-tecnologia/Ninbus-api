@@ -10,7 +10,7 @@ import {
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
 import { Elysia, t } from 'elysia';
-import { ArtifactNotFoundError, ArtifactValidationError } from './service';
+import { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './service';
 import * as service from './service';
 
 /**
@@ -110,7 +110,7 @@ export const artifactManageRoutes = withAuth(
 		async ({ params, set }) => {
 			try {
 				const result = await service.deleteArtifact(params.companyId, Number(params.artifactId));
-				return { message: result.message };
+				return { message: result.message, cleanedUp: result.cleanedUp };
 			} catch (error) {
 				if (error instanceof ArtifactNotFoundError) {
 					set.status = 404;
@@ -119,6 +119,10 @@ export const artifactManageRoutes = withAuth(
 				if (error instanceof ArtifactValidationError) {
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
+				}
+				if (error instanceof ArtifactLockedError) {
+					set.status = 409;
+					return { error: 'Locked', message: error.message, blockingDS: error.blockingDS };
 				}
 				appLogger.warn('[ARTIFACTS] Failed to delete artifact:', error);
 				set.status = 503;
@@ -140,6 +144,7 @@ export const artifactManageRoutes = withAuth(
 			response: {
 				200: ArtifactDeleteResponseSchema,
 				403: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},

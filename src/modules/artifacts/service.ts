@@ -6,14 +6,17 @@ import {
 	NINBUS_ARTIFACT_TYPE_META,
 	type NinbusArtifactType,
 	getOrCreateSoftwareModuleType,
+	hawkbitDistributionSets,
 	hawkbitSoftwareModules,
 	resolveArtifactType,
 } from '@common/hawkbit/client';
 import { HawkbitApiError } from '@common/hawkbit/http';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
-import { and, eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { deployments } from '@common/db/schema';
+import { forceCloseActiveActionsForDS } from '@modules/deployments/actions';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 import { packageArtifact } from './tar-packager';
 
@@ -44,6 +47,8 @@ export interface EnrichedSoftwareModule extends HawkbitSoftwareModule {
 	ninbusMeta: (typeof NINBUS_ARTIFACT_TYPE_META)[NinbusArtifactType] | null;
 	artifacts: ArtifactBinary[];
 	size?: number;
+	lockedByDistributionSets: Array<{ id: number; name: string; status: 'active' | 'completed' }>;
+	deletable: boolean;
 }
 
 // Error classes
@@ -68,6 +73,16 @@ export class ArtifactNotFoundError extends Error {
 	constructor(message = 'Artifact not found') {
 		super(message);
 		this.name = 'ArtifactNotFoundError';
+	}
+}
+
+export class ArtifactLockedError extends Error {
+	constructor(
+		message: string,
+		public readonly blockingDS: Array<{ id: number; name: string; activeTargets: number }>,
+	) {
+		super(message);
+		this.name = 'ArtifactLockedError';
 	}
 }
 
@@ -103,12 +118,60 @@ function extractDisplayName(sm: HawkbitSoftwareModule): string {
 	return match ? match[1]!.trim() : sm.name;
 }
 
-/** Enrich SM with Ninbus metadata + artifact binaries (file sizes, hashes). */
+/** Resolve lock status for a Software Module — checks DS deployment activity in parallel. */
+async function resolveLockStatus(smId: number, smLocked: boolean): Promise<{
+	lockedByDistributionSets: Array<{ id: number; name: string; status: 'active' | 'completed' }>;
+	deletable: boolean;
+}> {
+	if (!smLocked) {
+		return { lockedByDistributionSets: [], deletable: true };
+	}
+
+	try {
+		const dsList = await hawkbitDistributionSets.findByModule(smId);
+		const activeDS = dsList.filter((ds) => !ds.deleted);
+
+		if (activeDS.length === 0) {
+			return { lockedByDistributionSets: [], deletable: true };
+		}
+
+		// Fetch statistics for all DS in parallel
+		const statsResults = await Promise.all(
+			activeDS.map(async (ds) => {
+				try {
+					const stats = await hawkbitDistributionSets.getStatistics(ds.id);
+					const actions = stats.actions ?? {};
+					const total = actions['total'] ?? 0;
+					const finished = actions['FINISHED'] ?? 0;
+					const error = (actions['ERROR'] ?? 0) + (actions['WARNING'] ?? 0);
+					const canceled = (actions['CANCELED'] ?? 0) + (actions['CANCELING'] ?? 0);
+					const done = finished + error + canceled;
+					const isActive = total > 0 && done < total;
+					return { id: ds.id, name: ds.name, status: isActive ? 'active' as const : 'completed' as const };
+				} catch {
+					// If stats fail, assume active (fail-safe)
+					return { id: ds.id, name: ds.name, status: 'active' as const };
+				}
+			}),
+		);
+
+		const hasActive = statsResults.some((ds) => ds.status === 'active');
+		return { lockedByDistributionSets: statsResults, deletable: !hasActive };
+	} catch {
+		// If findByModule fails, assume not deletable (fail-safe)
+		return { lockedByDistributionSets: [], deletable: false };
+	}
+}
+
+/** Enrich SM with Ninbus metadata + artifact binaries + lock status. */
 export async function enrichSoftwareModule(sm: HawkbitSoftwareModule): Promise<EnrichedSoftwareModule> {
 	const artifactType = resolveArtifactType(sm);
 	let smArtifacts: HawkbitArtifact[] = [];
 	try { smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
 	const totalSize = smArtifacts.reduce((s, a) => s + (a.size ?? 0), 0);
+
+	const lockInfo = await resolveLockStatus(sm.id, sm.locked ?? false);
+
 	return {
 		...sm,
 		name: extractDisplayName(sm),
@@ -118,6 +181,8 @@ export async function enrichSoftwareModule(sm: HawkbitSoftwareModule): Promise<E
 		ninbusMeta: artifactType ? NINBUS_ARTIFACT_TYPE_META[artifactType] : null,
 		artifacts: smArtifacts.map((a) => ({ id: a.id, filename: a.providedFilename ?? undefined, size: a.size ?? undefined, hashes: a.hashes ?? undefined })),
 		size: totalSize || undefined,
+		lockedByDistributionSets: lockInfo.lockedByDistributionSets,
+		deletable: lockInfo.deletable,
 	};
 }
 
@@ -267,31 +332,127 @@ export async function getArtifact(companyId: string, smId: number): Promise<Enri
 	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId));
 }
 
-/** Delete a software module — verify ownership, then delete from hawkBit + local DB. */
-export async function deleteArtifact(companyId: string, smId: number): Promise<{ deleted: boolean; message: string }> {
+/** Delete a software module — try-first, resolve-on-423.
+ *
+ * hawkBit never auto-unlocks DS after deployment completes. So when a SM is locked (423),
+ * we check which DS block it, classify them as active/completed, and auto-clean completed ones.
+ * Only blocks deletion when there are genuinely active deployments.
+ */
+export async function deleteArtifact(
+	companyId: string,
+	smId: number,
+): Promise<{ deleted: boolean; message: string; cleanedUp?: Array<{ dsId: number; dsName: string }> }> {
 	await requireOwnership(companyId, smId);
 	requireHawkbit();
 
 	try {
+		// Happy path — no DS blocking
 		await hawkbitSoftwareModules.delete(smId);
 	} catch (error) {
 		if (error instanceof HawkbitApiError && error.status === 404) {
-			// SM already deleted in hawkBit — clean up local record
 			await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
 			return { deleted: true, message: 'Artifact already deleted' };
 		}
-		throw error;
+
+		if (!(error instanceof HawkbitApiError && error.status === 423)) {
+			throw error; // 503 in handler
+		}
+
+		// 423 Locked — resolve which DS are blocking and auto-clean completed ones
+		appLogger.info('[ARTIFACT] SM #%d locked (423). Resolving blocking DS...', smId);
+
+		const dsList = await hawkbitDistributionSets.findByModule(smId);
+		const activeDS = dsList.filter((ds) => !ds.deleted);
+
+		if (activeDS.length === 0) {
+			// No DS found but hawkBit says locked — stale state, retry delete
+			appLogger.warn('[ARTIFACT] SM #%d locked but no active DS found. Retrying delete...', smId);
+			await hawkbitSoftwareModules.delete(smId);
+			await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
+			return { deleted: true, message: 'Artifact deleted successfully' };
+		}
+
+		// Fetch statistics in parallel to classify each DS
+		const classified = await Promise.all(
+			activeDS.map(async (ds) => {
+				try {
+					const stats = await hawkbitDistributionSets.getStatistics(ds.id);
+					const actions = stats.actions ?? {};
+					const total = actions['total'] ?? 0;
+					const finished = actions['FINISHED'] ?? 0;
+					const error = (actions['ERROR'] ?? 0) + (actions['WARNING'] ?? 0);
+					const canceled = (actions['CANCELED'] ?? 0) + (actions['CANCELING'] ?? 0);
+					const done = finished + error + canceled;
+					const isActive = total > 0 && done < total;
+					return { ds, isActive, total, done };
+				} catch {
+					return { ds, isActive: true, total: 0, done: 0 }; // fail-safe
+				}
+			}),
+		);
+
+		const activeBlocking = classified.filter((c) => c.isActive);
+		const completedBlocking = classified.filter((c) => !c.isActive);
+
+		// If any DS is genuinely active → 409
+		if (activeBlocking.length > 0) {
+			throw new ArtifactLockedError(
+				`Artefato em uso por ${activeBlocking.length} implantação(ões) ativa(s). Finalize ou cancele o(s) deployment(s) antes de deletar.`,
+				activeBlocking.map((c) => ({
+					id: c.ds.id,
+					name: c.ds.name,
+					activeTargets: c.total - c.done,
+				})),
+			);
+		}
+
+		// All completed — auto-clean DS then retry SM delete
+		appLogger.info(
+			'[ARTIFACT] SM #%d locked by %d completed DS. Auto-cleaning...',
+			smId, completedBlocking.length,
+		);
+
+		const cleanedUp: Array<{ dsId: number; dsName: string }> = [];
+		for (const { ds } of completedBlocking) {
+			try {
+				// Force-close any lingering actions before deleting DS
+				await forceCloseActiveActionsForDS(ds.id);
+				await hawkbitDistributionSets.delete(ds.id);
+				appLogger.info('[ARTIFACT] Auto-cleaned DS #%d (%s)', ds.id, ds.name);
+				cleanedUp.push({ dsId: ds.id, dsName: ds.name });
+			} catch (dsErr) {
+				appLogger.error('[ARTIFACT] Failed to auto-clean DS #%d: %s', ds.id, dsErr);
+				throw new ArtifactLockedError(
+					`Falha ao limpar distribution set #${ds.id}. Não foi possível deletar o artefato.`,
+					[{ id: ds.id, name: ds.name, activeTargets: 0 }],
+				);
+			}
+		}
+
+		// Batch-delete local deployment records
+		if (cleanedUp.length > 0) {
+			try {
+				await db.delete(deployments).where(
+					inArray(deployments.hawkbitDsId, cleanedUp.map((c) => c.dsId)),
+				);
+			} catch (dbErr) {
+				appLogger.warn('[ARTIFACT] Could not clean local deployment records: %s', dbErr);
+			}
+		}
+
+		// Retry SM delete — now unlocked
+		await hawkbitSoftwareModules.delete(smId);
+		await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
+
+		const msg = cleanedUp.length > 0
+			? `Artefato deletado. ${cleanedUp.length} implantação(ões) concluída(s) foram removidas.`
+			: 'Artifact deleted successfully';
+
+		return { deleted: true, message: msg, cleanedUp: cleanedUp.length > 0 ? cleanedUp : undefined };
 	}
 
-	// Delete local record
+	// Happy path succeeded — delete local record
 	await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
-
-	// Verify deletion in hawkBit
-	try {
-		const check = await hawkbitSoftwareModules.get(smId);
-		if (!check.deleted) appLogger.warn('[ARTIFACT] SM %d still active after delete', smId);
-	} catch { /* 404 = hard-deleted */ }
-
 	return { deleted: true, message: 'Artifact deleted successfully' };
 }
 

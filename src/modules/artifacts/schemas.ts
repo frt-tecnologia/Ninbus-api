@@ -129,6 +129,18 @@ export const SoftwareModuleSchema = t.Object({
 	),
 	/** Total file size in bytes across all artifact binaries. */
 	size: t.Optional(t.Number({ description: 'Total artifact file size in bytes' })),
+	/** Distribution sets locking this software module, with real deployment status. */
+	lockedByDistributionSets: t.Optional(
+		t.Array(
+			t.Object({
+				id: t.Number(),
+				name: t.String(),
+				status: t.Union([t.Literal('active'), t.Literal('completed')]),
+			}),
+		),
+	),
+	/** Whether this artifact can be safely deleted. */
+	deletable: t.Optional(t.Boolean({ description: 'Se o artefato pode ser deletado' })),
 });
 
 export const ArtifactMetadataSchema = t.Object({
@@ -177,6 +189,14 @@ export const ArtifactUploadResponseSchema = t.Object({
 
 export const ArtifactDeleteResponseSchema = t.Object({
 	message: t.String(),
+	cleanedUp: t.Optional(
+		t.Array(
+			t.Object({
+				dsId: t.Number(),
+				dsName: t.String(),
+			}),
+		),
+	),
 });
 
 export const DownloadArtifactResponseSchema = t.Object({

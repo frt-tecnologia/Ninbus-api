@@ -1,5 +1,5 @@
 import { db } from '@common/db';
-import { artifacts } from '@common/db/schema';
+import { artifacts, deployments } from '@common/db/schema';
 import {
 	type HawkbitArtifact,
 	type HawkbitSoftwareModule,
@@ -13,9 +13,10 @@ import {
 import { HawkbitApiError } from '@common/hawkbit/http';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { forceCloseActiveActionsForDS } from '@modules/deployments/actions';
+import type { HawkbitDistributionSet } from '@common/hawkbit/client';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 import { packageArtifact } from './tar-packager';
 
@@ -117,18 +118,47 @@ function extractDisplayName(sm: HawkbitSoftwareModule): string {
 	return match ? match[1]!.trim() : sm.name;
 }
 
+/** Find DS from local deployments table that contain a given SM.
+ *  hawkBit RSQL doesn't support modules.id filter, so we use local records
+ *  then verify in hawkBit which DS actually contain the SM.
+ */
+async function findBlockingDS(companyId: string, smId: number): Promise<HawkbitDistributionSet[]> {
+	// Get DS IDs from local deployments for this company
+	const localDS = await db
+		.select({ hawkbitDsId: deployments.hawkbitDsId })
+		.from(deployments)
+		.where(eq(deployments.companyId, companyId));
+
+	if (localDS.length === 0) return [];
+
+	// Fetch those DS from hawkBit and check which contain the SM
+	const dsResults = await Promise.all(
+		localDS.map((row) =>
+			hawkbitDistributionSets.get(row.hawkbitDsId).catch(() => null),
+		),
+	);
+
+	return dsResults.filter(
+		(ds): ds is HawkbitDistributionSet =>
+			ds !== null && !ds.deleted && (ds.modules ?? []).some((m) => m.id === smId),
+	);
+}
+
 /** Resolve lock status for a Software Module — checks DS deployment activity in parallel. */
-async function resolveLockStatus(smId: number, smLocked: boolean): Promise<{
-	lockedByDistributionSets: Array<{ id: number; name: string; status: 'active' | 'completed' }>;
-	deletable: boolean;
-}> {
+async function resolveLockStatus(
+	companyId: string,
+	smId: number,
+	smLocked: boolean,
+): Promise<{
+		lockedByDistributionSets: Array<{ id: number; name: string; status: 'active' | 'completed' }>;
+		deletable: boolean;
+	}> {
 	if (!smLocked) {
 		return { lockedByDistributionSets: [], deletable: true };
 	}
 
 	try {
-		const dsList = await hawkbitDistributionSets.findByModule(smId);
-		const activeDS = dsList.filter((ds) => !ds.deleted);
+		const activeDS = await findBlockingDS(companyId, smId);
 
 		if (activeDS.length === 0) {
 			return { lockedByDistributionSets: [], deletable: true };
@@ -157,19 +187,22 @@ async function resolveLockStatus(smId: number, smLocked: boolean): Promise<{
 		const hasActive = statsResults.some((ds) => ds.status === 'active');
 		return { lockedByDistributionSets: statsResults, deletable: !hasActive };
 	} catch {
-		// If findByModule fails, assume not deletable (fail-safe)
+		// If lookup fails, assume not deletable (fail-safe)
 		return { lockedByDistributionSets: [], deletable: false };
 	}
 }
 
 /** Enrich SM with Ninbus metadata + artifact binaries + lock status. */
-export async function enrichSoftwareModule(sm: HawkbitSoftwareModule): Promise<EnrichedSoftwareModule> {
+export async function enrichSoftwareModule(sm: HawkbitSoftwareModule, companyId?: string): Promise<EnrichedSoftwareModule> {
 	const artifactType = resolveArtifactType(sm);
 	let smArtifacts: HawkbitArtifact[] = [];
 	try { smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
 	const totalSize = smArtifacts.reduce((s, a) => s + (a.size ?? 0), 0);
 
-	const lockInfo = await resolveLockStatus(sm.id, sm.locked ?? false);
+	// Only resolve lock status if companyId provided and SM is locked (avoids unnecessary API calls)
+	const lockInfo = companyId
+		? await resolveLockStatus(companyId, sm.id, sm.locked ?? false)
+		: { lockedByDistributionSets: [], deletable: true };
 
 	return {
 		...sm,
@@ -316,7 +349,7 @@ export async function listArtifacts(companyId: string, _params?: {
 	try {
 		const hawkbitSMs = await hawkbitSoftwareModules.listByIds(smIds);
 		// 3. Build lookup by hawkbitSmId for enrichment
-		const enriched = await Promise.all(hawkbitSMs.map(enrichSoftwareModule));
+		const enriched = await Promise.all(hawkbitSMs.map((sm) => enrichSoftwareModule(sm, companyId)));
 		return { data: enriched, total: enriched.length };
 	} catch (hbError: any) {
 		appLogger.warn('[ARTIFACTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
@@ -328,7 +361,7 @@ export async function listArtifacts(companyId: string, _params?: {
 export async function getArtifact(companyId: string, smId: number): Promise<EnrichedSoftwareModule> {
 	await requireOwnership(companyId, smId);
 	requireHawkbit();
-	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId));
+	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId), companyId);
 }
 
 /** Delete a software module — try-first, resolve-on-423.
@@ -360,8 +393,7 @@ export async function deleteArtifact(
 		// 423 Locked — resolve which DS are blocking and auto-clean completed ones
 		appLogger.info('[ARTIFACT] SM #%d locked (423). Resolving blocking DS...', smId);
 
-		const dsList = await hawkbitDistributionSets.findByModule(smId);
-		const activeDS = dsList.filter((ds) => !ds.deleted);
+		const activeDS = await findBlockingDS(companyId, smId);
 
 		if (activeDS.length === 0) {
 			// No DS found but hawkBit says locked — stale state, retry delete

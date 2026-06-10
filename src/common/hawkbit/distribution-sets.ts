@@ -22,15 +22,6 @@ export const hawkbitDistributionSets = {
 		return hawkbitRequest({ method: 'GET', path: `/rest/v1/distributionsets/${dsId}` });
 	},
 
-	/** Find all distribution sets that contain a given software module. */
-	findByModule(smId: number): Promise<HawkbitDistributionSet[]> {
-		return hawkbitRequest<HawkbitPagedResponse<HawkbitDistributionSet>>({
-			method: 'GET',
-			path: '/rest/v1/distributionsets',
-			query: { q: `modules.id==${smId}`, limit: 100 },
-		}).then((res) => res.content);
-	},
-
 	create(data: {
 		name: string;
 		version?: string;

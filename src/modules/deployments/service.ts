@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 
 import { enrichDeployment, enrichOrphanedDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
 export { deleteDeployment, requireDeploymentOwnership } from './delete';
+import { requireDeploymentOwnership } from './delete';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
 import { forceCloseActiveActions, forceCloseCancelActions } from './actions';

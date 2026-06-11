@@ -13,6 +13,8 @@ import { eq } from 'drizzle-orm';
 // Re-exports from split files
 export { resolveLockStatus, deleteArtifact } from './lock-resolution';
 export { uploadArtifact } from './upload';
+// Local import for internal use (re-export does NOT create a local binding)
+import { resolveLockStatus } from './lock-resolution';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 
 // Types

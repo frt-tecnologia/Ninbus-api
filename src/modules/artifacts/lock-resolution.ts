@@ -19,7 +19,8 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
 import { forceCloseActiveActionsForDS } from '@modules/deployments/actions';
-import { requireOwnership, ArtifactLockedError } from './service';
+import { requireOwnership } from './service';
+import { ArtifactLockedError } from './types';
 
 /** Find DS from local deployments that contain a given SM. */
 async function findBlockingDS(companyId: string, smId: number): Promise<HawkbitDistributionSet[]> {

@@ -179,7 +179,7 @@ export async function createDeployment(companyId: string, userId: string, data: 
 
 /** Get deployment — verify ownership first. */
 export async function getDeployment(companyId: string, dsId: number) {
-	await requireOwnership(companyId, dsId);
+	await requireDeploymentOwnership(companyId, dsId);
 	return enrichDeployment(await hawkbitDistributionSets.get(dsId));
 }
 

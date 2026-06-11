@@ -134,6 +134,10 @@ catch (error) {
 
 GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
 
+**Sync adaptativo:** Quando detecta devices pending, ativa fast sync (5s), pausa sync normal (30s), e polla action status para emitir SSE de progresso em tempo real. Quando deploy termina, retoma sync normal.
+
+**Scalability:** Max 50 devices/ciclo com round-robin, cache de action para skip de polls redundantes, deduplicação por controllerId, concurrency limit 10.
+
 ### Artifact Tar Packaging
 
 Firmware empacotado em `.tar` antes do upload ao hawkBit:
@@ -159,13 +163,47 @@ Tipos: `firmware-ninbus` (HIGH), `firmware-controller` (MED), `configuration-nfx
 
 ## SSE Events
 
+### Device & Deployment Lifecycle
+
 | Evento | Quando |
 |--------|--------|
 | `device.status` | Sync atualiza device |
 | `device.deployment` | Target recebe deployment |
+| `device.action.status` | **Progresso detalhado** (phase + progress 0-100%) durante deploy ativo |
+| `deployment.stats` | **Estatísticas agregadas** do deployment (total, finished, failed, etc.) |
 | `device.claimed` / `device.unclaimed` | Claim/unclaim |
 | `deployment.created` / `deployment.deleted` | Deploy CRUD |
 | `devices.batch` | Sync cycle completo |
+
+### device.action.status — Real-Time Progress
+
+Pushado a cada ciclo de sync quando existem devices com `hawkbitUpdateStatus='pending'`. O sync engine muda para modo rápido (5s) durante deploys ativos.
+
+```json
+{
+  "deviceId": "uuid",
+  "controllerId": "255FFFFFFFFFFFF",
+  "actionId": 42,
+  "latestStatus": "running",
+  "phase": "downloading",
+  "progress": 50,
+  "message": "downloading 50%",
+  "timestamp": "2026-06-11T14:30:00.000Z"
+}
+```
+
+`phase`: assigned → pending → downloading → downloaded → installing → installed / error / canceled
+`progress`: 0-100 (download), null (outras phases)
+
+### deployment.stats — Aggregate Statistics
+
+```json
+{
+  "deploymentId": 5,
+  "summary": { "totalTargets": 10, "finished": 7, "failed": 0, "inProgress": 2, "pending": 1, "canceled": 0 },
+  "status": "in_progress"
+}
+```
 
 ---
 

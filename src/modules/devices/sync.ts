@@ -40,6 +40,25 @@ const state: SyncState = {
 };
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
+let fastSyncTimer: ReturnType<typeof setInterval> | null = null;
+let hasPendingDeployments = false;
+
+/** Fast sync interval when deployments are active (seconds). */
+const FAST_SYNC_INTERVAL_SEC = 5;
+
+/** Check if any device has hawkbitUpdateStatus='pending'. */
+async function detectPendingDeployments(): Promise<boolean> {
+	try {
+		const [row] = await db
+			.select({ id: devices.id })
+			.from(devices)
+			.where(eq(devices.hawkbitUpdateStatus, 'pending'))
+			.limit(1);
+		return !!row;
+	} catch {
+		return false;
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -79,8 +98,13 @@ export const DeviceSyncEngine = {
 		if (syncTimer) {
 			clearInterval(syncTimer);
 			syncTimer = null;
-			appLogger.info('[SYNC] Background sync stopped');
 		}
+		if (fastSyncTimer) {
+			clearInterval(fastSyncTimer);
+			fastSyncTimer = null;
+		}
+		hasPendingDeployments = false;
+		appLogger.info('[SYNC] Background sync stopped');
 		sseEmitter.stopHeartbeat();
 	},
 
@@ -101,11 +125,59 @@ export const DeviceSyncEngine = {
 			}
 			state.lastFullSyncAt = new Date();
 			state.lastDurationMs = Date.now() - startTime;
+
+			// After each cycle, check if we need to switch to fast sync
+			await this.adjustSyncSpeed();
 		} catch (error: any) {
 			state.errors++;
 			appLogger.error('[SYNC] Cycle failed: %s', error?.message);
 		} finally {
 			state.isRunning = false;
+		}
+	},
+
+	/** Detect active deployments and switch between normal/fast sync.
+	 *  When fast sync activates, normal sync timer is PAUSED to avoid contention.
+	 *  When fast sync deactivates, normal sync timer is RESUMED.
+	 */
+	async adjustSyncSpeed() {
+		const newPending = await detectPendingDeployments();
+		const mode = hawkbitConfig.syncMode;
+		const intervalSec = hawkbitConfig.syncIntervalSec;
+
+		if (newPending && !hasPendingDeployments) {
+			// Deployments started — pause normal sync, activate fast sync
+			hasPendingDeployments = true;
+			if (mode !== 'on_demand' && intervalSec > 0) {
+				// Pause normal timer to avoid contention
+				if (syncTimer) {
+					clearInterval(syncTimer);
+					syncTimer = null;
+				}
+				appLogger.info('[SYNC] Active deployment detected — fast sync enabled (%ds), normal sync paused', FAST_SYNC_INTERVAL_SEC);
+				fastSyncTimer = setInterval(() => {
+					this.runSyncCycle().catch((err) => {
+						appLogger.debug('[SYNC] Fast cycle error: %s', err?.message);
+					});
+				}, FAST_SYNC_INTERVAL_SEC * 1000);
+			}
+		} else if (!newPending && hasPendingDeployments) {
+			// All deployments finished — deactivate fast sync, resume normal
+			hasPendingDeployments = false;
+			if (fastSyncTimer) {
+				clearInterval(fastSyncTimer);
+				fastSyncTimer = null;
+			}
+			// Resume normal timer
+			if (mode !== 'on_demand' && intervalSec > 0 && !syncTimer) {
+				syncTimer = setInterval(() => {
+					this.runSyncCycle().catch((err) => {
+						appLogger.error('[SYNC] Error: %s', err?.message);
+						state.errors++;
+					});
+				}, intervalSec * 1000);
+				appLogger.info('[SYNC] All deployments complete — fast sync disabled, normal sync resumed (%ds)', intervalSec);
+			}
 		}
 	},
 

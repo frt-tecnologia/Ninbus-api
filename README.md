@@ -300,6 +300,20 @@ Sincroniza hawkBit → DB local. GET /devices faz ZERO chamadas hawkBit.
 | `on_demand` | nenhum | por request (cache 60s) | debug / dev |
 | `hybrid` | companies com sessões ativas | single device (cache 60s) | **produção (50k+)** |
 
+### Sync Adaptativo (Deploy Ativo)
+
+Quando o sync engine detecta devices com `hawkbitUpdateStatus='pending'`:
+1. **Sync normal (30s) é pausado** — evita contenção
+2. **Fast sync (5s) é ativado** — captura progresso em tempo real
+3. **Action status polling** — consulta hawkBit action API por device pending
+4. **Round-robin** — max 50 devices/ciclo, overflow rotaciona entre ciclos
+5. **Cache de action** — skipa poll se `lastModifiedAt` não mudou
+6. **Evento final** — emite `device.action.status` terminal quando device sai de pending
+
+Quando todos os deployments terminam, fast sync desativa e sync normal (30s) é retomado.
+
+Arquivos: `sync-progress.ts` + `sync-progress-helpers.ts` no módulo deployments.
+
 ---
 
 ## SSE — Real-Time Events
@@ -310,11 +324,50 @@ Sincroniza hawkBit → DB local. GET /devices faz ZERO chamadas hawkBit.
 | `heartbeat` | timestamp | A cada 30s |
 | `device.status` | deviceId, connectionStatus, hawkbitUpdateStatus | Sync atualiza device |
 | `device.deployment` | deviceId, controllerId, status, message | Target recebe deployment |
+| `device.action.status` | deviceId, controllerId, actionId, **phase**, **progress**, message | Progresso detalhado do deployment por device |
+| `deployment.stats` | deploymentId, summary (totalTargets, finished, failed, inProgress, pending), status | Estatísticas agregadas do deployment |
 | `device.claimed` | deviceId | POST /devices claim |
 | `device.unclaimed` | deviceId | DELETE device (unclaim) |
 | `deployment.created` | deploymentId, name, artifactType | POST /deployments |
 | `deployment.deleted` | deploymentId | DELETE /deployments |
 | `devices.batch` | count | Sync cycle completo |
+
+### device.action.status — Progresso em Tempo Real
+
+Pushado durante deploy ativo via sync engine. O sync muda para modo rápido (5s) quando detecta devices com `hawkbitUpdateStatus='pending'`.
+
+```json
+{
+  "deviceId": "uuid",
+  "controllerId": "255FFFFFFFFFFFF",
+  "actionId": 42,
+  "latestStatus": "running",
+  "phase": "downloading",
+  "progress": 50,
+  "message": "downloading 50%",
+  "timestamp": "2026-06-11T14:30:00.000Z"
+}
+```
+
+Valores de `phase`: `assigned` → `pending` → `downloading` → `downloaded` → `installing` → `installed` / `error` / `canceled`
+`progress`: 0-100 durante download, `null` nas demais phases.
+
+### deployment.stats — Estatísticas Agregadas
+
+```json
+{
+  "deploymentId": 5,
+  "summary": {
+    "totalTargets": 10,
+    "finished": 7,
+    "failed": 0,
+    "inProgress": 2,
+    "pending": 1,
+    "canceled": 0
+  },
+  "status": "in_progress"
+}
+```
 
 ---
 
@@ -425,6 +478,8 @@ src/
 │   │   ├── index.ts                 # Create · list · get · delete
 │   │   ├── device-routes.ts         # Statistics · targets · actions · trail
 │   │   ├── service.ts · schemas.ts · actions.ts · enrichment.ts
+│   │   ├── sync-progress.ts         # Action status polling + SSE progress events
+│   │   ├── sync-progress-helpers.ts # DS resolution · final events · stats
 │   │   └── trail.ts · trail-schemas.ts · ddi-diagnostics.ts
 │   ├── artifacts/                   # Firmware via hawkBit Software Modules
 │   │   ├── index.ts · manage-routes.ts · service.ts · schemas.ts

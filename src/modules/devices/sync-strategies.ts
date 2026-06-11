@@ -16,6 +16,7 @@ import {
 	syncNewTargets,
 	syncPendingDevices,
 } from './sync-helpers';
+import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 
 // ---------------------------------------------------------------------------
 // Active company detection (hybrid mode)
@@ -87,6 +88,13 @@ export function emitSseBatchUpdates(
 			}
 		}
 		sseEmitter.emit(companyId, 'devices.batch', { count });
+	}
+
+	// Poll detailed action status for devices with pending updates
+	if (changedDevices) {
+		emitActionProgressEvents(changedDevices).catch((err) => {
+			appLogger.debug('[SYNC] Action progress poll failed: %s', err?.message);
+		});
 	}
 }
 

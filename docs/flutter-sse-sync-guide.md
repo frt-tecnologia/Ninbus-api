@@ -187,6 +187,65 @@ data: {"deviceId":"abc","connectionStatus":"connected","hawkbitUpdateStatus":"pe
 
 ---
 
+### 3.9 `device.action.status` — Progresso detalhado do deployment (NOVO)
+
+**Quando:** Durante deploys ativos, a cada sync cycle (5s em fast sync). Pushado para devices com `hawkbitUpdateStatus = "pending"`.
+
+```json
+{
+  "deviceId": "uuid-do-device",
+  "controllerId": "255FFFFFFFFFFFF",
+  "actionId": 42,
+  "latestStatus": "running",
+  "phase": "downloading",
+  "progress": 50,
+  "message": "downloading 50%",
+  "timestamp": "2026-06-11T14:30:00.000Z"
+}
+```
+
+**Campos:**
+
+| Campo | Tipo | Descrição |
+|-------|------|----------|
+| `deviceId` | uuid | ID do device |
+| `controllerId` | string | hawkBit target ID (serial hex) |
+| `actionId` | number | hawkBit action ID |
+| `latestStatus` | string | Último hawkBit status type (running, download, finished, error...) |
+| `phase` | string | **Campo principal para UI** — fase semântica do deployment |
+| `progress` | number | null | Progresso de download (0-100). `null` fora de downloading |
+| `message` | string | Mensagem do device para exibição |
+| `timestamp` | ISO string | Quando o status foi reportado |
+
+**Phase values:** `assigned` → `pending` → `downloading` → `downloaded` → `installing` → `installed` / `error` / `canceled`
+
+**Ação Flutter:** Atualizar barra de progresso e phase no card do device. Quando `phase` mudar para `installed` ou `error`, mostrar resultado final.
+
+---
+
+### 3.10 `deployment.stats` — Estatísticas agregadas do deployment (NOVO)
+
+**Quando:** Durante deploys ativos, junto com `device.action.status`.
+
+```json
+{
+  "deploymentId": 5,
+  "summary": {
+    "totalTargets": 10,
+    "finished": 7,
+    "failed": 0,
+    "inProgress": 2,
+    "pending": 1,
+    "canceled": 0
+  },
+  "status": "in_progress"
+}
+```
+
+**Ação Flutter:** Atualizar card do deployment na lista. Mostrar barra de progresso geral (finished/totalTargets).
+
+---
+
 ## 4. Modelo de Dados do Dispositivo
 
 ### 4.1 Device (GET /api/companies/{companyId}/devices)
@@ -518,6 +577,8 @@ Quando falha, o último entry tem `type: "error"` e `phase: "error"`:
 |---------|--------|-----------|
 | SSE `device.status` | Nada (dados já vêm no evento) | Card do device na lista |
 | SSE `device.deployment` | GET `target-statuses` se tela aberta | Painel de deployment do device |
+| SSE `device.action.status` | Nada (dados já vêm no evento) | **Barra de progresso + phase do device** |
+| SSE `deployment.stats` | Nada (dados já vêm no evento) | **Card do deployment na lista** |
 | SSE `deployment.deleted` | Remover da lista de deployments |
 | SSE `deployment.created` | GET `deployments` | Lista de deployments |
 | SSE `devices.batch` | GET `devices` | Lista completa de devices |
@@ -780,7 +841,7 @@ Quando falha, o último entry tem `type: "error"` e `phase: "error"`:
 
 ## 10. Regras de Ouro
 
-1. **Nunca fazer polling** — SSE já pusha mudanças em tempo real (a cada ~30s do sync cycle)
+1. **Nunca fazer polling** — SSE já pusha mudanças em tempo real (a cada ~30s do sync cycle, ou ~5s durante deploy ativo)
 2. **GET só ao abrir tela ou quando SSE indicar** — não refluxar dados que não mudaram
 3. **`action: null` é normal** — target assignado ao DS mas sem ação ativa = aguardando
 4. **`progress` só durante download** — nas outras phases é `null`, não mostrar barra

@@ -48,6 +48,16 @@
  *     data: {"count":5}
  *     → Sent after sync cycle completes. Frontend should refresh device list.
  *
+ *   event: device.action.status
+ *     data: {"deviceId":"...","controllerId":"...","actionId":123,"latestStatus":"running","phase":"downloading","progress":50,"message":"downloading 50%","timestamp":"2025-..."}
+ *     → Sent during active deployments with real-time progress. Frontend should update device progress bar/card.
+ *     → phase values: assigned, pending, downloading, downloaded, installing, installed, error, canceled, unknown
+ *     → progress: 0-100 (download %) or null (not downloading)
+ *
+ *   event: deployment.stats
+ *     data: {"deploymentId":42,"summary":{"totalTargets":5,"finished":2,"failed":0,"inProgress":1,"pending":2,"canceled":0},"status":"in_progress"}
+ *     → Sent during active deployments with aggregate statistics. Frontend should update deployment progress card.
+ *
  * Flutter connection example:
  *   // IMPORTANT: EventSource does NOT support custom headers.
  *   // Use a package that supports headers (e.g., eventsource_client or dio).
@@ -57,11 +67,13 @@
  *   );
  *   sse.stream.listen((event) {
  *     switch (event.event) {
- *       case 'device.status':    // → update device in list
- *       case 'device.claimed':   // → add device to list
- *       case 'device.unclaimed': // → remove device from list
- *       case 'deployment.created': // → add to deployments
- *       case 'heartbeat':        // → connection alive
+ *       case 'device.status':        // → update device in list
+ *       case 'device.action.status': // → update device deployment progress bar
+ *       case 'deployment.stats':     // → update deployment card statistics
+ *       case 'device.claimed':       // → add device to list
+ *       case 'device.unclaimed':     // → remove device from list
+ *       case 'deployment.created':   // → add to deployments
+ *       case 'heartbeat':            // → connection alive
  *     }
  *   });
  */

@@ -15,6 +15,7 @@ import {
 	getProtectedStatus,
 } from './sync-core';
 import { fetchTargetsByIds } from './sync-fetch';
+import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 
 // Re-export everything from split files
 export {
@@ -208,6 +209,11 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 				}
 			}
 			sseEmitter.emit(companyId, 'devices.batch', { count });
+		});
+
+		// Also poll detailed action progress for pending devices
+		emitActionProgressEvents(changedDevices).catch((err) => {
+			appLogger.debug('[SYNC] On-demand action progress poll failed: %s', err?.message);
 		});
 	}
 

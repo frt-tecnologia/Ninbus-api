@@ -711,6 +711,38 @@
       "category": "process",
       "learnedAt": "2026-06-10T16:21:38.258Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-esm-reexport-is-not-local-binding",
+      "rule": "`export { X } from 'module'` is a RE-EXPORT only — it does NOT create a local binding for X. If you need X both locally AND as an export, you must use a separate `import { X } from 'module'` line. Missing this causes `ReferenceError: X is not defined` at runtime, which often gets caught by generic error handlers and mislogged (e.g., \"hawkBit unavailable\" instead of a missing import error). Always check for duplicate import/re-export when splitting files.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T02:48:57.980Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-progress-needs-action-polling",
+      "rule": "The sync engine reads only target.updateStatus (high-level: pending/in_sync/error) from hawkBit targets. Detailed progress (downloading 25%, installing, etc.) lives in hawkBit ACTION status entries, which require a separate API call (getActionStatus). Any real-time progress UI must poll action statuses for devices with updateStatus='pending' — the target-level status alone is insufficient.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:32:32.713Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-action-no-ds-link",
+      "rule": "hawkBit HawkbitAction type does NOT include distributionSet in _links. To resolve which DS an action belongs to, query the local DB for candidate DS IDs, then call hawkBit getAssignedDS(controllerId) to match. Never rely on action._links['distributionset'] — it doesn't exist in hawkBit 1.0.3.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:44:17.364Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-progress-scalability",
+      "rule": "When polling external API per-device (action status, inventory, etc.), ALWAYS apply: (1) hard cap per cycle with round-robin for overflow, (2) deduplication by device ID, (3) skip-unchanged cache using lastModifiedAt or ETag, (4) concurrency limit (10 parallel max). Without these, 1000 devices × 2 requests every 5s = 24,000 req/min which overwhelms hawkBit.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:44:27.054Z",
+      "reinforcementCount": 1
     }
   ]
 }

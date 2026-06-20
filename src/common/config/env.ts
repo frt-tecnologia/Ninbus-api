@@ -65,6 +65,31 @@ const EnvSchema = Type.Object({
 	// ── Email (Resend) ─────────────────────────────────────────
 	RESEND_API_KEY: Type.Optional(Type.String({ description: 'Resend API key' })),
 	EMAIL_FROM: Type.String({ description: 'Email sender address' }),
+	FRONTEND_URL: Type.Optional(
+		Type.String({
+			description: 'Frontend app base URL (for email links: password reset, email verification)',
+			pattern: '^https?://.+',
+		}),
+	),
+	APP_DEEP_LINK_BASE: Type.Optional(
+		Type.String({
+			description:
+				'Base for app deep links in emails (password reset, email verification). ' +
+				'Accepts a custom scheme like "ninbus://" (fallback when no verified web domain yet) ' +
+				'or an https App Link like "https://ninbus.frt.com.br". ' +
+				'Takes precedence over FRONTEND_URL for email links.',
+			pattern: '^[a-z][a-z0-9+.-]*://',
+		}),
+	),
+	// Resend Dashboard template aliases (or tmpl_ IDs). Templates render subject +
+	// body server-side at Resend; the API passes only the variables. Template
+	// must be PUBLISHED in the Resend dashboard before it can be used for sending.
+	RESEND_TEMPLATE_PASSWORD_RESET: Type.Optional(
+		Type.String({ description: 'Resend template alias/ID for password reset emails. Template variables: first_name, reset_password_url' }),
+	),
+	RESEND_TEMPLATE_EMAIL_VERIFICATION: Type.Optional(
+		Type.String({ description: 'Resend template alias/ID for email verification emails. Template variables: first_name, verify_email_url' }),
+	),
 
 	// ── hawkBit Update Server Integration ──────────────────────
 	HAWKBIT_ENABLED: Type.Boolean({ default: false, description: 'Enable hawkBit integration' }),
@@ -204,6 +229,10 @@ export function validateEnv(): Env {
 		CORS_ORIGIN: parseCors(process.env['CORS_ORIGIN']),
 		RESEND_API_KEY: process.env['RESEND_API_KEY'],
 		EMAIL_FROM: process.env['EMAIL_FROM'] || 'noreply@example.com',
+		FRONTEND_URL: process.env['FRONTEND_URL'],
+		APP_DEEP_LINK_BASE: process.env['APP_DEEP_LINK_BASE'],
+		RESEND_TEMPLATE_PASSWORD_RESET: process.env['RESEND_TEMPLATE_PASSWORD_RESET'],
+		RESEND_TEMPLATE_EMAIL_VERIFICATION: process.env['RESEND_TEMPLATE_EMAIL_VERIFICATION'],
 		HAWKBIT_ENABLED: process.env['HAWKBIT_ENABLED'] === 'true',
 		HAWKBIT_URL: process.env['HAWKBIT_URL'],
 		HAWKBIT_USERNAME: process.env['HAWKBIT_USERNAME'],

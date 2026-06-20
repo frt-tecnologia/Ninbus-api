@@ -65,7 +65,7 @@ export const hawkbitTargets = {
 
 	getActions(
 		targetId: string,
-		params?: { offset?: number; limit?: number; sort?: string },
+		params?: { offset?: number; limit?: number; sort?: string; q?: string },
 	): Promise<HawkbitPagedResponse<HawkbitAction>> {
 		return hawkbitRequest({
 			method: 'GET',

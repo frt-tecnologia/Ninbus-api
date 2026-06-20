@@ -743,6 +743,46 @@
       "category": "architecture",
       "learnedAt": "2026-06-11T12:44:27.054Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-re-export-no-local-binding-v2",
+      "rule": "export { X } from 'module' does NOT create a local binding for X. If you need to USE X in the same file AND re-export it, you need BOTH: import { X } from 'module'; export { X }; This applies to ALL re-exports in service files — check every `export { ... } from './other'` and verify the exported symbol is not also called locally. This is the SECOND time this exact bug happened (first: resolveLockStatus in artifacts, now: requireDeploymentOwnership in deployments).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T13:45:34.972Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-pgpooler-search-path",
+      "rule": "When hawkBit shares a PostgreSQL database (especially Neon's PgBouncer `-pooler` endpoint in transaction pooling mode) with another app, do NOT rely on a dedicated schema for hawkBit tables. Transaction pooling resets `search_path` between transactions, so `currentSchema` in the JDBC URL does NOT persist — Spring Integration's `JdbcLockRepository` (raw JdbcTemplate, schema-unqualified `SELECT ... FROM SP_LOCK`) fails with \"relation sp_lock does not exist\". Two fixes that WORK: (1) coexist in the `public` schema (hawkBit `sp_*` tables never collide with app tables) with `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` + `SPRING_FLYWAY_BASELINE_VERSION=0` so Flyway creates tables despite existing app tables; (2) `ALTER ROLE <user> IN DATABASE <db> SET search_path TO public` so PostgreSQL reapplies the GUC to every backend (survives PgBouncer reset). A dedicated schema + `currentSchema` URL param does NOT work with PgBouncer transaction pooling.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:14:54.714Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-assignedtargets-historical",
+      "rule": "hawkBit's `GET /rest/v1/distributionsets/{dsId}/assignedTargets` returns ONLY targets whose CURRENT assignment is that DS — not the historical list. When a target is re-assigned to a newer DS, it silently disappears from the old DS's list, making old deployments look empty. NEVER use assignedTargets as the source of truth for a deployment's target list in a history view. The local DB audit column (`deployments.target_ids`, a JSON array of controllerIds captured at deployment time) is the source of truth for historical target lists. To get a target's status for a SPECIFIC historical DS, filter its actions via RSQL `q=distributionSet.id=={dsId}` on `GET /rest/v1/targets/{cid}/actions` — do NOT just take the target's most recent action (it may belong to a different DS). enrichDeployment MUST merge the local DB record (artifactVersion, targetIds, targetCount, displayName) to present correct historical data.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:15:08.613Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-betterauth-background-tasks-swallow",
+      "rule": "Better Auth runs email-sending callbacks (sendResetPassword, sendVerificationEmail) through `ctx.context.runInBackgroundOrAwait()` (create-context.mjs), which wraps the call in try/catch and only LOGS errors — it NEVER propagates them to the HTTP response. This is by design (anti-enumeration: the /request-password-reset endpoint always returns 200 regardless of send outcome). Consequence: you CANNOT make that endpoint return 5xx on Resend failure through the normal flow, no matter what sendEmail throws. Do not waste time wrapping auth.handler in try/catch expecting to catch email failures. Correct approach: (1) make sendEmail log failures loudly with full Resend error details (the log is the ONLY signal), (2) add a separate admin/diagnostic health-check for the email service, (3) verify the Resend domain is verified (resend.dev sandbox ONLY delivers to the account-owner email). A `FRONTEND_URL` env var is required because Better Auth builds the reset link from BETTER_AUTH_URL (which points at the API) — rewrite it to ${FRONTEND_URL}/reset-password?token=... inside sendResetPassword.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:15:20.637Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-resend-dashboard-templates",
+      "rule": "For transactional emails (password reset, verification, notifications), use Resend Dashboard Templates referenced by ALIAS (not inline HTML in code). The Resend SDK v6+ CreateEmailOptions supports `template: { id, variables }` where `id` accepts either the template ID (tmpl_xxx) or the alias string. When `template` is set, `html`/`text`/`react` must be OMITTED (mutually exclusive — sending both causes a 422). `subject` is optional when using a template (the dashboard template defines its own subject). Store template aliases in env (e.g. RESEND_TEMPLATE_PASSWORD_RESET=password-reset) so non-developers can edit copy without redeploying; fall back to inline HTML when the env var is unset (logged warning). The template MUST be PUBLISHED in the Resend dashboard before it can be used for sending (draft templates cannot be referenced). Template variables are flat Record<string, string|number> — pass user data like { first_name, reset_password_url }. Extract first_name defensively from user.name (split on whitespace, never throw).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T21:06:37.528Z",
+      "reinforcementCount": 1
     }
   ]
 }

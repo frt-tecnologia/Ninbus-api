@@ -2,10 +2,26 @@
  * Deployment helpers — target resolution and software module lookup.
  */
 import { db } from '@common/db';
-import { devices } from '@common/db/schema';
+import { deployments, devices } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
+import type { LocalDeploymentRecord } from '@modules/deployments/enrichment';
 import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
 import { and, eq, inArray } from 'drizzle-orm';
+
+/** Fetch the local DB audit record for a deployment (by hawkBit DS ID).
+ *  Returns null if not found or on DB error (best-effort, non-fatal). */
+export async function getLocalDeployment(dsId: number): Promise<LocalDeploymentRecord | null> {
+	try {
+		const [row] = await db
+			.select()
+			.from(deployments)
+			.where(eq(deployments.hawkbitDsId, dsId))
+			.limit(1);
+		return (row as LocalDeploymentRecord) ?? null;
+	} catch {
+		return null;
+	}
+}
 
 export async function resolveHawkbitTargetIds(
 	companyId: string,

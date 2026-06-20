@@ -11,14 +11,14 @@ import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
-import { enrichDeployment, enrichOrphanedDeployment, summarizeStatistics, computeDeploymentStatus } from './enrichment';
+import { enrichDeployment, enrichOrphanedDeployment, summarizeStatistics, computeDeploymentStatus, type LocalDeploymentRecord } from './enrichment';
 export { deleteDeployment, requireDeploymentOwnership } from './delete';
 import { requireDeploymentOwnership } from './delete';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
 import { forceCloseActiveActions, forceCloseCancelActions } from './actions';
 export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
-import { resolveHawkbitTargetIds, findSoftwareModule } from './helpers';
+import { resolveHawkbitTargetIds, findSoftwareModule, getLocalDeployment } from './helpers';
 
 export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
@@ -178,10 +178,11 @@ export async function createDeployment(companyId: string, userId: string, data: 
 	};
 }
 
-/** Get deployment — verify ownership first. */
+/** Get deployment — verify ownership first. Enriched with local audit data. */
 export async function getDeployment(companyId: string, dsId: number) {
 	await requireDeploymentOwnership(companyId, dsId);
-	return enrichDeployment(await hawkbitDistributionSets.get(dsId));
+	const local = await getLocalDeployment(dsId);
+	return enrichDeployment(await hawkbitDistributionSets.get(dsId), local ?? undefined);
 }
 
 export async function getDeploymentStatistics(dsId: number) {
@@ -229,16 +230,14 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 		return { data: enriched, total: enriched.length };
 	}
 
-	// 3. Enrich: active DSes from hawkBit + orphaned from local DB
+	// 3. Enrich: active DSes from hawkBit (with local audit merge) + orphaned from local DB.
 	const hawkbitMap = new Map(hawkbitDSs.filter((ds) => !ds.deleted).map((ds: any) => [ds.id, ds]));
 	const enriched = await Promise.all(
 		localDeployments.map(async (local) => {
 			const hawkbitDS = hawkbitMap.get(local.hawkbitDsId);
-			if (hawkbitDS) {
-				return enrichDeployment(hawkbitDS);
-			}
-			// DS deleted/orphaned — use local audit data
-			return enrichOrphanedDeployment(local);
+			return hawkbitDS
+				? enrichDeployment(hawkbitDS, local as LocalDeploymentRecord)
+				: enrichOrphanedDeployment(local as LocalDeploymentRecord);
 		}),
 	);
 	return { data: enriched, total: enriched.length };

@@ -52,6 +52,16 @@ services:
       # Email
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@ninbus.com}
+      # Frontend base URL — email links (password reset, verification) point here
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      # Base for app deep links in emails (takes precedence over FRONTEND_URL).
+      # Custom scheme (ninbus://) until the web domain is verified; switch to
+      # https://ninbus.frt.com.br (App Link) once the domain is live.
+      APP_DEEP_LINK_BASE: ${APP_DEEP_LINK_BASE:-ninbus://}
+      # Resend Dashboard template aliases (must be PUBLISHED at resend.com).
+      # Unset → falls back to inline HTML.
+      RESEND_TEMPLATE_PASSWORD_RESET: ${RESEND_TEMPLATE_PASSWORD_RESET:-}
+      RESEND_TEMPLATE_EMAIL_VERIFICATION: ${RESEND_TEMPLATE_EMAIL_VERIFICATION:-}
 
       # General
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:5173}
@@ -115,11 +125,24 @@ services:
     environment:
       # ── Database: Neon PostgreSQL ──
       PROFILES: postgresql
-      SPRING_DATASOURCE_URL: ${HAWKBIT_DATABASE_URL}
+      # currentSchema guarantees 'public' is in search_path for every physical
+      # connection (PgBouncer pool may carry stale search_path from other clients).
+      # sp_* tables live in 'public' alongside Ninbus tables (names don't collide).
+      SPRING_DATASOURCE_URL: ${HAWKBIT_DATABASE_URL}&currentSchema=public
       SPRING_DATASOURCE_USERNAME: ${HAWKBIT_DB_USER:-neondb_owner}
       SPRING_DATASOURCE_PASSWORD: ${HAWKBIT_DB_PASS}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
       SPRING_JPA_DATABASE: POSTGRESQL
+
+      # ── Flyway: force full migration in the shared 'public' schema. ──
+      # hawkBit tables (sp_*, target_*, ...) coexist with Ninbus tables in
+      # 'public' — names do NOT collide. baselineVersion=0 ensures the V1.x
+      # migration runs even though the schema is non-empty (Ninbus tables present).
+      # NOTE: a dedicated schema won't work with the Neon pooler (PgBouncer
+      # transaction pooling resets search_path between transactions, breaking
+      # Spring Integration's schema-unqualified SP_LOCK lookups).
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "0"
 
       # ── hawkBit Admin ──
       HAWKBIT_SECURITY_USER_ADMIN_PASSWORD: ${HAWKBIT_ADMIN_PASSWORD:-{noop}admin}

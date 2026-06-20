@@ -1,79 +1,72 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-06-11T12:44:07.801Z
+**Date**: 2026-06-20T19:23:08.588Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-All 6 fixes implemented and verified. Build clean (1305 modules, 3.60MB), zero TS errors.
+All deployment-history issues fixed and validated empirically in Docker. Build clean (1307 modules, 3.61MB). (1) H1 empty target lists: getDeploymentTargetStatuses now reads deployments.target_ids from local DB — GET /deployments/4/target-statuses returns 3 targets (was 2). (2) H2 version inconsistency: enrichDeployment(ds, local) merges artifactVersion → version='2.1.0' (was 'v-1781981079402'). (3) H4 wrong action: RSQL filter distributionSet.id=={dsId} fetches the action specific to each DS (DEV0001 shows phase=canceled correctly). hawkBit boot fixed (was 81 restart-loop) via Flyway baseline + ALTER ROLE search_path. Resend confirmed working (email sent id d9721cb9).
 
-**Evidence**: Fix 1: dsId now resolved via DB (getCompanyDsIds) + hawkBit getAssignedDS instead of broken _links. Fix 2: actionCache skips unchanged polls via lastModifiedAt comparison. Fix 3: MAX_DEVICES_PER_CYCLE=50 with round-robin. Fix 4: normal sync timer paused when fast sync activates, resumed on deactivate. Fix 5: previouslyPending set tracks devices, emitFinalEvents sends terminal state. Fix 6: dedup via Set<controllerId> before polling.
+**Evidence**: docker logs ninbus-api: 'Email sent via Resend' id d9721cb9-5dea-4722-864a-ba9c382304ea. HTTP GET /deployments/4/target-statuses total=3 with DEV0001 canceled. bun build: 'Bundled 1307 modules'. hawkbit + ninbus-api both healthy.
 
 ### ✅ Code Quality
 
-All files under 250 lines: sync-progress.ts=222, sync-progress-helpers.ts=111, sync.ts=215, sync-strategies.ts=169, sync-helpers.ts=221. Split sync-progress into main + helpers to respect line limit. Clean separation maintained.
+All modified files ≤250 lines after refactoring: enrichment.ts=244, trail.ts=246, service.ts=248, auth/index.ts=250, email.ts=88, auth.ts=102, helpers.ts=111. getLocalDeployment extracted to helpers.ts (shared). Clean separation maintained: schemas.ts (EnrichedDistributionSetSchema + targetIds), enrichment.ts (logic), trail.ts (status resolution), service.ts (orchestration). Logger uses %s format strings.
 
-**Evidence**: sync-progress-helpers.ts extracted: DS resolution, final events, deployment stats. sync-progress.ts: orchestrator with cache, dedup, round-robin, concurrency limit.
+**Evidence**: wc -l shows all files ≤250. No inline response schemas in route files.
 
 ### ✅ Schema Organization
 
-No schema changes. No new routes. All event types documented in SSE module JSDoc.
+EnrichedDistributionSetSchema in schemas.ts now includes targetIds: t.Optional(t.Array(t.String())) and improved version description. TargetActionStatusSchema / TargetDeploymentStatusSchema remain in trail-schemas.ts (re-exported). Route files import all response schemas — none defined inline.
+
+**Evidence**: schemas.ts EnrichedDistributionSetSchema has targetIds field; trail-schemas.ts unchanged structure.
 
 ### ✅ Error Handling
 
-All hawkBit API calls in try/catch. Final event errors don't block main polling. DB query failures return empty arrays. hawkbitConfig.enabled guard at entry point.
+Two-level hawkBit protection preserved: trail.ts getDeploymentTargetStatuses catches DB errors (fallback to hawkBit assignedTargets) and hawkBit action errors (debug log, action=null). enrichDeployment catches stats fetch failures → status='unknown'. sendEmail surfaces failures via EmailSendError when required. Better Auth background-task swallowing documented as a lib limitation (runInBackgroundOrAwait try/catch).
 
-**Evidence**: emitFinalEvents wrapped in fire-and-forget catch. resolveDsId catches and returns null. getCompanyDsIds catches and returns [].
+**Evidence**: trail.ts try/catch around db.select and hawkbitTargets.getActions; email.ts EmailSendError thrown when required||production.
 
 ### ✅ Test Coverage
 
-No test files modified. Pre-existing tests unchanged. Bun test segfault is pre-existing runtime bug.
+Added 22 new unit tests: enrichment.test.ts (17 tests) covers enrichOrphanedDeployment + enrichDeployment(local) — version semantics, targetIds parsing (null/malformed/non-array/filter), fallbacks, status completed/unknown; email.test.ts (5 tests) covers EmailSendError on required+error, required+throw, dev best-effort swallow, error message contents. Full suite: 93 unit tests pass / 0 fail (71 pre-existing + 22 new). E2E tests in tests/*.test.ts that fail are PRE-EXISTING (confirmed via git stash: fail on original code too) — unrelated to these changes.
+
+**Evidence**: bun test enrichment.test.ts + email.test.ts: '22 pass 0 fail'. git stash confirmed devices/deployments E2E failures exist on original code.
 
 ### ✅ Config Centralization
 
-No new config vars. MAX_DEVICES_PER_CYCLE and FAST_SYNC_INTERVAL_SEC are code constants matching FORCE_CLOSE_RETRIES pattern.
+New FRONTEND_URL var added to all 4 required locations: env.ts (TypeBox schema + process.env read), .env.example, .env.test, .env (local) + docker-compose.yml. No process.env reads outside env.ts. email.ts and auth.ts consume env.FRONTEND_URL / env.NODE_ENV via the typed accessor.
+
+**Evidence**: env.ts FRONTEND_URL schema at line ~66 and process.env['FRONTEND_URL'] in defaults; .env.example/.env.test/.env all contain FRONTEND_URL.
 
 ### ✅ Security
 
-No auth changes. SSE events company-scoped. hawkbitConfig.enabled guard prevents API calls when disabled.
+No auth/RBAC changes. companyRole macro unchanged. Resend error handling does NOT leak recipient existence (Better Auth still returns 200 for unknown emails). EmailSendError caught in handler → generic 502 message (no Resend internals leaked to client). FRONTEND_URL pattern-validated (https?://). targetIds come from the company-scoped deployments table.
+
+**Evidence**: auth/index.ts handler returns generic 'email service unavailable' message on EmailSendError; env.ts FRONTEND_URL pattern '^https?://.+'.
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Learned: hawkBit HawkbitAction type does NOT include distributionSet in _links — dsId resolution must use DB + getAssignedDS. Also: when scaling action polling, hard cap + round-robin is essential to prevent hawkBit overload.
+3 new principles learned and persisted: p-hawkbit-pgpooler-search-path (Flyway baseline + ALTER ROLE for shared PgBouncer DBs), p-hawkbit-assignedtargets-historical (local target_ids is the truth, RSQL distributionSet.id filter for per-DS actions), p-betterauth-background-tasks-swallow (runInBackgroundOrAwait never propagates email errors → log is the only signal). Full progress notes in docs/_progress/deployment-history-fix.md with hypothesis tree and confidence levels.
 
-**Evidence**: sync-progress-helpers.ts uses DB-first approach for DS resolution.
+**Evidence**: harness_learn_principle called 3x (total principles now 97). docs/_progress/deployment-history-fix.md documents H1-H7 hypotheses, validation, and fixes.
 
 ## Overall Notes
 
-## Scalability fixes for SSE progress notifications — all 6 issues resolved
+## Deployment history + Resend fixes — fully validated in Docker
 
-### Changes Summary
+### Root cause resolution (infrastructure)
+hawkBit was in a 81-restart loop and had NEVER successfully started against the shared Neon PgBouncer database. Root causes: (1) Flyway baselined on existing Ninbus tables and never created hawkBit's sp_* tables; (2) PgBouncer transaction pooling resets search_path so SP_LOCK lookups failed. Fixed via SPRING_FLYWAY_BASELINE_ON_MIGRATE=true + SPRING_FLYWAY_BASELINE_VERSION=0 (coexist in public schema, names don't collide) + ALTER ROLE search_path. hawkBit now healthy.
 
-**NEW: `src/modules/deployments/sync-progress-helpers.ts`** (111 lines)
-- `getCompanyDsIds()` — DB query for company deployment DS IDs (Fix 1)
-- `resolveDsId()` — hawkBit getAssignedDS to match controllerId → DS (Fix 1)
-- `emitFinalEvents()` — emits terminal state when device leaves pending (Fix 5)
-- `emitDeploymentStatsForDs()` — aggregate stats per deployment (from previous iteration)
+### Functional fixes (validated via real HTTP against Docker)
+- **H1 (empty target lists)**: getDeploymentTargetStatuses reads deployments.target_ids (local audit) instead of hawkBit assignedTargets (current-only). DS4 now returns 3 targets (was 2).
+- **H2 (inconsistent version)**: enrichDeployment(ds, local) merges artifactVersion → version='2.1.0' (was internal timestamp). artifactName/targetCount always present.
+- **H4 (wrong action per DS)**: RSQL `distributionSet.id=={dsId}` fetches the action specific to each DS (not the target's most recent). DEV0001 correctly shows phase=canceled for DS4.
+- **Resend**: confirmed working (email sent, id d9721cb9). email.ts rewritten with EmailSendError (required flag). FRONTEND_URL added → reset links now point to the frontend. Caveat: Better Auth's runInBackgroundOrAwait swallows email errors (always 200) — documented as a lib limitation; logs are the diagnostic signal. The resend.dev sandbox domain only delivers to the account-owner email — Luiz must verify a domain for general recipients.
 
-**REWRITTEN: `src/modules/deployments/sync-progress.ts`** (222 lines)
-- Fix 1: dsId resolved via DB + hawkBit getAssignedDS (not _links)
-- Fix 2: actionCache with lastModifiedAt skips unchanged polls
-- Fix 3: MAX_DEVICES_PER_CYCLE=50 with round-robin overflow
-- Fix 5: previouslyPending set tracks devices across cycles for final events
-- Fix 6: Set<controllerId> deduplication before polling
+### Test coverage
+22 new unit tests (enrichment merge logic, EmailSendError propagation). 93 unit tests pass / 0 fail. Pre-existing E2E failures confirmed unrelated via git stash.
 
-**MODIFIED: `src/modules/devices/sync.ts`** (215 lines)
-- Fix 4: Normal sync timer PAUSED when fast sync activates, RESUMED when deployments complete. No more concurrent timers.
-
-### Scalability at different scales:
-| Devices | Requests/cycle (5s) | Requests/min | hawkBit load |
-|---------|---------------------|-------------|-------------|
-| 10      | 10-20               | 120-240     | ✅ trivial  |
-| 50      | 50-100              | 600-1200    | ✅ safe     |
-| 100     | 50-100 (capped)     | 600-1200    | ✅ safe     |
-| 500     | 50-100 (capped)     | 600-1200    | ✅ safe     |
-| 1000    | 50-100 (capped)     | 600-1200    | ✅ safe     |
-
-Round-robin ensures all 1000 devices get polled within ~100 cycles (500s ≈ 8min). Download+install typically takes 5-15min, so this is well within the deployment window.
+### Files changed (12) + 2 new test files + 3 principles learned.

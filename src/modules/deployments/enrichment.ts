@@ -1,8 +1,11 @@
 /**
- * Deployment enrichment — Status computation and hawkBit statistics helpers.
+ * Deployment enrichment — status computation and hawkBit statistics helpers.
  *
- * Transforms raw hawkBit Distribution Set metadata into frontend-friendly
- * deployment status with real progress tracking from action statistics.
+ * `enrichDeployment` accepts an optional local DB record, which is the source of
+ * truth for historical data (artifactVersion, targetIds, targetCount): hawkBit's
+ * `assignedTargets` only reflects the CURRENT assignment, so targets re-assigned
+ * to a newer DS vanish from old DS lists. Without the local merge, old
+ * deployments show 0 targets.
  */
 import type { HawkbitDistributionSet, HawkbitDSStatistics } from '@common/hawkbit/client';
 import { hawkbitDistributionSets } from '@common/hawkbit/client';
@@ -25,8 +28,9 @@ export interface DeploymentStatisticsSummary {
 export interface EnrichedDeployment {
 	id: number;
 	name: string;
-	/** User-visible deployment name extracted from DS description. */
+	/** User-visible name (local audit name preferred over DS description parsing). */
 	displayName?: string;
+	/** Artifact version (semantic, e.g. "2.1.0"). Falls back to DS version if no local record. */
 	version?: string;
 	type?: string;
 	typeName?: string;
@@ -35,56 +39,68 @@ export interface EnrichedDeployment {
 	lastModifiedAt?: number;
 	status: DeploymentStatusType;
 	statistics: DeploymentStatisticsSummary;
-	dsMetadata: {
-		locked: boolean;
-		complete: boolean;
-		valid: boolean;
-	};
-	/** Audit: artifact name at deployment time (survives artifact deletion). */
+	dsMetadata: { locked: boolean; complete: boolean; valid: boolean };
+	/** Audit fields (survive artifact deletion / DS re-assignment). */
 	artifactName?: string;
-	/** Audit: artifact version at deployment time. */
 	artifactVersion?: string;
-	/** Audit: original uploaded filename. */
 	artifactOriginalFile?: string;
-	/** Audit: number of targets assigned. */
 	targetCount?: number;
+	/** hawkBit controllerIds assigned at deployment time — source of truth for
+	 *  historical target lists (hawkBit assignedTargets only reflects CURRENT assignment). */
+	targetIds?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Local record type (matches deployments table columns)
+// ---------------------------------------------------------------------------
+
+export interface LocalDeploymentRecord {
+	id: string;
+	name: string;
+	hawkbitDsId: number;
+	artifactType: string;
+	artifactName: string | null;
+	artifactVersion: string | null;
+	artifactOriginalFile: string | null;
+	targetCount: number | null;
+	targetIds: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/** Parse a JSON-encoded target_ids column into a string array (defensive). */
+function parseTargetIds(raw: string | null | undefined): string[] | undefined {
+	if (!raw) return undefined;
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 // ---------------------------------------------------------------------------
 // Statistics → Status computation
 // ---------------------------------------------------------------------------
 
-/**
- * Compute deployment status from hawkBit action statistics.
- *
- * hawkBit statistics format (live):
- *   { "actions": { "RETRIEVED": 1, "total": 1 }, "rollouts": {...}, "totalAutoAssignments": 0 }
- *
- * Keys are UPPERCASE action status types. We normalize to lowercase for matching.
- *
- * Status priority: failed > in_progress > pending > completed > canceled > no_targets
- */
+/** Compute deployment status from hawkBit action statistics.
+ *  Stats keys are UPPERCASE action status types (normalized to lowercase).
+ *  Priority: failed > in_progress > pending > completed > canceled > no_targets. */
 export function computeDeploymentStatus(
 	statsMap: Record<string, number>,
 	total: number,
 	options?: { dsDeleted?: boolean; dsId?: number },
 ): DeploymentStatusType {
-	// Deleted DSes should not appear as active deployments
 	if (options?.dsDeleted) return 'canceled';
-
 	if (total === 0) return 'no_targets';
 
-	// Normalize keys to lowercase
 	const n: Record<string, number> = {};
-	for (const [key, value] of Object.entries(statsMap)) {
-		n[key.toLowerCase()] = value;
-	}
+	for (const [key, value] of Object.entries(statsMap)) n[key.toLowerCase()] = value;
 
 	const finished = n['finished'] || 0;
 	const error = (n['error'] || 0) + (n['warning'] || 0);
 	const canceled = (n['canceled'] || 0) + (n['canceling'] || 0);
-	const inProgress =
-		(n['retrieved'] || 0) + (n['download'] || 0) + (n['downloaded'] || 0);
+	const inProgress = (n['retrieved'] || 0) + (n['download'] || 0) + (n['downloaded'] || 0);
 	const pending = (n['running'] || 0) + (n['scheduled'] || 0);
 
 	let status: DeploymentStatusType;
@@ -105,10 +121,9 @@ export function computeDeploymentStatus(
 		// Scheduled but not started
 		status = 'pending';
 	} else {
-		// Fallback: anything with targets but no clear terminal state
-		// This can happen when hawkBit reports total=N but 0 actions in any known status.
-		// Example: actions just created but statistics not yet updated.
-		// Treat as pending (action exists, device hasn't reported yet).
+		// Fallback: anything with targets but no clear terminal state.
+		// Can happen when hawkBit reports total=N but 0 actions in any known status
+		// (e.g. actions just created but statistics not yet updated).
 		status = 'pending';
 	}
 
@@ -153,59 +168,43 @@ function extractDeploymentDisplayName(ds: HawkbitDistributionSet): string | unde
 	return match ? match[1]!.trim() : undefined;
 }
 
-export interface LocalDeploymentRecord {
-	id: string;
-	name: string;
-	hawkbitDsId: number;
-	artifactType: string;
-	artifactName: string | null;
-	artifactVersion: string | null;
-	artifactOriginalFile: string | null;
-	targetCount: number | null;
-	targetIds: string | null;
-	createdAt: Date;
-	updatedAt: Date;
-}
-
 /** Enrich an orphaned deployment (DS deleted in hawkBit) using local DB data only.
- *  Preserves full audit history after artifact deletion.
- */
+ *  Preserves full audit history after artifact deletion. */
 export function enrichOrphanedDeployment(local: LocalDeploymentRecord): EnrichedDeployment {
 	const targetCount = local.targetCount ?? 0;
 	return {
 		id: local.hawkbitDsId,
 		name: local.name,
 		displayName: local.name,
+		/** version = artifact version (semantic), not hawkBit's internal DS version. */
+		version: local.artifactVersion ?? undefined,
 		status: 'completed' as DeploymentStatusType,
-		statistics: {
-			totalTargets: targetCount,
-			finished: targetCount,
-			failed: 0,
-			inProgress: 0,
-			pending: 0,
-			canceled: 0,
-		},
+		statistics: { totalTargets: targetCount, finished: targetCount, failed: 0, inProgress: 0, pending: 0, canceled: 0 },
 		dsMetadata: { locked: false, complete: true, valid: true },
 		artifactName: local.artifactName ?? undefined,
 		artifactVersion: local.artifactVersion ?? undefined,
 		artifactOriginalFile: local.artifactOriginalFile ?? undefined,
 		targetCount: targetCount || undefined,
+		targetIds: parseTargetIds(local.targetIds),
 		createdAt: local.createdAt.getTime(),
 		lastModifiedAt: local.updatedAt.getTime(),
 	};
 }
-// Enrichment: DS → EnrichedDeployment
+
+// ---------------------------------------------------------------------------
+// Enrichment: DS → EnrichedDeployment (with optional local DB merge)
 // ---------------------------------------------------------------------------
 
-/**
- * Enrich a raw hawkBit Distribution Set with real deployment status
- * fetched from the statistics endpoint.
+/** Enrich a raw hawkBit DS with real status from the statistics endpoint.
  *
- * The DS properties `complete`/`valid`/`locked` are structural metadata
- * (e.g. "DS has all software modules"), NOT deployment status.
- * We move them to `dsMetadata` and compute the real status from actions.
- */
-export async function enrichDeployment(ds: HawkbitDistributionSet): Promise<EnrichedDeployment> {
+ *  If `local` is provided, audit fields (artifactName, artifactVersion, targetCount,
+ *  targetIds, displayName) are merged from the local DB record. This is REQUIRED for
+ *  correct historical data — hawkBit's assignedTargets only reflects the CURRENT
+ *  assignment, so targets later re-assigned vanish from old DS lists. */
+export async function enrichDeployment(
+	ds: HawkbitDistributionSet,
+	local?: LocalDeploymentRecord,
+): Promise<EnrichedDeployment> {
 	let statsMap: Record<string, number> = {};
 	let total = 0;
 	let statsFetchFailed = false;
@@ -214,23 +213,18 @@ export async function enrichDeployment(ds: HawkbitDistributionSet): Promise<Enri
 		const stats: HawkbitDSStatistics = await hawkbitDistributionSets.getStatistics(ds.id);
 		statsMap = stats.actions || {};
 		total = stats.actions?.['total'] || 0;
-		appLogger.debug(
-			`[DEPLOY] DS #${ds.id} raw stats: ${JSON.stringify(stats)}`,
-		);
+		appLogger.debug(`[DEPLOY] DS #${ds.id} raw stats: ${JSON.stringify(stats)}`);
 	} catch (e) {
 		statsFetchFailed = true;
-		appLogger.warn(
-			'[DEPLOY] Could not fetch statistics for DS %d (will use fallback): %s',
-			ds.id,
-			e instanceof Error ? e.message : String(e),
-		);
+		appLogger.warn('[DEPLOY] Statistics fetch failed for DS %d: %s', ds.id, e instanceof Error ? e.message : String(e));
 	}
 
 	return {
 		id: ds.id,
 		name: ds.name,
-		displayName: extractDeploymentDisplayName(ds),
-		version: ds.version,
+		displayName: local?.name ?? extractDeploymentDisplayName(ds),
+		/** version = artifact version (semantic). DS.version is an internal timestamp. */
+		version: local?.artifactVersion ?? ds.version,
 		type: ds.type,
 		typeName: ds.typeName,
 		description: ds.description,
@@ -240,10 +234,11 @@ export async function enrichDeployment(ds: HawkbitDistributionSet): Promise<Enri
 			? 'unknown' as DeploymentStatusType
 			: computeDeploymentStatus(statsMap, total, { dsDeleted: ds.deleted, dsId: ds.id }),
 		statistics: summarizeStatistics(statsMap),
-		dsMetadata: {
-			locked: ds.locked ?? false,
-			complete: ds.complete ?? false,
-			valid: ds.valid ?? false,
-		},
+		dsMetadata: { locked: ds.locked ?? false, complete: ds.complete ?? false, valid: ds.valid ?? false },
+		artifactName: local?.artifactName ?? undefined,
+		artifactVersion: local?.artifactVersion ?? undefined,
+		artifactOriginalFile: local?.artifactOriginalFile ?? undefined,
+		targetCount: local?.targetCount ?? undefined,
+		targetIds: parseTargetIds(local?.targetIds),
 	};
 }

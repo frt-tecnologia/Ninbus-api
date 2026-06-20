@@ -2,8 +2,43 @@ import { db } from '@common/db';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
-import { sendEmail } from './email';
+import { sendEmail, sendTemplatedEmail } from './email';
+import { appLogger } from '@common/logger';
 import { env } from './env';
+
+/** Extract a first name from a user's full name (defensive — never throws). */
+function firstNameOf(fullName: string | null | undefined): string {
+	if (!fullName) return '';
+	return fullName.trim().split(/\s+/)[0] ?? fullName;
+}
+
+/**
+ * Build an app deep link from a Better Auth callback URL and token.
+ *
+ * Better Auth generates `url` using BETTER_AUTH_URL (which points at the API).
+ * We rewrite it to a link the mobile app can intercept:
+ *   - Prefer APP_DEEP_LINK_BASE (custom scheme like "ninbus://" or App Link https URL).
+ *   - Fall back to FRONTEND_URL (web).
+ *   - Fall back to the original Better Auth URL (best effort) + warn.
+ *
+ * Result: `${base}/reset-password?token=...`  →  e.g. `ninbus://reset-password?token=XXX`
+ */
+function buildAppDeepLink(originalUrl: string, token: string, path: string): string {
+	const base = env.APP_DEEP_LINK_BASE ?? env.FRONTEND_URL;
+	if (!base) {
+		appLogger.warn(
+			{ path },
+			'Neither APP_DEEP_LINK_BASE nor FRONTEND_URL is set — email links will point at the API (BETTER_AUTH_URL). Set APP_DEEP_LINK_BASE (e.g. ninbus://) to route links into the mobile app.',
+		);
+		return originalUrl;
+	}
+	const cleanPath = path.replace(/^\/+/, '');
+	// Custom schemes (e.g. "ninbus://") end with "://" — append the path directly
+	// so we get "ninbus://reset-password" (not "ninbus:/reset-password").
+	// Host-based URLs (e.g. "https://ninbus.frt.com.br") need a "/" separator.
+	const separator = base.endsWith('://') ? '' : '/';
+	return `${base}${separator}${cleanPath}?token=${encodeURIComponent(token)}`;
+}
 
 /**
  * Better Auth configuration
@@ -22,18 +57,37 @@ export const auth = betterAuth({
 		requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
 
 		// Password reset - enables /api/auth/request-password-reset endpoint
-		sendResetPassword: async ({ user, url, token: _token }, _request) => {
+		sendResetPassword: async ({ user, url, token }, _request) => {
+			const resetLink = buildAppDeepLink(url, token, 'reset-password');
+			const template = env.RESEND_TEMPLATE_PASSWORD_RESET;
+			if (template) {
+				// Resend Dashboard template (alias "password-reset") — renders subject + body at Resend.
+				await sendTemplatedEmail({
+					to: user.email,
+					template,
+					variables: {
+						first_name: firstNameOf(user.name),
+						reset_password_url: resetLink,
+					},
+					// Required: a silent failure here means the user can never reset their password.
+					required: true,
+				});
+				return;
+			}
+			// Fallback: inline HTML (used when no template alias is configured).
+			appLogger.warn('RESEND_TEMPLATE_PASSWORD_RESET not set — falling back to inline HTML for password reset email.');
 			await sendEmail({
 				to: user.email,
 				subject: 'Reset your password',
-				text: `Click the link to reset your password: ${url}`,
+				text: `Click the link to reset your password: ${resetLink}`,
 				html: `
 					<h2>Reset Your Password</h2>
 					<p>Click the link below to reset your password:</p>
-					<a href="${url}">Reset Password</a>
+					<a href="${resetLink}">Reset Password</a>
 					<p>This link will expire in 1 hour.</p>
 					<p>If you didn't request this, please ignore this email.</p>
 				`,
+				required: true,
 			});
 		},
 
@@ -42,16 +96,32 @@ export const auth = betterAuth({
 	},
 	// Email verification (separate from emailAndPassword)
 	emailVerification: {
-		sendVerificationEmail: async ({ user, url, token: _token }, _request) => {
+		sendVerificationEmail: async ({ user, url, token }, _request) => {
+			const verifyLink = buildAppDeepLink(url, token, 'verify-email');
+			const template = env.RESEND_TEMPLATE_EMAIL_VERIFICATION;
+			if (template) {
+				await sendTemplatedEmail({
+					to: user.email,
+					template,
+					variables: {
+						first_name: firstNameOf(user.name),
+						verify_email_url: verifyLink,
+					},
+					required: true,
+				});
+				return;
+			}
+			appLogger.warn('RESEND_TEMPLATE_EMAIL_VERIFICATION not set — falling back to inline HTML for verification email.');
 			await sendEmail({
 				to: user.email,
 				subject: 'Verify your email address',
-				text: `Click the link to verify your email: ${url}`,
+				text: `Click the link to verify your email: ${verifyLink}`,
 				html: `
 					<h2>Verify Your Email</h2>
 					<p>Click the link below to verify your email address:</p>
-					<a href="${url}">Verify Email</a>
+					<a href="${verifyLink}">Verify Email</a>
 				`,
+				required: true,
 			});
 		},
 	},

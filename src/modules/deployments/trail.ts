@@ -5,7 +5,11 @@
  * parsing download progress and semantic phases from hawkBit
  * action status entries.
  */
+import { db } from '@common/db';
+import { deployments } from '@common/db/schema';
 import { hawkbitDistributionSets, hawkbitTargets } from '@common/hawkbit/client';
+import { appLogger } from '@common/logger';
+import { eq } from 'drizzle-orm';
 import type { EnrichedActionStatus, DeploymentPhase } from '@common/types/deployment-status';
 import {
 	enrichActionStatus,
@@ -59,50 +63,78 @@ export interface TargetStatusTrail {
 /**
  * Get all targets assigned to a DS with their current deployment status.
  *
- * For each target, finds the latest update action and computes:
- * - semantic phase (downloading, installing, etc.)
- * - download progress (0-100%)
- * - latest status message
+ * Source of truth for the target list is the LOCAL DB audit record
+ * (`deployments.target_ids`), because hawkBit's `getAssignedTargets` only
+ * returns targets whose CURRENT assignment is this DS. When a target is
+ * later re-assigned to a newer DS, it disappears from the old DS's list —
+ * making historical deployments appear empty.
+ *
+ * For each historical target, we query the action specific to THIS DS via
+ * RSQL filter `distributionSet.id=={dsId}` (not the target's most recent
+ * action, which may belong to a different DS).
  */
 export async function getDeploymentTargetStatuses(
 	dsId: number,
 	options?: { offset?: number; limit?: number },
 ): Promise<{ content: TargetDeploymentStatus[]; total: number }> {
-	const targetsResult = await hawkbitDistributionSets.getAssignedTargets(dsId, {
-		offset: options?.offset ?? 0,
-		limit: options?.limit ?? 100,
-	});
-
-	const result: TargetDeploymentStatus[] = [];
-
-	for (const target of targetsResult.content) {
-		// Get actions for this target — find the latest update action
-		const actions = await hawkbitTargets.getActions(target.controllerId, {
-			limit: 20,
-			sort: 'id:DESC',
-		});
-
-		// Prefer active update action, fallback to any update action
-		const updateAction = actions.content.find(
-			(a) => a.type === 'update' && a.active,
-		) ?? actions.content.find(
-			(a) => a.type === 'update',
-		);
-
-		let actionInfo: TargetDeploymentStatus['action'] = null;
-		if (updateAction) {
-			actionInfo = await resolveActionStatus(target.controllerId, updateAction);
+	// 1. Resolve target IDs: local DB first (historical truth), fallback to hawkBit current.
+	let controllerIds: string[] | null = null;
+	try {
+		const [local] = await db
+			.select({ targetIds: deployments.targetIds })
+			.from(deployments)
+			.where(eq(deployments.hawkbitDsId, dsId))
+			.limit(1);
+		if (local?.targetIds) {
+			try {
+				const parsed = JSON.parse(local.targetIds);
+				if (Array.isArray(parsed)) controllerIds = parsed.filter((x) => typeof x === 'string');
+			} catch { /* malformed JSON — fall through to hawkBit */ }
 		}
-
-		result.push({
-			controllerId: target.controllerId,
-			name: target.name,
-			updateStatus: target.updateStatus ?? 'unknown',
-			action: actionInfo,
-		});
+	} catch (dbErr: any) {
+		appLogger.warn('[TRAIL] Failed to read local target_ids for DS %d: %s', dsId, dbErr?.message ?? 'unknown');
 	}
 
-	return { content: result, total: targetsResult.total };
+	// Fallback: no local record → use hawkBit current assignment (best effort).
+	if (!controllerIds || controllerIds.length === 0) {
+		const targetsResult = await hawkbitDistributionSets.getAssignedTargets(dsId, {
+			offset: options?.offset ?? 0,
+			limit: options?.limit ?? 100,
+		});
+		controllerIds = targetsResult.content.map((t) => t.controllerId);
+	}
+
+	// 2. Apply pagination to the resolved historical list.
+	const total = controllerIds.length;
+	const offset = options?.offset ?? 0;
+	const limit = options?.limit ?? 100;
+	const page = controllerIds.slice(offset, offset + limit);
+
+	// 3. For each target, fetch info + the action specific to THIS DS.
+	const result: TargetDeploymentStatus[] = await Promise.all(
+		page.map(async (controllerId): Promise<TargetDeploymentStatus> => {
+			let name = controllerId;
+			let updateStatus = 'unknown';
+			try {
+				const target = await hawkbitTargets.get(controllerId);
+				name = target.name;
+				updateStatus = target.updateStatus ?? 'unknown';
+			} catch { /* target may have been deleted — keep controllerId as name */ }
+
+			let actionInfo: TargetDeploymentStatus['action'] = null;
+			try {
+				const actionsForDs = await hawkbitTargets.getActions(controllerId, {
+					q: `distributionSet.id==${dsId}`, sort: 'id:DESC', limit: 5,
+				});
+				const match = actionsForDs.content.find((a) => a.type === 'update') ?? actionsForDs.content[0] ?? null;
+				if (match) actionInfo = await resolveActionStatus(controllerId, match);
+			} catch (err: any) {
+				appLogger.debug('[TRAIL] actions query failed for %s DS %d: %s', controllerId, dsId, err?.message ?? 'unknown');
+			}
+			return { controllerId, name, updateStatus, action: actionInfo };
+		}),
+	);
+	return { content: result, total };
 }
 
 // ---------------------------------------------------------------------------

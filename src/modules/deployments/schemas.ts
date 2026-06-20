@@ -96,6 +96,7 @@ export const EnrichedDistributionSetSchema = t.Object({
 	id: t.Number(),
 	name: t.String(),
 	displayName: t.Optional(t.String({ description: 'User-visible deployment name extracted from DS description' })),
+	/** Artifact version (semantic, e.g. "2.1.0"). Merged from local DB audit; falls back to DS version. */
 	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
 	typeName: t.Optional(t.String()),
@@ -113,6 +114,10 @@ export const EnrichedDistributionSetSchema = t.Object({
 	artifactOriginalFile: t.Optional(t.String()),
 	/** Audit: number of targets assigned. */
 	targetCount: t.Optional(t.Number()),
+	/** Audit: hawkBit controllerIds assigned at deployment time.
+	 *  Source of truth for historical target lists (hawkBit assignedTargets
+	 *  only reflects the CURRENT assignment). */
+	targetIds: t.Optional(t.Array(t.String())),
 });
 
 // ── hawkBit Action Schema ────────────────────────────────────────────

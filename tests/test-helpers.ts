@@ -1,3 +1,4 @@
+import { hawkbitConfig } from '@common/config/hawkbit';
 /**
  * Test database cleanup helper.
  *
@@ -7,23 +8,10 @@
  * Usage: import { cleanTestDatabase } from './test-helpers';
  *        await cleanTestDatabase();
  */
-import { db, closeDatabase } from '@common/db';
-import {
-	account,
-	session,
-	verification,
-	user,
-	deviceCategoryAssignments,
-	devices,
-	companyMembers,
-	companies,
-	categories,
-	posts,
-} from '@common/db/schema';
-import { hawkbitConfig } from '@common/config/hawkbit';
-import { hawkbitTargets } from '@common/hawkbit/targets';
+import { db } from '@common/db';
 import { hawkbitDistributionSets } from '@common/hawkbit/distribution-sets';
 import { hawkbitSoftwareModules } from '@common/hawkbit/software-modules';
+import { hawkbitTargets } from '@common/hawkbit/targets';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -36,6 +24,7 @@ export async function cleanTestDatabase(): Promise<void> {
 		artifacts,
 		deployments,
 		devices,
+		pending_company_members,
 		company_members,
 		companies,
 		categories,

@@ -1,24 +1,29 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ErrorResponseSchema,
-	MemberAddResponseSchema,
 	MemberDeleteResponseSchema,
 	MemberListResponseSchema,
 	MemberUpdateResponseSchema,
-	addMemberSchema,
+	designateMemberSchema,
 	updateMemberRoleSchema,
 } from '@modules/companies/schemas';
 import { Elysia, t } from 'elysia';
+import { designateMember } from './designation';
+import { LastOwnerError } from './service';
 import * as service from './service';
 
 /**
  * Company member management routes.
  *
+ * Members are added by EMAIL (not userId). If the user exists, they are added
+ * immediately. If not, a pending designation is created and resolved when they
+ * sign up — same "factory onboarding" model as company creation.
+ *
  * Role requirements:
- * - GET /          → viewer (any member can list)
- * - POST /         → admin (add new members)
- * - PUT /:userId   → admin (change roles, cannot promote above own level)
- * - DELETE /:userId → admin (remove members, owner cannot be removed)
+ * - GET /             → viewer (any member can list)
+ * - POST /            → admin (add/designate new members by email)
+ * - PUT /:userId      → admin (change roles, cannot demote last owner)
+ * - DELETE /:userId   → admin (remove members, cannot remove last owner)
  */
 export const companyMemberRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/members' }),
@@ -47,34 +52,48 @@ export const companyMemberRoutes = withAuth(
 		},
 	)
 
-	// POST — Add member (admin+)
+	// POST — Designate/add member by email (admin+)
 	.post(
 		'/',
-		async ({ params, body, set }) => {
-			const member = await service.addCompanyMember({
+		async ({ params, body, user, set }) => {
+			const result = await designateMember({
 				companyId: params.companyId,
-				userId: body.userId,
+				email: body.email,
 				role: body.role,
+				createdBy: user.id,
 			});
+
 			set.status = 201;
-			return { message: 'Member added successfully', data: member };
+			return {
+				message: result.granted
+					? 'Member added successfully'
+					: 'Designation created — user will gain access when they sign up',
+				data: result,
+			};
 		},
 		{
 			auth: true,
 			companyRole: 'admin',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
-			body: addMemberSchema,
+			body: designateMemberSchema,
 			detail: {
 				tags: ['Companies'],
-				summary: 'Add company member',
+				summary: 'Add/designate a company member by email',
 				description:
-					'Adds a user to the company with specified role. Requires admin role or above.',
+					'Adds a member by email. If the user already has an account, they are added ' +
+					'immediately with the specified role. If not, a pending designation is created and ' +
+					'resolved automatically when they sign up. Requires admin role or above.',
 			},
 			response: {
-				201: MemberAddResponseSchema,
+				201: t.Object({
+					message: t.String(),
+					data: t.Object({
+						granted: t.Boolean(),
+						pending: t.Boolean(),
+					}),
+				}),
 				400: ErrorResponseSchema,
 				403: ErrorResponseSchema,
-				409: ErrorResponseSchema,
 			},
 		},
 	)
@@ -101,7 +120,7 @@ export const companyMemberRoutes = withAuth(
 			detail: {
 				tags: ['Companies'],
 				summary: 'Update member role',
-				description: 'Changes a member\'s role. Requires admin role or above.',
+				description: "Changes a member's role. Requires admin role or above.",
 			},
 			response: {
 				200: MemberUpdateResponseSchema,
@@ -114,8 +133,16 @@ export const companyMemberRoutes = withAuth(
 	// DELETE /:userId — Remove member (admin+)
 	.delete(
 		'/:userId',
-		async ({ params }) => {
-			await service.removeMember(params.companyId, params.userId);
+		async ({ params, set }) => {
+			try {
+				await service.removeMember(params.companyId, params.userId);
+			} catch (error) {
+				if (error instanceof LastOwnerError) {
+					set.status = 409;
+					return { error: 'Conflict', message: error.message };
+				}
+				throw error;
+			}
 			return { message: 'Member removed successfully' };
 		},
 		{
@@ -128,12 +155,15 @@ export const companyMemberRoutes = withAuth(
 			detail: {
 				tags: ['Companies'],
 				summary: 'Remove member',
-				description: 'Removes a member from the company. Requires admin role or above.',
+				description:
+					'Removes a member from the company. Cannot remove the last owner. ' +
+					'Requires admin role or above.',
 			},
 			response: {
 				200: MemberDeleteResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 			},
 		},
 	);

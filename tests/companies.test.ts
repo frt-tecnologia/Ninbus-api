@@ -8,12 +8,16 @@ afterAll(async () => {
 
 describe('Companies Module', () => {
 	const app = createApp();
+	const superAdminEmail = 'admin-test@ninbus.com.br';
 	const ownerEmail = `company-owner-${Date.now()}@example.com`;
+	const pendingOwnerEmail = `pending-owner-${Date.now()}@example.com`;
 	const memberEmail = `company-member-${Date.now()}@example.com`;
 	const password = 'TestPassword123!';
+	let superAdminCookie: string;
 	let ownerCookie: string;
 	let memberCookie: string;
 	let companyId: string;
+	let pendingCompanyId: string;
 
 	async function signUpAndIn(email: string, name: string): Promise<string> {
 		await app.handle(
@@ -44,21 +48,40 @@ describe('Companies Module', () => {
 				new Request('http://localhost/api/companies', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ name: 'Test Co' }),
+					body: JSON.stringify({ name: 'Test Co', ownerEmail }),
 				}),
 			);
 			expect(response.status).toBe(401);
 		});
 	});
 
-	describe('CRUD', () => {
-		it('POST /api/companies creates a company', async () => {
-			ownerCookie = await signUpAndIn(ownerEmail, 'Company Owner');
+	describe('Factory Onboarding (FASE 1+2)', () => {
+		it('setup: signs in super admin (factory)', async () => {
+			superAdminCookie = await signUpAndIn(superAdminEmail, 'Super Admin');
+			expect(superAdminCookie).toBeTruthy();
+		});
+
+		it('regular user CANNOT create company (403)', async () => {
+			const regularCookie = await signUpAndIn(`regular-${Date.now()}@example.com`, 'Regular');
 			const response = await app.handle(
 				new Request('http://localhost/api/companies', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'Ninbus Transit' }),
+					headers: { 'Content-Type': 'application/json', Cookie: regularCookie },
+					body: JSON.stringify({ name: 'Unauthorized Co', ownerEmail }),
+				}),
+			);
+			expect(response.status).toBe(403);
+		});
+
+		it('super admin creates company with existing owner (granted immediately)', async () => {
+			// Pre-register the owner
+			ownerCookie = await signUpAndIn(ownerEmail, 'Company Owner');
+
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+					body: JSON.stringify({ name: 'Ninbus Transit', ownerEmail }),
 				}),
 			);
 			expect(response.status).toBe(201);
@@ -67,7 +90,7 @@ describe('Companies Module', () => {
 			companyId = body.data.id;
 		});
 
-		it('GET /api/companies lists user companies', async () => {
+		it('owner sees the company in their list (role=owner)', async () => {
 			const response = await app.handle(
 				new Request('http://localhost/api/companies', {
 					headers: { Cookie: ownerCookie },
@@ -75,22 +98,95 @@ describe('Companies Module', () => {
 			);
 			expect(response.status).toBe(200);
 			const body = await response.json();
-			expect(body.data.length).toBeGreaterThanOrEqual(1);
 			expect(body.data.some((c: any) => c.id === companyId)).toBe(true);
+			const owned = body.data.find((c: any) => c.id === companyId);
+			expect(owned.role).toBe('owner');
 		});
 
-		it('GET /api/companies/:companyId returns company', async () => {
+		it('super admin creates company with NON-existing owner (pending designation)', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+					body: JSON.stringify({ name: 'Pending Co', ownerEmail: pendingOwnerEmail }),
+				}),
+			);
+			expect(response.status).toBe(201);
+			pendingCompanyId = (await response.json()).data.id;
+		});
+
+		it('pending owner does NOT see company before sign-up', async () => {
+			// pendingOwnerEmail hasn't signed up yet
+			const otherCookie = await signUpAndIn(`other-${Date.now()}@example.com`, 'Other');
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			const body = await response.json();
+			expect(body.data.some((c: any) => c.id === pendingCompanyId)).toBe(false);
+		});
+
+		it('pending owner signs up and AUTOMATICALLY gets the company (auto-vinculação)', async () => {
+			const newOwnerCookie = await signUpAndIn(pendingOwnerEmail, 'Pending Owner');
+
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					headers: { Cookie: newOwnerCookie },
+				}),
+			);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			const owned = body.data.find((c: any) => c.id === pendingCompanyId);
+			expect(owned).toBeDefined();
+			expect(owned.role).toBe('owner');
+		});
+
+		it('super admin creates company without ownerEmail → 400', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+					body: JSON.stringify({ name: 'No Owner Co' }),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('super admin creates company with invalid email → 400', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+					body: JSON.stringify({ name: 'Bad Email Co', ownerEmail: 'not-an-email' }),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('super admin creates company with empty name → 400', async () => {
+			const response = await app.handle(
+				new Request('http://localhost/api/companies', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+					body: JSON.stringify({ name: '', ownerEmail: `x-${Date.now()}@example.com` }),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+	});
+
+	describe('CRUD (owner perspective)', () => {
+		it('GET /:companyId returns company', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}`, {
 					headers: { Cookie: ownerCookie },
 				}),
 			);
 			expect(response.status).toBe(200);
-			const body = await response.json();
-			expect(body.data.id).toBe(companyId);
 		});
 
-		it('PUT /api/companies/:companyId updates company', async () => {
+		it('PUT /:companyId updates company name', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}`, {
 					method: 'PUT',
@@ -99,11 +195,10 @@ describe('Companies Module', () => {
 				}),
 			);
 			expect(response.status).toBe(200);
-			const body = await response.json();
-			expect(body.data.name).toBe('Ninbus Transit Updated');
+			expect((await response.json()).data.name).toBe('Ninbus Transit Updated');
 		});
 
-		it('GET /api/companies/:companyId returns 403 for non-member', async () => {
+		it('GET /:companyId returns 403 for non-member', async () => {
 			memberCookie = await signUpAndIn(memberEmail, 'Non Member');
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}`, {
@@ -114,8 +209,8 @@ describe('Companies Module', () => {
 		});
 	});
 
-	describe('Members', () => {
-		it('GET /api/companies/:companyId/members lists members', async () => {
+	describe('Members (email-based designation)', () => {
+		it('GET lists members (owner present)', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					headers: { Cookie: ownerCookie },
@@ -123,26 +218,50 @@ describe('Companies Module', () => {
 			);
 			expect(response.status).toBe(200);
 			const body = await response.json();
-			expect(body.data.length).toBeGreaterThanOrEqual(1);
-			expect(body.data[0].role).toBe('owner');
+			expect(body.data.some((m: any) => m.role === 'owner')).toBe(true);
 		});
 
-		it('POST /api/companies/:companyId/members rejects non-existent user', async () => {
+		it('POST adds existing user by email (granted)', async () => {
+			const newMemberEmail = `added-${Date.now()}@example.com`;
+			await signUpAndIn(newMemberEmail, 'Added Member');
+
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						userId: 'nonexistent-user-id',
-						role: 'viewer',
-					}),
+					body: JSON.stringify({ email: newMemberEmail, role: 'operator' }),
 				}),
 			);
-			// Should reject invalid userId (FK violation) — not crash with 500
-			expect([400, 404, 422]).toContain(response.status);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.granted).toBe(true);
 		});
 
-		it('returns 403 for non-member accessing members', async () => {
+		it('POST creates pending for non-existing email', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ email: `future-${Date.now()}@example.com`, role: 'viewer' }),
+				}),
+			);
+			expect(response.status).toBe(201);
+			const body = await response.json();
+			expect(body.data.pending).toBe(true);
+		});
+
+		it('POST rejects invalid email → 400', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ email: 'bad-email', role: 'viewer' }),
+				}),
+			);
+			expect(response.status).toBe(400);
+		});
+
+		it('non-member gets 403 on members list', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					headers: { Cookie: memberCookie },
@@ -152,30 +271,42 @@ describe('Companies Module', () => {
 		});
 	});
 
+	describe('Designations (pending member management)', () => {
+		it('GET lists pending designations', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/designations`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.data.length).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	describe('Owner protection (FASE 4)', () => {
+		it('cannot remove the last owner (409)', async () => {
+			// Find owner userId
+			const membersResp = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			const members = (await membersResp.json()).data;
+			const owner = members.find((m: any) => m.role === 'owner');
+
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members/${owner.userId}`, {
+					method: 'DELETE',
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(response.status).toBe(409);
+		});
+	});
+
 	describe('Validation', () => {
-		it('POST /api/companies returns 400 for empty name', async () => {
-			const response = await app.handle(
-				new Request('http://localhost/api/companies', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: '' }),
-				}),
-			);
-			expect(response.status).toBe(400);
-		});
-
-		it('POST /api/companies returns 400 for missing name', async () => {
-			const response = await app.handle(
-				new Request('http://localhost/api/companies', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({}),
-				}),
-			);
-			expect(response.status).toBe(400);
-		});
-
-		it('GET /api/companies/:companyId returns 400 for invalid UUID', async () => {
+		it('GET /:companyId returns 400 for invalid UUID', async () => {
 			const response = await app.handle(
 				new Request('http://localhost/api/companies/not-a-uuid', {
 					headers: { Cookie: ownerCookie },

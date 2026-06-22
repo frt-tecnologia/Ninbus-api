@@ -11,7 +11,7 @@ describe('Devices Module', () => {
 	const ts = Date.now();
 	const ownerEmail = `dev-owner-${ts}@example.com`;
 	const otherEmail = `dev-other-${ts}@example.com`;
-	const superAdminEmail = `admin-test@ninbus.com.br`;
+	const superAdminEmail = 'admin-test@ninbus.com.br';
 	const password = 'TestPassword123!';
 	const testSerial = `FF19E0EB${ts.toString(16).toUpperCase().slice(-8).padStart(8, '0')}`; // valid 16-char hex serial (8 bytes)
 	let ownerCookie: string;
@@ -39,12 +39,13 @@ describe('Devices Module', () => {
 		return signIn.headers.get('set-cookie') || '';
 	}
 
-	async function setupCompany(cookie: string): Promise<string> {
+	async function setupCompany(ownerEmail: string): Promise<string> {
+		// Company creation requires super admin. Sign in as super admin and create.
 		const response = await app.handle(
 			new Request('http://localhost/api/companies', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
-				body: JSON.stringify({ name: 'Device Test Company' }),
+				headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+				body: JSON.stringify({ name: 'Device Test Company', ownerEmail }),
 			}),
 		);
 		return (await response.json()).data.id;
@@ -63,10 +64,10 @@ describe('Devices Module', () => {
 
 	describe('Setup', () => {
 		it('creates company and categories', async () => {
+			superAdminCookie = await signUpAndIn(superAdminEmail, 'Super Admin');
 			ownerCookie = await signUpAndIn(ownerEmail, 'Device Owner');
 			otherCookie = await signUpAndIn(otherEmail, 'Other User');
-			superAdminCookie = await signUpAndIn(superAdminEmail, 'Super Admin');
-			companyId = await setupCompany(ownerCookie);
+			companyId = await setupCompany(ownerEmail);
 			categoryId = await createCategory(ownerCookie, companyId, 'bus_line');
 			expect(companyId).toBeDefined();
 		}, 10000);
@@ -246,9 +247,12 @@ describe('Devices Module', () => {
 
 		it('returns 404 for non-existent device', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/devices/11111111-1111-4111-8111-111111111111`, {
-					headers: { Cookie: ownerCookie },
-				}),
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/11111111-1111-4111-8111-111111111111`,
+					{
+						headers: { Cookie: ownerCookie },
+					},
+				),
 			);
 			expect(response.status).toBe(404);
 		});
@@ -367,27 +371,21 @@ describe('Devices Module', () => {
 
 		it('PUT /:deviceId/link without body returns 400', async () => {
 			const response = await app.handle(
-				new Request(
-					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
-					{
-						method: 'PUT',
-						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					},
-				),
+				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+				}),
 			);
 			expect(response.status).toBe(400);
 		});
 
 		it('PUT /:deviceId/link with short deviceKey returns 400', async () => {
 			const response = await app.handle(
-				new Request(
-					`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`,
-					{
-						method: 'PUT',
-						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-						body: JSON.stringify({ deviceKey: 'short' }),
-					},
-				),
+				new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}/link`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ deviceKey: 'short' }),
+				}),
 			);
 			expect(response.status).toBe(400);
 		});
@@ -418,14 +416,17 @@ describe('Devices Module', () => {
 		});
 
 		it('POST claim with dotted serial normalizes to hex', async () => {
-			const hexPart = ((ts + 1) & 0xFFFFFFFF).toString(16).toUpperCase().padStart(8, '0');
-			const dottedSerial = `${hexPart.slice(0,2)}.${hexPart.slice(2,4)}.${hexPart.slice(4,6)}.${hexPart.slice(6,8)}`;
+			const hexPart = ((ts + 1) & 0xffffffff).toString(16).toUpperCase().padStart(8, '0');
+			const dottedSerial = `${hexPart.slice(0, 2)}.${hexPart.slice(2, 4)}.${hexPart.slice(4, 6)}.${hexPart.slice(6, 8)}`;
 			// Provision first
 			await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
-					body: JSON.stringify({ serialNumber: dottedSerial, deviceKey: 'test-dotted-key-12345678' }),
+					body: JSON.stringify({
+						serialNumber: dottedSerial,
+						deviceKey: 'test-dotted-key-12345678',
+					}),
 				}),
 			);
 			const response = await app.handle(
@@ -441,7 +442,7 @@ describe('Devices Module', () => {
 		});
 
 		it('POST claim with mixed-case hex normalizes to uppercase', async () => {
-			const hexPart = ((ts + 2) & 0xFFFFFFFF).toString(16).padStart(8, '0').toLowerCase();
+			const hexPart = ((ts + 2) & 0xffffffff).toString(16).padStart(8, '0').toLowerCase();
 			const mixedSerial = hexPart;
 			// Provision first
 			await app.handle(

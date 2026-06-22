@@ -10,11 +10,9 @@ import { deployments } from '@common/db/schema';
 import { hawkbitDistributionSets, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
-import type { EnrichedActionStatus, DeploymentPhase } from '@common/types/deployment-status';
-import {
-	enrichActionStatus,
-	getLatestProgress,
-} from '@common/types/deployment-status-helpers';
+import type { DeploymentPhase } from '@common/types/deployment-status';
+import { getSnapshot } from './snapshot';
+import { resolveActionStatus } from './trail-helpers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,7 +108,11 @@ export async function getDeploymentTargetStatuses(
 	const limit = options?.limit ?? 100;
 	const page = controllerIds.slice(offset, offset + limit);
 
-	// 3. For each target, fetch info + the action specific to THIS DS.
+	// 3. Load the frozen snapshot ONCE for this DS — used to preserve history
+	//    for targets whose hawkBit action was cancelled/superseded.
+	const snapshot = await getSnapshot(dsId);
+
+	// 4. For each target, fetch info + the action specific to THIS DS.
 	const result: TargetDeploymentStatus[] = await Promise.all(
 		page.map(async (controllerId): Promise<TargetDeploymentStatus> => {
 			let name = controllerId;
@@ -120,6 +122,28 @@ export async function getDeploymentTargetStatuses(
 				name = target.name;
 				updateStatus = target.updateStatus ?? 'unknown';
 			} catch { /* target may have been deleted — keep controllerId as name */ }
+
+			// FROZEN SNAPSHOT SHORTCIRCUIT: if this target has a frozen snapshot entry,
+			// use it directly — the hawkBit action may have disappeared (cancelled /
+			// superseded) but the Ninbus history is preserved. This is what keeps
+			// cancelled devices visible in old deployments.
+			const frozenEntry = snapshot[controllerId];
+			if (frozenEntry?.frozen) {
+				return {
+					controllerId,
+					name: frozenEntry.name ?? name,
+					updateStatus,
+					action: {
+						id: frozenEntry.actionId ?? 0,
+						type: frozenEntry.actionType ?? 'update',
+						active: false,
+						status: frozenEntry.finalStatus ?? frozenEntry.phase,
+						phase: frozenEntry.phase,
+						progress: null,
+						message: frozenEntry.finalStatus ?? frozenEntry.phase,
+					},
+				};
+			}
 
 			let actionInfo: TargetDeploymentStatus['action'] = null;
 			try {
@@ -202,45 +226,5 @@ export async function getTargetStatusTrail(
 
 // ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the enriched status for a single action.
- * Fetches action status history and computes phase + progress.
- */
-async function resolveActionStatus(
-	controllerId: string,
-	action: { id: number; type: string; active: boolean; status: string; createdAt?: number },
-): Promise<NonNullable<TargetDeploymentStatus['action']>> {
-	try {
-		const statusList = await hawkbitTargets.getActionStatus(controllerId, action.id);
-		const latest = statusList.content[0];
-		if (latest) {
-			const enriched = enrichActionStatus(latest);
-			const progress = getLatestProgress(statusList.content);
-			return {
-				id: action.id,
-				type: action.type,
-				active: action.active,
-				status: action.status,
-				createdAt: action.createdAt,
-				phase: enriched.phase,
-				progress,
-				message: enriched.displayMessage,
-			};
-		}
-	} catch {
-		// Status not available yet — fall through
-	}
-
-	return {
-		id: action.id,
-		type: action.type,
-		active: action.active,
-		status: action.status,
-		createdAt: action.createdAt,
-		phase: action.active ? 'assigned' : 'unknown',
-		progress: null,
-		message: action.status,
-	};
-}
+//---------------------------------------------------------------------------
+// resolveActionStatus moved to ./trail-helpers.ts (file size limit).

@@ -1,9 +1,9 @@
 import { db } from '@common/db';
+import { appLogger } from '@common/logger';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { sendEmail, sendTemplatedEmail } from './email';
-import { appLogger } from '@common/logger';
 import { env } from './env';
 
 /** Extract a first name from a user's full name (defensive — never throws). */
@@ -75,7 +75,9 @@ export const auth = betterAuth({
 				return;
 			}
 			// Fallback: inline HTML (used when no template alias is configured).
-			appLogger.warn('RESEND_TEMPLATE_PASSWORD_RESET not set — falling back to inline HTML for password reset email.');
+			appLogger.warn(
+				'RESEND_TEMPLATE_PASSWORD_RESET not set — falling back to inline HTML for password reset email.',
+			);
 			await sendEmail({
 				to: user.email,
 				subject: 'Reset your password',
@@ -111,7 +113,9 @@ export const auth = betterAuth({
 				});
 				return;
 			}
-			appLogger.warn('RESEND_TEMPLATE_EMAIL_VERIFICATION not set — falling back to inline HTML for verification email.');
+			appLogger.warn(
+				'RESEND_TEMPLATE_EMAIL_VERIFICATION not set — falling back to inline HTML for verification email.',
+			);
 			await sendEmail({
 				to: user.email,
 				subject: 'Verify your email address',
@@ -129,6 +133,31 @@ export const auth = betterAuth({
 	session: {
 		expiresIn: 60 * 60 * 24 * 7, // 7 days
 		updateAge: 60 * 60 * 24, // 1 day
+	},
+	/**
+	 * Database hooks — resolve pending company designations on sign-up.
+	 *
+	 * When a user registers, we check if any company designated them by email
+	 * (via `pending_company_members`). If so, they are automatically granted the
+	 * designated role in those companies. This is the "factory onboarding" model:
+	 * the factory (super admin) creates the company and designates the owner's
+	 * email. The owner simply registers to receive access — no invite links.
+	 *
+	 * The hook never throws — a DB error here must NOT block user registration.
+	 * A safety-net fallback exists in GET /api/companies (resolvePendingMembers).
+	 */
+	databaseHooks: {
+		user: {
+			create: {
+				after: async (newUser) => {
+					// Dynamic import to avoid circular dependency at module load time.
+					const { resolvePendingMembers } = await import('@modules/companies/designation');
+					if (newUser?.email) {
+						await resolvePendingMembers(newUser.email, newUser.id);
+					}
+				},
+			},
+		},
 	},
 	secret: env.BETTER_AUTH_SECRET!,
 	baseURL: env.BETTER_AUTH_URL,

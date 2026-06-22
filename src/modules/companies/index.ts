@@ -10,23 +10,37 @@ import {
 	UpdateCompanyBodySchema,
 } from '@modules/companies/schemas';
 import { Elysia, t } from 'elysia';
+import { resolvePendingMembers } from './designation';
 import * as service from './service';
 
 /**
  * Companies Module — Multi-tenancy management.
  *
+ * Company creation is restricted to the factory (super admin). The factory
+ * designates the company owner by email — if the owner's user account exists,
+ * they gain access immediately; otherwise a pending designation is created and
+ * resolved automatically when they sign up.
+ *
  * Role requirements:
  * - GET /            → viewer (any member)
- * - POST /           → any authenticated user (creates company as owner)
+ * - POST /           → super admin (factory) — creates company + designates owner
  * - GET /:id         → viewer (any member)
  * - PUT /:id         → admin (rename, status changes)
  * - DELETE /:id      → owner (destructive operation)
  */
 export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' }))
-	// GET / — List user's companies
+	// GET / — List user companies (resolves any pending designations first)
 	.get(
 		'/',
 		async ({ user }) => {
+			// Safety net: resolve pending designations for this user's email.
+			// Normally handled by the Better Auth user.create.after hook, but this
+			// covers the edge case where the hook failed or the designation was
+			// created after the user signed up.
+			if (user?.email) {
+				await resolvePendingMembers(user.email, user.id);
+			}
+
 			const companies = await service.getUserCompanies(user.id);
 			return { data: companies, total: companies.length };
 		},
@@ -43,26 +57,36 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 	)
 
-	// POST / — Create company (any authenticated user becomes owner)
+	// POST / — Create company (FACTORY / super admin only)
 	.post(
 		'/',
 		async ({ body, user, set }) => {
-			const company = await service.createCompany({ name: body.name, ownerId: user.id });
+			const company = await service.createCompany({
+				name: body.name,
+				ownerEmail: body.ownerEmail,
+				createdBy: user.id,
+			});
 			set.status = 201;
 			return { message: 'Company created successfully', data: company };
 		},
 		{
 			auth: true,
+			superAdmin: true,
 			body: CreateCompanyBodySchema,
 			detail: {
 				tags: ['Companies'],
-				summary: 'Create company',
-				description: 'Creates a new company with the authenticated user as owner',
+				summary: 'Create company (factory/super admin only)',
+				description:
+					'Creates a new company and designates the owner by email. ' +
+					'If the owner already has an account, they are added as owner immediately. ' +
+					'Otherwise a pending designation is created and resolved when they sign up. ' +
+					'Requires platform super admin (factory) access.',
 			},
 			response: {
 				201: CompanyCreateResponseSchema,
 				400: ErrorResponseSchema,
 				401: ErrorResponseSchema,
+				403: ErrorResponseSchema,
 			},
 		},
 	)

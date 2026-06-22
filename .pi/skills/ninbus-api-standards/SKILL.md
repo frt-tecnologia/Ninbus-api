@@ -34,13 +34,27 @@ Flutter → Ninbus API (Cookie/Bearer) → hawkBit Management (Basic Auth)
 
 ---
 
+## Módulos
+
+Auth · Admin (factory) · Companies (+ designations) · Categories (+ membros) · Devices (+ name-sync) · Deployments (+ snapshot) · Artifacts · SSE · Health
+
 ## Autorização — 3 Camadas
 
 1. **`auth: true`** — qualquer usuário logado
 2. **`superAdmin: true`** — emails em `SUPER_ADMIN_EMAILS` env var (não DB)
 3. **`companyRole: 'viewer'`** — RBAC: owner(4) > admin(3) > operator(2) > viewer(1)
 
-Rotas sem `:companyId` NUNCA usam `companyRole`.
+Rotas sem `:companyId` NUNCA usam `companyRole`. Rotas `/api/admin/*` e `/api/devices/*`
+(factory provisioning) usam `superAdmin: true`.
+
+### Modelo Fábrica (Onboarding por Email)
+
+- **POST /companies** exige `superAdmin` + `ownerEmail`. Se o usuário já existe,
+  vira owner imediatamente; senão, designação pendente (tabela `pending_company_members`)
+  resolvida automaticamente no sign-up via hook `user.create.after`.
+- Safety-net: `GET /companies` resolve pendências antes de listar.
+- POST /members também é por **email** (granted/pending). Último owner protegido (409).
+- Empresas suspensas bloqueiam writes (GET permitido). Apenas super admin suspende.
 
 ### ⚠️ companyRole NÃO verifica ownership de dados
 
@@ -88,6 +102,22 @@ const hawkbitData = await hawkbitSoftwareModules.listByIds(local.map(a => a.hawk
 - **Body schemas:** NUNCA definir body schema em rotas Better Auth (causa "Body already used"). Descrever body no `detail.description` string
 
 ---
+
+## Categorias (Grupos) e Membros
+
+3 tipos pré-existentes: `bus_line` (linhas) · `garage` (garagens) · `region` (regiões).
+Também suporta `yard` e `custom`.
+
+**CRUD do grupo:** `/api/companies/:companyId/categories` (viewer→GET, operator→POST/PUT, admin→DELETE).
+
+**Membros do grupo (N:N devices):** `/api/companies/:companyId/categories/:categoryId/devices`
+- GET (viewer) — lista dispositivos do grupo com `assignedAt`
+- POST (operator) — adesão em massa, **idempotente** (skip já-membros), **cross-tenant safe** (filtra deviceIds por companyId)
+- PUT (operator) — substitui todos os membros
+- DELETE /:deviceId (operator) — remove um membro (device permanece na empresa)
+
+Deletar o grupo cascade as atribuições (dispositivos permanecem). Um device pode
+estar em N grupos simultaneamente.
 
 ## hawkBit Integration
 
@@ -152,12 +182,32 @@ Tipos: `firmware-ninbus` (HIGH), `firmware-controller` (MED), `configuration-nfx
 
 ## Device Lifecycle
 
-| Ação | Quem | hawkBit Target | DB Record |
-|------|------|---------------|-----------|
-| Provision | Super admin | Cria | Cria (unclaimed) |
-| Claim | Company member | Preservado | companyId set |
-| Unclaim | Admin | **PRESERVADO** | companyId=null |
-| Deprovision | Super admin | **DELETADO** | **DELETADO** |
+| Ação | Quem | hawkBit Target | DB Record | Name sync |
+|------|------|---------------|-----------|-----------|
+| Provision | Super admin | Cria | Cria (unclaimed) | — |
+| Claim | Company member | Preservado | companyId set | ✅ PUT name |
+| Unclaim | Admin | **PRESERVADO** | companyId=null | — |
+| Deprovision | Super admin | **DELETADO** | **DELETADO** | — |
+| Rename (PUT) | Operator | Preservado | name updated | ✅ PUT name |
+
+### Name Sync (Device → hawkBit)
+
+O `name` do usuário é propagado ao hawkBit via `PUT /rest/v1/targets/{controllerId} { name }`
+em claim/update/link (`src/modules/devices/name-sync.ts`). Best-effort: erros não
+bloqueiam a mutação local (DB é canônico). Guard `hawkbitConfig.enabled`.
+
+## Deployment Snapshot (STICKY-FINISHED)
+
+hawkBit NÃO preserva histórico de actions canceladas/substituídas. O Ninbus
+armazena snapshot imutável por target em `deployments.target_status_snapshot` (JSONB).
+
+**Regra STICKY-FINISHED:** uma vez `installed`, o snapshot é frozen e NUNCA
+sobrescrito (nem por cancel). Dispositivos em estado não-terminal viram `canceled`
+quando o deployment é cancelado.
+
+- `GET /target-statuses` prefere snapshot frozen (preserva histórico).
+- `GET /deployments` NÃO filtra `!deleted` (histórico nunca some).
+- Sync engine freeze automaticamente em fases terminais.
 
 ---
 
@@ -225,10 +275,12 @@ Pushado a cada ciclo de sync quando existem devices com `hawkbitUpdateStatus='pe
 bun test --env-file=.env.test
 ```
 
-- 174 integration tests (10 arquivos) + 71 unit tests (deployment.test.ts)
+- **Integration tests** (10 arquivos): auth · companies · categories · devices · deployments · artifacts · provisioning · health · posts · sse
+- **Unit tests**: deployment status helpers · snapshot (STICKY-FINISHED, 6 test) · name-sync (5 test) · enrichment · email
 - Separate test DB via `.env.test`
-- `afterAll(() => cleanAll())` em cada suite
+- `afterAll(() => cleanAll())` em cada suite — limpa TODAS as tabelas em ordem FK
 - `HAWKBIT_ENABLED=false` — zero hawkBit calls
+- `SUPER_ADMIN_EMAILS=admin-test@ninbus.com.br` para setup (factory)
 
 ---
 

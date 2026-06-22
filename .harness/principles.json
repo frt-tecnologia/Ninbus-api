@@ -783,6 +783,14 @@
       "category": "architecture",
       "learnedAt": "2026-06-20T21:06:37.528Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-category-members-group-lifecycle",
+      "rule": "Para gerenciar membros (dispositivos) dentro de um grupo (categoria), implemente endpoints group-centric sob /api/companies/:companyId/categories/:categoryId/devices: GET (list), POST (add — idempotente), PUT (replace all), DELETE /:deviceId (remove single). POST deve ser IDEMPOTENTE (skip já-membros em vez de erro) e CROSS-TENANT SAFE (filtrar deviceIds por companyId antes de inserir — nunca confiar que IDs passados pertencem à empresa). Remover um membro (DELETE /:deviceId) NÃO é operação destrutiva do grupo → operator, não admin. Deletar o grupo inteiro ainda é admin. A FK cascade na tabela device_category_assignments (onDelete: cascade) garante que deletar a categoria remove as atribuições mas PRESERVA os dispositivos na empresa. Testar explicitamente o caso cross-tenant (dispositivo de outra empresa é silenciosamente rejeitado) — é o principal vetor de leak.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-21T01:55:09.543Z",
+      "reinforcementCount": 1
     }
   ]
 }

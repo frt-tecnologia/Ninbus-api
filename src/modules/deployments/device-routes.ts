@@ -175,10 +175,25 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/targets/:targetId/actions/:actionId',
 		async ({ params, set }) => {
 			try {
-				await hawkbitTargets.cancelAction(params.targetId, Number(params.actionId), true);
+				const dsId = Number(params.deploymentId);
+				const actionId = Number(params.actionId);
 
-				// After cancelling, protect target from sync engine re-marking as 'pending'
-				// hawkBit may still report 'pending' until it processes the cancellation
+				// STICKY-SNAPSHOT: if the target already finished, freeze as 'installed'
+				// BEFORE cancelling — preserves real outcome. Else mark 'canceled'.
+				try {
+					const statusList = await hawkbitTargets.getActionStatus(params.targetId, actionId, { limit: 5 });
+					if (statusList.content[0]?.type === 'finished') {
+						const { freezeTargetAsInstalled } = await import('./snapshot');
+						await freezeTargetAsInstalled(dsId, params.targetId, actionId);
+					}
+				} catch { /* status lookup best-effort */ }
+
+				await hawkbitTargets.cancelAction(params.targetId, actionId, true);
+
+				// Record cancellation (respects sticky-installed — keeps finished as finished).
+				const { freezeTargetAsCanceledIfNotInstalled } = await import('./snapshot');
+				await freezeTargetAsCanceledIfNotInstalled(dsId, params.targetId, actionId);
+
 				const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
 				protectTargetStatuses([params.targetId], 'in_sync');
 

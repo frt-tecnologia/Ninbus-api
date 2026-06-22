@@ -1,72 +1,96 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-06-20T19:23:08.588Z
+**Date**: 2026-06-21T01:56:08.501Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-All deployment-history issues fixed and validated empirically in Docker. Build clean (1307 modules, 3.61MB). (1) H1 empty target lists: getDeploymentTargetStatuses now reads deployments.target_ids from local DB — GET /deployments/4/target-statuses returns 3 targets (was 2). (2) H2 version inconsistency: enrichDeployment(ds, local) merges artifactVersion → version='2.1.0' (was 'v-1781981079402'). (3) H4 wrong action: RSQL filter distributionSet.id=={dsId} fetches the action specific to each DS (DEV0001 shows phase=canceled correctly). hawkBit boot fixed (was 81 restart-loop) via Flyway baseline + ALTER ROLE search_path. Resend confirmed working (email sent id d9721cb9).
+Build clean (1308 modules, 3.63MB). 27/27 testes de categorias passam. Testei empiricamente via HTTP contra o container Docker (com hawkBit habilitado) todo o ciclo de vida do enunciado: (1) Adesão de novo grupo nos 3 tipos pré-existentes bus_line/garage/region (POST /categories → 201); (2) Adesão de membros em massa idempotente (POST /categories/:id/devices → {assigned, skipped, total}); (3) Listagem de membros com assignedAt (GET → data+total); (4) Edição dos membros via PUT (substituição total); (5) Edição do nome do grupo (PUT /:id); (6) Exclusão de membro individual (DELETE /:id/devices/:deviceId → removed:1 e removed:0 idempotente); (7) Exclusão do grupo (DELETE /:id → cascade das atribuições, dispositivo permanece na empresa verificado). Dispositivo pode estar em N grupos simultaneamente (N:N confirmado). .env restaurado (ENABLE_RATE_LIMITER=true, SUPER_ADMIN_EMAILS original).
 
-**Evidence**: docker logs ninbus-api: 'Email sent via Resend' id d9721cb9-5dea-4722-864a-ba9c382304ea. HTTP GET /deployments/4/target-statuses total=3 with DEV0001 canceled. bun build: 'Bundled 1307 modules'. hawkbit + ninbus-api both healthy.
+**Evidence**: docs/flutter-category-integration.md (fluxo completo); /tmp/test_full_lifecycle.sh output mostrando todas as 8 etapas com respostas HTTP 200/201 reais; tests/categories.test.ts:27 pass/0 fail
 
 ### ✅ Code Quality
 
-All modified files ≤250 lines after refactoring: enrichment.ts=244, trail.ts=246, service.ts=248, auth/index.ts=250, email.ts=88, auth.ts=102, helpers.ts=111. getLocalDeployment extracted to helpers.ts (shared). Clean separation maintained: schemas.ts (EnrichedDistributionSetSchema + targetIds), enrichment.ts (logic), trail.ts (status resolution), service.ts (orchestration). Logger uses %s format strings.
+Todos os arquivos do módulo categories ≤250 linhas: index.ts=161, member-routes.ts=212, schemas.ts=147, service.ts=249 (no limite). Separação limpa: schemas.ts (AddDevicesToCategorySchema, CategoryDevicesListResponseSchema, CategoryDevicesActionResponseSchema, CategoryDeviceRemoveResponseSchema, selectMemberDeviceSchema) → member-routes.ts (handlers) → service.ts (getCategoryDevices, addDevicesToCategory, setCategoryDevices, removeDeviceFromCategory, filterCompanyDevices). Logger usa %s format strings. member-routes.ts é um arquivo novo (separação por tipo de operação, padrão seguido do projeto para artifacts/manage-routes.ts, devices/category-routes.ts).
 
-**Evidence**: wc -l shows all files ≤250. No inline response schemas in route files.
+**Evidence**: wc -l src/modules/categories/*.ts; biome check src/modules/categories src/app.ts → 0 lint errors; bun build OK
 
 ### ✅ Schema Organization
 
-EnrichedDistributionSetSchema in schemas.ts now includes targetIds: t.Optional(t.Array(t.String())) and improved version description. TargetActionStatusSchema / TargetDeploymentStatusSchema remain in trail-schemas.ts (re-exported). Route files import all response schemas — none defined inline.
+Todos os response schemas (CategoryDevicesListResponseSchema, CategoryDevicesActionResponseSchema, CategoryDeviceRemoveResponseSchema) definidos em src/modules/categories/schemas.ts e importados por member-routes.ts — NENHUM schema de resposta inline no route file. addDevicesToCategorySchema (body) também em schemas.ts. Params (companyId, categoryId, deviceId) definidos localmente em cada handler (route-specific, conforme permitido pelo critério). ErrorResponseSchema e GenericActionResponseSchema re-exportados. selectMemberDeviceSchema usa dateTimeString (t.Date()) para timestamps Drizzle — nunca t.String com format:date-time. Import de deviceCategoryAssignments separado como `import type` para satisfazer o biome useImportType.
 
-**Evidence**: schemas.ts EnrichedDistributionSetSchema has targetIds field; trail-schemas.ts unchanged structure.
+**Evidence**: src/modules/categories/schemas.ts:76-148; src/modules/categories/member-routes.ts importa todos os schemas
 
 ### ✅ Error Handling
 
-Two-level hawkBit protection preserved: trail.ts getDeploymentTargetStatuses catches DB errors (fallback to hawkBit assignedTargets) and hawkBit action errors (debug log, action=null). enrichDeployment catches stats fetch failures → status='unknown'. sendEmail surfaces failures via EmailSendError when required. Better Auth background-task swallowing documented as a lib limitation (runInBackgroundOrAwait try/catch).
+Estes endpoints NÃO chamam hawkBit (são puramente CRUD na tabela device_category_assignments), então a two-level hawkBit protection não se aplica. Erros tratados: 401 (sem auth via withAuth macro), 403 (papel insuficiente via companyRole macro), 404 (categoria inexistente — verificado em todos os 4 handlers GET/POST/PUT/DELETE antes de operar), 400 (validação de body: minItems:1 em deviceIds, type check via companyRole). setCategoryDevices usa db.transaction para replace atômico (delete + insert). addDevicesToCategory é idempotente por design (skipped em vez de erro). Não há try/catch swallowing — exceções de DB propagam para o onError global.
 
-**Evidence**: trail.ts try/catch around db.select and hawkbitTargets.getActions; email.ts EmailSendError thrown when required||production.
+**Evidence**: member-routes.ts: cada handler verifica getCategoryById → 404; tests cobrem 404/400/401/403
 
 ### ✅ Test Coverage
 
-Added 22 new unit tests: enrichment.test.ts (17 tests) covers enrichOrphanedDeployment + enrichDeployment(local) — version semantics, targetIds parsing (null/malformed/non-array/filter), fallbacks, status completed/unknown; email.test.ts (5 tests) covers EmailSendError on required+error, required+throw, dev best-effort swallow, error message contents. Full suite: 93 unit tests pass / 0 fail (71 pre-existing + 22 new). E2E tests in tests/*.test.ts that fail are PRE-EXISTING (confirmed via git stash: fail on original code too) — unrelated to these changes.
+Adicionei 15 novos testes no bloco 'Category Members (device ↔ category N:N)' em tests/categories.test.ts, cobrindo exatamente as 6 funcionalidades do enunciado Flutter: setup com 3 tipos (bus_line/garage/region), GET vazio, POST adesão, POST idempotência, GET com assignedAt, DELETE membro individual (removed=1 e removed=0), PUT substituição total, PUT array vazio → 400, GET 404 categoria inexistente, POST 400 sem deviceIds, 403 cross-company, 401 sem auth, CROSS-TENANT explicitamente testado (dispositivo de empresa B NÃO é adicionado à categoria da empresa A), cascade ao deletar categoria. Dispositivos inseridos diretamente no DB de teste (HAWKBIT_ENABLED=false). afterAll() cleanAll(). Idempotente. As 6 falhas pré-existentes em devices.test.ts são hawkBit-dependentes e foram confirmadas via git stash como falhando no main original — não relacionadas a estas mudanças.
 
-**Evidence**: bun test enrichment.test.ts + email.test.ts: '22 pass 0 fail'. git stash confirmed devices/deployments E2E failures exist on original code.
+**Evidence**: tests/categories.test.ts: 27 pass / 0 fail; git stash confirma 6 falhas devices pré-existentes no main
 
 ### ✅ Config Centralization
 
-New FRONTEND_URL var added to all 4 required locations: env.ts (TypeBox schema + process.env read), .env.example, .env.test, .env (local) + docker-compose.yml. No process.env reads outside env.ts. email.ts and auth.ts consume env.FRONTEND_URL / env.NODE_ENV via the typed accessor.
+Nenhuma nova variável de env foi necessária — os endpoints de membros usam apenas o schema de DB existente (device_category_assignments, devices, categories) e o macro companyRole já configurado. Nenhuma leitura de process.env fora de env.ts. .env restaurado ao estado original após testes (ENABLE_RATE_LIMITER=true, sem e2e-super@ninbus.com.br).
 
-**Evidence**: env.ts FRONTEND_URL schema at line ~66 and process.env['FRONTEND_URL'] in defaults; .env.example/.env.test/.env all contain FRONTEND_URL.
+**Evidence**: git diff .env vazio
 
 ### ✅ Security
 
-No auth/RBAC changes. companyRole macro unchanged. Resend error handling does NOT leak recipient existence (Better Auth still returns 200 for unknown emails). EmailSendError caught in handler → generic 502 message (no Resend internals leaked to client). FRONTEND_URL pattern-validated (https?://). targetIds come from the company-scoped deployments table.
+RBAC preservado: GET lista = viewer; POST/PUT/DELETE membro = operator (não-admin porque remover um membro NÃO é operação destrutiva do grupo); DELETE grupo inteiro = admin (inalterado em index.ts). CROSS-TENANT: filterCompanyDevices(deviceIds, companyId) filtra deviceIds por companyId ANTES de inserir — dispositivo de outra empresa é silenciosamente rejeitado, testado explicitamente. getCategoryById(categoryId, companyId) em todos os handlers garante escopo company (404 se categoria não pertence à empresa). companyRole macro com :companyId na path valida membership. deviceCategoryAssignments tem FK cascade onDelete. Nenhum dado de hawkBit (securityToken/deviceKey) é exposto nos response schemas.
 
-**Evidence**: auth/index.ts handler returns generic 'email service unavailable' message on EmailSendError; env.ts FRONTEND_URL pattern '^https?://.+'.
+**Evidence**: service.ts:filterCompanyDevices; tests/categories.test.ts cross-tenant test; member-routes.ts usa withAuth + companyRole
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-3 new principles learned and persisted: p-hawkbit-pgpooler-search-path (Flyway baseline + ALTER ROLE for shared PgBouncer DBs), p-hawkbit-assignedtargets-historical (local target_ids is the truth, RSQL distributionSet.id filter for per-DS actions), p-betterauth-background-tasks-swallow (runInBackgroundOrAwait never propagates email errors → log is the only signal). Full progress notes in docs/_progress/deployment-history-fix.md with hypothesis tree and confidence levels.
+Princípio p-category-members-group-lifecycle aprendido e persistido (99 princípios totais): endpoints group-centric /categories/:id/devices com POST idempotente + cross-tenant filter, DELETE membro = operator (não-admin), cascade preserva dispositivos. Documentação Flutter criada em docs/flutter-category-integration.md com tabela RBAC, exemplos JSON para cada endpoint, código Dart de fluxo completo, tabela de erros e seção de cobertura de testes. SKILL.md não precisou atualização (endpoints seguem padrões existentes do módulo). README não menciona endpoints individuais.
 
-**Evidence**: harness_learn_principle called 3x (total principles now 97). docs/_progress/deployment-history-fix.md documents H1-H7 hypotheses, validation, and fixes.
+**Evidence**: docs/flutter-category-integration.md (7.3KB); .harness/principles.json p-category-members-group-lifecycle
 
 ## Overall Notes
 
-## Deployment history + Resend fixes — fully validated in Docker
+## Verificação completa do ciclo de vida de categorização de dispositivos no Docker
 
-### Root cause resolution (infrastructure)
-hawkBit was in a 81-restart loop and had NEVER successfully started against the shared Neon PgBouncer database. Root causes: (1) Flyway baselined on existing Ninbus tables and never created hawkBit's sp_* tables; (2) PgBouncer transaction pooling resets search_path so SP_LOCK lookups failed. Fixed via SPRING_FLYWAY_BASELINE_ON_MIGRATE=true + SPRING_FLYWAY_BASELINE_VERSION=0 (coexist in public schema, names don't collide) + ALTER ROLE search_path. hawkBit now healthy.
+### Diagnóstico empírico inicial (estado pré-mudança)
+Testei via HTTP real contra o container `ninbus-api` (hawkBit habilitado) todos os endpoints existentes. Confirmei que o CRUD de **grupos** (categorias) já funcionava nos 3 tipos pré-existentes (`bus_line` | `garage` | `region`): criar/listar/editar-nome/excluir. A atribuição reversa (PUT /devices/:id/categories, substituição total) e listagem de categorias de um dispositivo também funcionavam.
 
-### Functional fixes (validated via real HTTP against Docker)
-- **H1 (empty target lists)**: getDeploymentTargetStatuses reads deployments.target_ids (local audit) instead of hawkBit assignedTargets (current-only). DS4 now returns 3 targets (was 2).
-- **H2 (inconsistent version)**: enrichDeployment(ds, local) merges artifactVersion → version='2.1.0' (was internal timestamp). artifactName/targetCount always present.
-- **H4 (wrong action per DS)**: RSQL `distributionSet.id=={dsId}` fetches the action specific to each DS (not the target's most recent). DEV0001 correctly shows phase=canceled for DS4.
-- **Resend**: confirmed working (email sent, id d9721cb9). email.ts rewritten with EmailSendError (required flag). FRONTEND_URL added → reset links now point to the frontend. Caveat: Better Auth's runInBackgroundOrAwait swallows email errors (always 200) — documented as a lib limitation; logs are the diagnostic signal. The resend.dev sandbox domain only delivers to the account-owner email — Luiz must verify a domain for general recipients.
+**Lacuna identificada para o Flutter**: não havia endpoints **group-centric** para gerenciar **membros dentro de um grupo** — todas as 4 operações retornavam 404:
+1. GET /categories/:id/devices (listar membros)
+2. POST /categories/:id/devices (adesão de membros)
+3. PUT /categories/:id/devices (edição dos membros)
+4. DELETE /categories/:id/devices/:deviceId (exclusão de membros)
 
-### Test coverage
-22 new unit tests (enrichment merge logic, EmailSendError propagation). 93 unit tests pass / 0 fail. Pre-existing E2E failures confirmed unrelated via git stash.
+### Implementação (4 novos endpoints, 1 novo arquivo)
+- `src/modules/categories/member-routes.ts` (212 linhas, novo) — 4 handlers com RBAC via `companyRole`: viewer (GET), operator (POST/PUT/DELETE membro).
+- `src/modules/categories/schemas.ts` (147 linhas) — `addDevicesToCategorySchema`, `CategoryDevicesListResponseSchema`, `CategoryDevicesActionResponseSchema`, `CategoryDeviceRemoveResponseSchema`, `selectMemberDeviceSchema`.
+- `src/modules/categories/service.ts` (249 linhas) — `getCategoryDevices`, `addDevicesToCategory` (idempotente + cross-tenant filter), `setCategoryDevices` (transacional), `removeDeviceFromCategory`, `filterCompanyDevices`, `countCategoryDevices`.
+- `src/app.ts` — registro de `categoryMemberRoutes`.
 
-### Files changed (12) + 2 new test files + 3 principles learned.
+### Validação empírica no Docker (todo o ciclo do enunciado)
+Script `/tmp/test_full_lifecycle.sh` confirmou via HTTP real contra o container com hawkBit habilitado:
+1. ✅ **Adesão de novo grupo** — 3 categorias (bus_line/garage/region) → 201
+2. ✅ **Adesão de membros** — POST idempotente, multi-device, N:N (DEV1 em 2 grupos)
+3. ✅ **Listagem de membros** — GET com assignedAt + total
+4. ✅ **Edição dos membros** — PUT substitui todos
+5. ✅ **Edição do nome do grupo** — PUT /:id
+6. ✅ **Exclusão de membros** — DELETE /:id/devices/:deviceId (removed=1)
+7. ✅ **Exclusão do grupo** — DELETE /:id (cascade atribuições, dispositivos preservados)
+8. ✅ **Dispositivo permanece** após exclusão do grupo
+
+### Testes
+15 novos testes em `tests/categories.test.ts` (bloco "Category Members") → **27 pass / 0 fail**. Cobrem: adesão, idempotência, listagem, remoção individual, substituição, 400/401/403/404, **cross-tenant** (empresa B rejeitada), cascade. As 6 falhas pré-existentes em `devices.test.ts` são hawkBit-dependentes e confirmadas via `git stash` como falhando no main original.
+
+### Build & Lint
+Build limpo (1308 módulos, 3.63MB). Biome: 0 erros nos arquivos modificados.
+
+### Documentação Flutter
+`docs/flutter-category-integration.md` (7.3KB) com: visão geral, tabela RBAC, todos os endpoints com exemplos JSON, código Dart completo, tabela de erros, seção de cobertura de testes.
+
+### Limpeza
+`.env` restaurado ao estado original (rate-limit reativado, e2e-super removido). Container reiniciado e saudável.

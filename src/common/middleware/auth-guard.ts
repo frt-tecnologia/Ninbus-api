@@ -1,9 +1,9 @@
-import { db } from '@common/db';
-import { companyMembers } from '@common/db/schema';
-import { and, eq } from 'drizzle-orm';
 import { auth } from '@common/config/auth';
 import { env } from '@common/config/env';
+import { db } from '@common/db';
+import { companies, companyMembers } from '@common/db/schema';
 import { serializeSignedCookie } from 'better-call';
+import { and, eq } from 'drizzle-orm';
 import type { Elysia } from 'elysia';
 
 /**
@@ -126,7 +126,7 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 				if (!minimumRole) return;
 
 				return {
-						resolve: async ({ user, params }: any) => {
+					resolve: async ({ user, params }: any) => {
 						// Skip if no user (auth macro will handle 401)
 						if (!user || !params?.companyId) {
 							return { companyRole: undefined, companyId: undefined };
@@ -144,8 +144,10 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 							.select({
 								role: companyMembers.role,
 								companyId: companyMembers.companyId,
+								companyStatus: companies.status,
 							})
 							.from(companyMembers)
+							.innerJoin(companies, eq(companyMembers.companyId, companies.id))
 							.where(
 								and(
 									eq(companyMembers.companyId, params.companyId),
@@ -160,9 +162,18 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 						return {
 							companyRole: membership.role,
 							companyId: membership.companyId,
+							companyStatus: membership.companyStatus,
 						};
 					},
-					beforeHandle: async ({ user, params, set, companyRole: derivedRole, _membershipDenied }: any) => {
+					beforeHandle: async ({
+						user,
+						params,
+						set,
+						request,
+						companyRole: derivedRole,
+						companyStatus,
+						_membershipDenied,
+					}: any) => {
 						if (!user) {
 							set.status = 401;
 							return { error: 'Unauthorized', message: 'Authentication required' };
@@ -179,6 +190,15 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 						if (_membershipDenied) {
 							set.status = 403;
 							return { error: 'Forbidden', message: 'You are not a member of this company' };
+						}
+
+						// Suspended companies block write operations (GET is always allowed for members).
+						if (companyStatus === 'suspended' && request.method !== 'GET') {
+							set.status = 403;
+							return {
+								error: 'Forbidden',
+								message: 'This company is suspended. Write operations are blocked.',
+							};
 						}
 
 						if (!derivedRole) return;

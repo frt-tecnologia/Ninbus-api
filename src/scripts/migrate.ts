@@ -54,6 +54,21 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
 				continue;
 			}
+			if (entry.tag === '0010_pending_company_members' && tableSet.has('pending_company_members')) {
+				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+				continue;
+			}
+			if (entry.tag === '0011_deployment_target_snapshot' && tableSet.has('deployments')) {
+				// Column-level check — re-run ALTER is safe (IF NOT EXISTS), but skip if
+				// the column is already present to avoid an unnecessary round-trip.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema='public' AND table_name='deployments'
+					AND column_name='target_status_snapshot'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

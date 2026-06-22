@@ -3,10 +3,13 @@ import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { artifactsModule } from '@modules/artifacts';
 import { artifactManageRoutes } from '@modules/artifacts/manage-routes';
+import { adminModule } from '@modules/admin';
 import { authModule } from '@modules/auth';
 import { categoriesModule } from '@modules/categories';
+import { categoryMemberRoutes } from '@modules/categories/member-routes';
 import { companiesModule } from '@modules/companies';
 import { companyMemberRoutes } from '@modules/companies/member-routes';
+import { designationRoutes } from '@modules/companies/designation-routes';
 import { deploymentsModule } from '@modules/deployments';
 import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
 import { devicesModule } from '@modules/devices';
@@ -137,9 +140,12 @@ export const createApp = () => {
 		// Feature modules
 		.use(healthModule)
 		.use(postsModule)
+		.use(adminModule)
 		.use(companiesModule)
 		.use(companyMemberRoutes)
+		.use(designationRoutes)
 		.use(categoriesModule)
+		.use(categoryMemberRoutes)
 		.use(devicesModule)
 		.use(deviceCategoryRoutes)
 		.use(provisioningRoutes)

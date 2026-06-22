@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { companies } from './companies';
 import { user } from './auth';
 
@@ -32,6 +32,23 @@ export const deployments = pgTable('deployments', {
 	targetCount: integer('target_count').default(0),
 	/** Audit: JSON array of hawkBit target IDs assigned (controllerIds). */
 	targetIds: text('target_ids'),
+	/**
+	 * Per-target status snapshot (JSONB). Frozen when a target reaches a terminal
+	 * state (finished/canceled) or when its action is superseded by a newer DS.
+	 *
+	 * This is the NINBUS CANONICAL HISTORY. hawkBit does NOT preserve per-target
+	 * status once an action is cancelled/superseded — the action disappears from
+	 * `GET /targets/{id}/actions?q=distributionSet.id=={dsId}`. Without this
+	 * snapshot, deployments that had devices cancelled by a concurrent deployment
+	 * lose their history (devices disappear from the list).
+	 *
+	 * Shape: { [controllerId]: { phase, actionId, actionType, finalStatus, frozen, snapshotAt } }
+	 *
+	 * STICKY RULE: once a target's phase is 'installed' (finished), it is NEVER
+	 * overwritten — even by a cancellation. This preserves the tracking that the
+	 * device DID update successfully before the deployment was cancelled.
+	 */
+	targetStatusSnapshot: jsonb('target_status_snapshot').default({}),
 	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),

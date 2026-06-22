@@ -1,6 +1,8 @@
 import { db } from '@common/db';
 import { companies, companyMembers } from '@common/db/schema';
+import { appLogger } from '@common/logger';
 import { and, desc, eq } from 'drizzle-orm';
+import { designateMember } from './designation';
 
 export async function getUserCompanies(userId: string) {
 	return await db
@@ -24,24 +26,41 @@ export async function getCompanyById(companyId: string) {
 	return company;
 }
 
-export async function createCompany(data: { name: string; ownerId: string }) {
+/**
+ * Creates a company and designates the owner by email.
+ * If the owner's user account already exists, they are added immediately.
+ * Otherwise, a pending designation is created and resolved when they sign up.
+ */
+export async function createCompany(data: {
+	name: string;
+	ownerEmail: string;
+	createdBy: string;
+}) {
 	const [company] = await db.insert(companies).values({ name: data.name }).returning();
 	if (!company) throw new Error('Failed to create company');
 
-	// Add creator as owner
-	await db.insert(companyMembers).values({
-		userId: data.ownerId,
+	// Designate the owner by email (grants immediately if user exists, else pending).
+	await designateMember({
 		companyId: company.id,
+		email: data.ownerEmail,
 		role: 'owner',
+		createdBy: data.createdBy,
 	});
+
+	appLogger.info(
+		'[COMPANY] Created company %s (%s), owner designated: %s',
+		company.id,
+		data.name,
+		data.ownerEmail,
+	);
 
 	return company;
 }
 
-export async function updateCompany(companyId: string, data: { name?: string }) {
+export async function updateCompany(companyId: string, data: { name?: string; status?: string }) {
 	const [company] = await db
 		.update(companies)
-		.set({ ...data, updatedAt: new Date() })
+		.set({ ...data, updatedAt: new Date() } as any)
 		.where(eq(companies.id, companyId))
 		.returning();
 	return company;
@@ -103,10 +122,43 @@ export async function updateMemberRole(companyId: string, userId: string, role: 
 	return member;
 }
 
-export async function removeMember(companyId: string, userId: string) {
+/**
+ * Removes a member. Throws if the member is the last owner of the company.
+ */
+export async function removeMember(companyId: string, userId: string): Promise<void> {
+	// Check if this member is an owner.
+	const [target] = await db
+		.select({ role: companyMembers.role })
+		.from(companyMembers)
+		.where(and(eq(companyMembers.companyId, companyId), eq(companyMembers.userId, userId)));
+
+	if (target?.role === 'owner') {
+		const ownerCount = await countCompanyOwners(companyId);
+		if (ownerCount <= 1) {
+			throw new LastOwnerError('Cannot remove the last owner of a company');
+		}
+	}
+
 	await db
 		.delete(companyMembers)
 		.where(and(eq(companyMembers.companyId, companyId), eq(companyMembers.userId, userId)));
+}
+
+/** Custom error for last-owner protection — caught in the route handler. */
+export class LastOwnerError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'LastOwnerError';
+	}
+}
+
+/** Counts how many owners a company has. */
+export async function countCompanyOwners(companyId: string): Promise<number> {
+	const owners = await db
+		.select({ id: companyMembers.id })
+		.from(companyMembers)
+		.where(and(eq(companyMembers.companyId, companyId), eq(companyMembers.role, 'owner')));
+	return owners.length;
 }
 
 export async function isCompanyMember(companyId: string, userId: string): Promise<boolean> {

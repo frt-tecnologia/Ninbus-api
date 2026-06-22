@@ -10,6 +10,7 @@
 
 export * from './auth';
 export * from './companies';
+export * from './pending-members';
 export * from './categories';
 export * from './devices';
 export * from './posts';

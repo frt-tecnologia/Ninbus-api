@@ -1,17 +1,9 @@
 /**
  * Sync Progress — Real-time action status polling & SSE emission.
  *
- * The sync engine only reads target.updateStatus (high-level: pending/in_sync/error).
- * Detailed progress (downloading 25%, installing, etc.) lives in hawkBit action
- * status entries. This module bridges the gap: polls action statuses for devices
- * with pending updates and emits granular SSE events to the Flutter frontend.
- *
- * Scalability guards:
- *   - Hard cap: max 50 devices polled per cycle (round-robin for overflow)
- *   - Deduplication: same controllerId only polled once per cycle
- *   - Skips poll when lastModifiedAt hasn't changed (device hasn't reported)
- *   - Final event emission when device leaves 'pending' state
- *   - DS resolution: one getAssignedDS per unique controllerId (cached per cycle)
+ * Polls hawkBit action statuses for devices with pending updates and emits
+ * granular SSE events. Scalability: 50 devices/cycle max (round-robin),
+ * dedup by controllerId, skip-unchanged via cache, final event on pending exit.
  */
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { hawkbitTargets } from '@common/hawkbit/client';
@@ -23,7 +15,7 @@ import type { ChangedDevice } from '@modules/devices/sync-helpers';
 import { getCompanyDsIds, emitFinalEvents, emitDeploymentStatsForDs } from './sync-progress-helpers';
 
 // ---------------------------------------------------------------------------
-// Constants
+// Constants & state
 // ---------------------------------------------------------------------------
 
 /** Max devices to poll per cycle — keeps hawkBit load under 20 req/s at 5s interval. */
@@ -31,10 +23,6 @@ const MAX_DEVICES_PER_CYCLE = 50;
 
 /** Cache TTL — clears stale entries for completed deployments. */
 const CACHE_TTL_MS = 300_000;
-
-// ---------------------------------------------------------------------------
-// State: caches for dedup + skip-unchanged + final event tracking
-// ---------------------------------------------------------------------------
 
 /** Tracks last actionId + lastModifiedAt per controllerId to skip redundant polls. */
 const actionCache = new Map<string, { actionId: number; lastModifiedAt: number | null }>();
@@ -139,6 +127,18 @@ async function pollAndEmitDeviceAction(
 		const latest = statusResult.content[0]!;
 		const enriched: EnrichedActionStatus = enrichActionStatus(latest);
 		const progress = getLatestProgress(statusResult.content);
+
+		// SNAPSHOT FREEZE: persist terminal phases — preserves history after hawkBit
+		// drops the action. Sticky rule: installed is never overwritten by cancel.
+		const dsId = dsIdMap.get(controllerId);
+		if (dsId) {
+			try {
+				const { freezeOnTerminalPhase } = await import('./snapshot');
+				await freezeOnTerminalPhase(dsId, controllerId, enriched.phase, updateAction.id, updateAction.type, latest.type);
+			} catch (e: any) {
+				appLogger.debug('[SYNC-PROGRESS] snapshot freeze failed for %s DS %d: %s', controllerId, dsId, e?.message ?? 'unknown');
+			}
+		}
 
 		sseEmitter.emit(companyId, 'device.action.status', {
 			deviceId, controllerId,

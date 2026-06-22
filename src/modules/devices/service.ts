@@ -4,6 +4,7 @@ import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { claimDevice } from './provisioning';
+import { syncDeviceNameToHawkbit } from './name-sync';
 
 // ---------------------------------------------------------------------------
 // Device CRUD (local DB)
@@ -50,6 +51,13 @@ export async function updateDevice(
 		.set({ ...data, updatedAt: new Date() })
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)))
 		.returning();
+
+	// If the name changed, propagate to hawkBit so the deployment target list
+	// stays in sync with the device list. Best-effort — never blocks the rename.
+	if (data.name && device?.hawkbitTargetId) {
+		await syncDeviceNameToHawkbit(device.hawkbitTargetId, data.name);
+	}
+
 	return device;
 }
 

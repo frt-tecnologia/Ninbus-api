@@ -230,8 +230,10 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 		return { data: enriched, total: enriched.length };
 	}
 
-	// 3. Enrich: active DSes from hawkBit (with local audit merge) + orphaned from local DB.
-	const hawkbitMap = new Map(hawkbitDSs.filter((ds) => !ds.deleted).map((ds: any) => [ds.id, ds]));
+	// 3. Enrich: all DSes from hawkBit (incl. soft-deleted) + orphaned from local
+	//    DB. NOT filtering `!ds.deleted` — soft-deleted DSes + local snapshot keep
+	//    history. The old filter made cancelled deployments vanish from the list.
+	const hawkbitMap = new Map(hawkbitDSs.map((ds: any) => [ds.id, ds]));
 	const enriched = await Promise.all(
 		localDeployments.map(async (local) => {
 			const hawkbitDS = hawkbitMap.get(local.hawkbitDsId);

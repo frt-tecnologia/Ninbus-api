@@ -35,6 +35,7 @@ export const swaggerConfig = {
 		},
 		tags: [
 			{ name: 'Health', description: 'Health check endpoints' },
+		{ name: 'Admin', description: 'Platform-level management for the factory (super admin). Full visibility across ALL companies, users, devices, and designations.' },
 			{ name: 'Auth', description: 'Authentication endpoints (Better Auth)' },
 			{
 				name: 'Provisioning',

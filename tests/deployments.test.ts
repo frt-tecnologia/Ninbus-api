@@ -34,12 +34,14 @@ describe('Deployments Module', () => {
 		return signIn.headers.get('set-cookie') || '';
 	}
 
-	async function setupCompany(cookie: string): Promise<string> {
+	async function setupCompany(ownerEmail: string): Promise<string> {
+		// Company creation requires super admin — sign in as super admin first.
+		const saCookie = await signUpAndIn('admin-test@ninbus.com.br', 'Super Admin');
 		const response = await app.handle(
 			new Request('http://localhost/api/companies', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
-				body: JSON.stringify({ name: 'Deployment Test Company' }),
+				headers: { 'Content-Type': 'application/json', Cookie: saCookie },
+				body: JSON.stringify({ name: 'Deployment Test Company', ownerEmail }),
 			}),
 		);
 		return (await response.json()).data.id;
@@ -49,9 +51,9 @@ describe('Deployments Module', () => {
 		it('creates company', async () => {
 			ownerCookie = await signUpAndIn(ownerEmail, 'Deployment Owner');
 			otherCookie = await signUpAndIn(otherEmail, 'Other User');
-			companyId = await setupCompany(ownerCookie);
+			companyId = await setupCompany(ownerEmail);
 			expect(companyId).toBeDefined();
-		});
+		}, 15000);
 	});
 
 	describe('Artifact Types', () => {
@@ -300,9 +302,9 @@ describe('Deployments Module', () => {
 		let otherCompanyId: string;
 
 		it('setup: creates second company', async () => {
-			otherCompanyId = await setupCompany(otherCookie);
+			otherCompanyId = await setupCompany(otherEmail);
 			expect(otherCompanyId).toBeDefined();
-		});
+		}, 15000);
 
 		it('GET / returns empty list for company with no deployments', async () => {
 			const response = await app.handle(

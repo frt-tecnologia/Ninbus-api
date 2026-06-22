@@ -11,6 +11,8 @@ import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { normalizeSerial, isNinbusSerial } from '@common/utils/serial-number';
 import { and, eq, isNull } from 'drizzle-orm';
+import { syncTargetName } from './name-sync';
+
 
 // ---------------------------------------------------------------------------
 // Factory provisioning — creates hawkBit target + local unclaimed device
@@ -116,6 +118,12 @@ export async function claimDevice(data: {
 		status: existing.hawkbitTargetId ? 'accepted' : 'pending', updatedAt: new Date(),
 	}).where(eq(devices.id, existing.id)).returning();
 
+	// Propagate the user-chosen name to hawkBit so the deployment target list
+	// shows the same name as the device list. Best-effort — see syncTargetName.
+	if (existing.hawkbitTargetId) {
+		await syncTargetName(existing.hawkbitTargetId, displayName, 'claim');
+	}
+
 	appLogger.info('[CLAIM] Device %s (%s) claimed by company %s', serialHex, serialDisplay, data.companyId);
 	return { success: true, device: claimed };
 }
@@ -188,6 +196,10 @@ export async function linkDevice(
 		})
 		.where(eq(devices.id, deviceId))
 		.returning();
+
+	// Ensure hawkBit has the canonical name (the create call above may have raced
+	// with a pre-existing target that has a factory name). Best-effort.
+	await syncTargetName(controllerId, device.name, 'link');
 
 	return { success: true, device: updated };
 }

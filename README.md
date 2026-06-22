@@ -116,28 +116,63 @@ curl http://localhost:8081/api/companies \
 
 | Rota | Role min. | Descrição |
 |------|-----------|-----------|
-| `GET /` | auth | Listar do usuário |
-| `POST /` | auth | Criar (user vira owner) |
+| `GET /` | auth | Listar do usuário (resolve designações pendentes) |
+| `POST /` | **super admin** | Criar + designar owner por email (modelo fábrica) |
 | `GET /:companyId` | viewer | Detalhes |
 | `PUT /:companyId` | admin | Atualizar |
 | `DELETE /:companyId` | owner | Remover |
+
+> ⚠️ **Apenas a fábrica (super admin) cria empresas.** O body exige `ownerEmail` —
+> se o usuário já existe, vira owner imediatamente; senão, fica como designação
+> pendente resolvida automaticamente quando ele se cadastra.
+
+### Admin (Fábrica) — `/api/admin/*` (super admin only)
+
+| Rota | Descrição |
+|------|-----------|
+| `GET /companies` | Todas empresas com counts |
+| `GET /companies/:id` | Detalhe de qualquer empresa |
+| `GET /companies/:id/members` | Membros de qualquer empresa |
+| `GET /companies/:id/devices` | Devices de qualquer empresa |
+| `PUT /companies/:id/status` | Suspender / reativar empresa |
+| `GET /users` | Todos usuários cadastrados |
+| `GET /devices` | Todos dispositivos (multi-tenant) |
+| `GET /pending-designations` | Designações pendentes (onboarding) |
 
 ### Membros — `/api/companies/:companyId/members/*`
 
 | Rota | Role min. | Descrição |
 |------|-----------|-----------|
 | `GET /` | viewer | Listar membros |
-| `POST /` | admin | Adicionar membro |
+| `POST /` | admin | Adicionar/designar por **email** (granted ou pending) |
 | `PUT /:userId` | admin | Alterar role |
-| `DELETE /:userId` | admin | Remover membro |
+| `DELETE /:userId` | admin | Remover (último owner protegido → 409) |
+
+### Designações — `/api/companies/:companyId/designations/*`
+
+| Rota | Role min. | Descrição |
+|------|-----------|-----------|
+| `GET /` | admin | Listar designações pendentes |
+| `DELETE /:designationId` | admin | Revogar designação não-claimada |
 
 ### Categorias — `/api/companies/:companyId/categories/*`
 
 | Rota | Role min. | Descrição |
 |------|-----------|-----------|
-| `GET /` | viewer | Listar |
+| `GET /` | viewer | Listar (filtra por `type`: bus_line \| garage \| region) |
 | `POST /` | operator | Criar |
-| `DELETE /:categoryId` | admin | Remover |
+| `GET /:categoryId` | viewer | Detalhes |
+| `PUT /:categoryId` | operator | Atualizar nome/descrição |
+| `DELETE /:categoryId` | admin | Remover (cascade de membros) |
+
+**Membros do grupo** (`/:categoryId/devices`):
+
+| Rota | Role min. | Descrição |
+|------|-----------|-----------|
+| `GET /` | viewer | Listar dispositivos do grupo (com `assignedAt`) |
+| `POST /` | operator | Adicionar membros (idempotente, cross-tenant safe) |
+| `PUT /` | operator | Substituir todos os membros |
+| `DELETE /:deviceId` | operator | Remover um membro |
 
 ### Dispositivos — `/api/companies/:companyId/devices/*`
 
@@ -202,6 +237,31 @@ curl http://localhost:8081/api/companies \
 
 ---
 
+## Onboarding — Modelo Fábrica
+
+A **fábrica** (super admin) cria empresas e designa o dono por **email**. O
+cliente simplesmente se cadastra no app com o email designado para receber
+acesso — **sem convites, links ou tokens**.
+
+```
+Fábrica: POST /companies { name, ownerEmail }
+    ├─ usuário já existe?  → adicionado como owner imediatamente
+    └─ não existe?         → designação pendente (tabela `pending_company_members`)
+
+Cliente: POST /auth/sign-up/email { email, password, name }
+    └─ hook user.create.after resolve designações pendentes → ganha acesso
+```
+
+**Segurança:** usuários comuns NÃO criam empresas (403). O dono de uma empresa
+pode convidar membros internos por email (mesmo mecanismo, pending ou granted).
+Ver `docs/flutter-factory-onboarding.md` e `docs/flutter-onboarding-task.md`.
+
+**Suspensão:** a fábrica pode suspender uma empresa via
+`PUT /admin/companies/:id/status` — write operations são bloqueadas para os
+membros (GET permanece).
+
+---
+
 ## Tenant Isolation (Multi-tenancy)
 
 Todos os dados sensíveis (devices, artifacts, deployments) são isolados por empresa via banco local.
@@ -227,8 +287,8 @@ Request: GET /api/companies/{companyId}/artifacts
 ```
 Super Admin (SUPER_ADMIN_EMAILS) → bypassa membership, vê todas as empresas
   owner (4) → tudo, inclusive deletar empresa
-    admin (3) → gerenciar membros, deletar recursos
-      operator (2) → criar/editar devices, deployments, artefatos
+    admin (3) → gerenciar membros, deletar recursos, ver designações
+      operator (2) → criar/editar devices, deployments, artefatos, membros de grupo
         viewer (1) → apenas leitura
 ```
 
@@ -238,6 +298,11 @@ Super Admin (SUPER_ADMIN_EMAILS) → bypassa membership, vê todas as empresas
 | admin | ✅ | ✅ | ✅ | ✅ |
 | operator | ✅ | ✅ | ✅ | ❌ |
 | viewer | ✅ | ❌ | ❌ | ❌ |
+
+**Empresas suspensas** (`status='suspended'`): write operations bloqueadas
+para membros (GET permanece). Apenas super admin pode suspender/reativar.
+
+**Proteção de owner:** remover o último owner de uma empresa retorna **409 Conflict**.
 
 ---
 
@@ -371,14 +436,50 @@ Valores de `phase`: `assigned` → `pending` → `downloading` → `downloaded` 
 
 ---
 
+## Device Name → hawkBit Sync
+
+O nome do dispositivo informado pelo usuário no cadastro é **propagado ao hawkBit**
+via `PUT /rest/v1/targets/{controllerId} { name }`, garantindo que a lista de
+dispositivos e a lista de targets em atualização mostrem o mesmo nome.
+
+- `claim` (cadastro), `update` (rename) e `link` (legacy) chamam o helper
+  `src/modules/devices/name-sync.ts`.
+- Best-effort: falhas no hawkBit são logadas mas não bloqueiam a mutação local
+  (o DB é a fonte canônica).
+
+Ver `docs/device-name-hawkbit-sync.md`.
+
+---
+
+## Deployment History Snapshot (STICKY-FINISHED)
+
+hawkBit **não preserva** o histórico de actions canceladas/substituídas. Para
+manter o histórico real visível (mesmo após cancelar deploys concorrentes), o
+Ninbus armazena um **snapshot imutável por target** na coluna
+`deployments.target_status_snapshot` (JSONB).
+
+**Regra STICKY-FINISHED:** uma vez que um dispositivo reportou `finished`, o
+snapshot é congelado como `installed` e **NUNCA sobrescrito** — nem por um
+cancelamento. Assim o tracking real é preservado: dispositivos que atualizaram
+antes do cancelamento continuam aparecendo como `installed`.
+
+- `GET /deployments/:id/target-statuses` prefere o snapshot quando frozen.
+- `GET /deployments` NÃO filtra mais `!deleted` — histórico nunca some.
+- O sync engine freeze automaticamente em fases terminais.
+
+Ver `docs/deployment-history-snapshot.md`.
+
+---
+
 ## Device Lifecycle
 
-| Ação | Quem | hawkBit Target | DB Record |
-|------|------|---------------|-----------|
-| Provision | super admin | **criado** | **criado** (unclaimed) |
-| Claim | company member | preservado | companyId set |
-| Unclaim | admin | **preservado** | companyId = null |
-| Deprovision | super admin | **deletado** | **deletado** |
+| Ação | Quem | hawkBit Target | DB Record | Name sync |
+|------|------|---------------|-----------|-----------|
+| Provision | super admin | **criado** | **criado** (unclaimed) | — |
+| Claim | company member | preservado | companyId set | ✅ PUT name |
+| Unclaim | admin | **preservado** | companyId = null | — |
+| Deprovision | super admin | **deletado** | **deletado** | — |
+| Rename (PUT) | operator | preservado | name updated | ✅ PUT name |
 
 ---
 
@@ -446,7 +547,7 @@ src/
 ├── app.ts                           # Composition root
 ├── common/
 │   ├── config/                      # env.ts · hawkbit.ts · auth.ts · email.ts
-│   ├── db/schema/                   # Drizzle tables (auth · companies · categories · devices · posts · artifacts · deployments)
+│   ├── db/schema/                   # Drizzle tables (auth · companies · pending-members · categories · devices · posts · artifacts · deployments)
 │   ├── hawkbit/                     # Client split by domain
 │   │   ├── client.ts                # Barrel re-export
 │   │   ├── http.ts                  # HTTP infrastructure + error class
@@ -464,26 +565,42 @@ src/
 │   └── swagger-config.ts           # OpenAPI/Scalar config
 ├── modules/
 │   ├── auth/                        # Better Auth routes
-│   ├── companies/                   # Multi-tenancy + RBAC + members
-│   ├── categories/                  # Device grouping
+│   ├── companies/                   # Multi-tenancy + RBAC + members + designations
+│   │   ├── index.ts                 # CRUD rotas (criação = super admin)
+│   │   ├── member-routes.ts         # Membros via email (granted/pending)
+│   │   ├── designation.ts           # Lógica de designação + resolução
+│   │   ├── designation-routes.ts    # Listar/revogar designações
+│   │   ├── service.ts               # Empresas + membros (último owner protegido)
+│   │   └── schemas.ts
+│   ├── categories/                  # Device grouping + membros do grupo
+│   │   ├── index.ts                 # CRUD categorias
+│   │   ├── member-routes.ts         # Dispositivos dentro do grupo (adesão/remoção/edição)
+│   │   ├── service.ts · schemas.ts
 │   ├── devices/                     # Registry + provisioning + sync engine
 │   │   ├── index.ts                 # CRUD routes
 │   │   ├── hawkbit-routes.ts        # hawkBit ops (attributes · actions · ddi-check)
 │   │   ├── category-routes.ts       # Device ↔ category
 │   │   ├── provision-routes.ts      # Super admin provisioning
+│   │   ├── provisioning.ts          # Factory provisioning + claim + link (com name sync)
+│   │   ├── name-sync.ts             # hawkBit target name propagation (claim/update/link)
 │   │   ├── service.ts               # Business logic
 │   │   ├── sync.ts                  # Engine orchestrator
 │   │   └── sync-*.ts               # Sync strategies + fetch + helpers
 │   ├── deployments/                 # OTA via hawkBit Distribution Sets
 │   │   ├── index.ts                 # Create · list · get · delete
-│   │   ├── device-routes.ts         # Statistics · targets · actions · trail
+│   │   ├── device-routes.ts         # Statistics · targets · actions · trail (cancel preserva sticky)
+│   │   ├── snapshot.ts              # Histórico imutável por target (regra STICKY-FINISHED)
+│   │   ├── trail.ts                 # target-statuses (prefere snapshot frozen)
+│   │   ├── trail-helpers.ts         # resolveActionStatus extraído
 │   │   ├── service.ts · schemas.ts · actions.ts · enrichment.ts
-│   │   ├── sync-progress.ts         # Action status polling + SSE progress events
+│   │   ├── sync-progress.ts         # Action status polling + SSE + snapshot freeze
 │   │   ├── sync-progress-helpers.ts # DS resolution · final events · stats
-│   │   └── trail.ts · trail-schemas.ts · ddi-diagnostics.ts
+│   │   └── ddi-diagnostics.ts
 │   ├── artifacts/                   # Firmware via hawkBit Software Modules
 │   │   ├── index.ts · manage-routes.ts · service.ts · schemas.ts
 │   │   └── tar-packager.ts          # .tar archive generator
+│   ├── admin/                       # Factory: visão global (companies · users · devices · designations)
+│   │   ├── index.ts · service.ts · schemas.ts
 │   ├── sse/                         # SSE routes
 │   ├── health/                      # GET /health
 │   └── posts/                       # CRUD reference
@@ -519,12 +636,14 @@ src/
 ## Testes
 
 ```bash
-bun test --env-file=.env.test    # 174 testes, DB separado (Neon)
+bun test --env-file=.env.test
 ```
 
-- 10 arquivos de integration tests + 1 unit test file (deployment status helpers, 71 test())
-- `afterAll(() => cleanAll())` em cada suite
+- **Integration tests** (10 arquivos): auth · companies · categories · devices · deployments · artifacts · provisioning · health · posts · sse
+- **Unit tests**: deployment status helpers · snapshot (STICKY-FINISHED) · name-sync · enrichment · email
+- `afterAll(() => cleanAll())` em cada suite — limpa todas as tabelas em ordem FK
 - `HAWKBIT_ENABLED=false` nos testes — zero chamadas hawkBit
+- `SUPER_ADMIN_EMAILS=admin-test@ninbus.com.br` em `.env.test` (factory para setup)
 
 ---
 

@@ -1,96 +1,92 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-06-21T01:56:08.501Z
+**Date**: 2026-06-26T13:21:04.416Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Build clean (1308 modules, 3.63MB). 27/27 testes de categorias passam. Testei empiricamente via HTTP contra o container Docker (com hawkBit habilitado) todo o ciclo de vida do enunciado: (1) Adesão de novo grupo nos 3 tipos pré-existentes bus_line/garage/region (POST /categories → 201); (2) Adesão de membros em massa idempotente (POST /categories/:id/devices → {assigned, skipped, total}); (3) Listagem de membros com assignedAt (GET → data+total); (4) Edição dos membros via PUT (substituição total); (5) Edição do nome do grupo (PUT /:id); (6) Exclusão de membro individual (DELETE /:id/devices/:deviceId → removed:1 e removed:0 idempotente); (7) Exclusão do grupo (DELETE /:id → cascade das atribuições, dispositivo permanece na empresa verificado). Dispositivo pode estar em N grupos simultaneamente (N:N confirmado). .env restaurado (ENABLE_RATE_LIMITER=true, SUPER_ADMIN_EMAILS original).
+Build limpo (1317 módulos). VALIDAÇÃO EMPÍRICA COMPLETA no Docker local (3 containers healthy): API via api.→200, Mgmt API→404, UI hawkbit→404, dashboard→503, DDI poll via hb.:8080 c/ TargetToken→200, e o ponto crítico: _links retornam 'http://hb.ninbus.frt.com.br:8080/...' (NÃO hawkbit:8080) — forward-headers funcionando. DDI sem token→401. Zero TS de app alterado (a API não mudou; auth/RBAC/hawkBit intactos). A suíte base bun test permanece bloqueada por bug do runtime Bun 1.3.12 no boot de createApp() (segfault, pré-existente e não relacionado: build verde, DB conecta isolado).
 
-**Evidence**: docs/flutter-category-integration.md (fluxo completo); /tmp/test_full_lifecycle.sh output mostrando todas as 8 etapas com respostas HTTP 200/201 reais; tests/categories.test.ts:27 pass/0 fail
+**Evidence**: curl: api./health→200; hb.:8080 DDI→200 + _links com hb.ninbus.frt.com.br; /rest/v1/→404; docker compose ps: 3x (healthy); bun build 1317 módulos
 
 ### ✅ Code Quality
 
-Todos os arquivos do módulo categories ≤250 linhas: index.ts=161, member-routes.ts=212, schemas.ts=147, service.ts=249 (no limite). Separação limpa: schemas.ts (AddDevicesToCategorySchema, CategoryDevicesListResponseSchema, CategoryDevicesActionResponseSchema, CategoryDeviceRemoveResponseSchema, selectMemberDeviceSchema) → member-routes.ts (handlers) → service.ts (getCategoryDevices, addDevicesToCategory, setCategoryDevices, removeDeviceFromCategory, filterCompanyDevices). Logger usa %s format strings. member-routes.ts é um arquivo novo (separação por tipo de operação, padrão seguido do projeto para artifacts/manage-routes.ts, devices/category-routes.ts).
+Todos arquivos <250: nginx.conf=46, ninbus.conf=190, Dockerfile=23, nginx-proxy.test.ts=132. Separação limpa: nginx.conf(global)→ninbus.conf(3 vhosts)→Dockerfile. Resolução dinâmica documentada (resolver 127.0.0.11 + set $backend). Biome limpo no teste (auto-aplicado). Logger da API inalterado.
 
-**Evidence**: wc -l src/modules/categories/*.ts; biome check src/modules/categories src/app.ts → 0 lint errors; bun build OK
+**Evidence**: wc -l: 46/190/23/132; biome check tests/nginx-proxy.test.ts → No fixes applied
 
 ### ✅ Schema Organization
 
-Todos os response schemas (CategoryDevicesListResponseSchema, CategoryDevicesActionResponseSchema, CategoryDeviceRemoveResponseSchema) definidos em src/modules/categories/schemas.ts e importados por member-routes.ts — NENHUM schema de resposta inline no route file. addDevicesToCategorySchema (body) também em schemas.ts. Params (companyId, categoryId, deviceId) definidos localmente em cada handler (route-specific, conforme permitido pelo critério). ErrorResponseSchema e GenericActionResponseSchema re-exportados. selectMemberDeviceSchema usa dateTimeString (t.Date()) para timestamps Drizzle — nunca t.String com format:date-time. Import de deviceCategoryAssignments separado como `import type` para satisfazer o biome useImportType.
+Nenhum schema TS alterado (mudança de infra). Organização existente intacta. Não se aplica, nada quebrado.
 
-**Evidence**: src/modules/categories/schemas.ts:76-148; src/modules/categories/member-routes.ts importa todos os schemas
+**Evidence**: git diff --stat -- src/**/*.ts → vazio
 
 ### ✅ Error Handling
 
-Estes endpoints NÃO chamam hawkBit (são puramente CRUD na tabela device_category_assignments), então a two-level hawkBit protection não se aplica. Erros tratados: 401 (sem auth via withAuth macro), 403 (papel insuficiente via companyRole macro), 404 (categoria inexistente — verificado em todos os 4 handlers GET/POST/PUT/DELETE antes de operar), 400 (validação de body: minItems:1 em deviceIds, type check via companyRole). setCategoryDevices usa db.transaction para replace atômico (delete + insert). addDevicesToCategory é idempotente por design (skipped em vez de erro). Não há try/catch swallowing — exceções de DB propagam para o onError global.
+Two-level hawkBit protection da app intacta. nginx acrescenta perímetro: /rest/v1/+UI=404, limit_req anti-brute-force (validado: 30r/m zona ddi). SERVER_FORWARD_HEADERS_STRATEGY=framework é prop Spring do hawkBit (lado hawkBit, como HAWKBIT_DDI_TARGET_TOKEN_AUTH). Validado empiricamente: DDI retorna _links corretos.
 
-**Evidence**: member-routes.ts: cada handler verifica getCategoryById → 404; tests cobrem 404/400/401/403
+**Evidence**: curl /rest/v1/targets via hb.→404; ninbus.conf limit_req zone=ddi; _links com dominio publico
 
 ### ✅ Test Coverage
 
-Adicionei 15 novos testes no bloco 'Category Members (device ↔ category N:N)' em tests/categories.test.ts, cobrindo exatamente as 6 funcionalidades do enunciado Flutter: setup com 3 tipos (bus_line/garage/region), GET vazio, POST adesão, POST idempotência, GET com assignedAt, DELETE membro individual (removed=1 e removed=0), PUT substituição total, PUT array vazio → 400, GET 404 categoria inexistente, POST 400 sem deviceIds, 403 cross-company, 401 sem auth, CROSS-TENANT explicitamente testado (dispositivo de empresa B NÃO é adicionado à categoria da empresa A), cascade ao deletar categoria. Dispositivos inseridos diretamente no DB de teste (HAWKBIT_ENABLED=false). afterAll() cleanAll(). Idempotente. As 6 falhas pré-existentes em devices.test.ts são hawkBit-dependentes e foram confirmadas via git stash como falhando no main original — não relacionadas a estas mudanças.
+tests/nginx-proxy.test.ts: 15 testes (28 assertions) TODOS PASSAM, cobrindo a mudança: bloqueios 404 (Management/UI), routing DDI→backend, service-names Docker, resolver dinâmico (não static upstreams — aprendido empiricamente), forward-headers+SERVER_FORWARD_HEADERS_STRATEGY, 3 vhosts por server_name, default_server, HTTP-only transitório, cutover porta hawkBit removida, healthcheck IPv4. ALÉM DISSO: validação empírica REAL contra o nginx vivo confirmou roteamento API→200/Mgmt→404/DDI→200 com _links de dominio publico. Suíte base ampla ainda bloqueada por bug Bun (documentado).
 
-**Evidence**: tests/categories.test.ts: 27 pass / 0 fail; git stash confirma 6 falhas devices pré-existentes no main
+**Evidence**: bun test tests/nginx-proxy.test.ts → 15 pass/0 fail; validação curl empírica no Docker local
 
 ### ✅ Config Centralization
 
-Nenhuma nova variável de env foi necessária — os endpoints de membros usam apenas o schema de DB existente (device_category_assignments, devices, categories) e o macro companyRole já configurado. Nenhuma leitura de process.env fora de env.ts. .env restaurado ao estado original após testes (ENABLE_RATE_LIMITER=true, sem e2e-super@ninbus.com.br).
+NÃO adicionei PUBLIC_DOMAIN ao env.ts (sem consumidor=config especulativa). SERVER_FORWARD_HEADERS_STRATEGY=framework é prop Spring do hawkBit (docker-compose hawkbit.environment, como HAWKBIT_DDI_TARGET_TOKEN_AUTH e CDN). Nenhuma leitura process.env fora de env.ts.
 
-**Evidence**: git diff .env vazio
+**Evidence**: SERVER_FORWARD_HEADERS_STRATEGY em docker-compose; git diff src/common/config/env.ts→vazio
 
 ### ✅ Security
 
-RBAC preservado: GET lista = viewer; POST/PUT/DELETE membro = operator (não-admin porque remover um membro NÃO é operação destrutiva do grupo); DELETE grupo inteiro = admin (inalterado em index.ts). CROSS-TENANT: filterCompanyDevices(deviceIds, companyId) filtra deviceIds por companyId ANTES de inserir — dispositivo de outra empresa é silenciosamente rejeitado, testado explicitamente. getCategoryById(categoryId, companyId) em todos os handlers garante escopo company (404 se categoria não pertence à empresa). companyRole macro com :companyId na path valida membership. deviceCategoryAssignments tem FK cascade onDelete. Nenhum dado de hawkBit (securityToken/deviceKey) é exposto nos response schemas.
+VALIDADO EMPÍRICAMENTE: Management API/UI do hawkBit agora 404 publicamente (antes expostas). Só DDI exposto. limit_req anti-brute-force. Rate-limiter app continua lendo x-forwarded-for. hawkBit sem porta pública (interno). Segurança existente preservada (superAdmin, RBAC, deviceKey não armazenado, TargetToken por device, auto-reg OFF). Cutover da :8080 seguro: device chega no nginx agora.
 
-**Evidence**: service.ts:filterCompanyDevices; tests/categories.test.ts cross-tenant test; member-routes.ts usa withAuth + companyRole
+**Evidence**: curl /rest/v1/*→404, /login→404, /→404 via hb.; hawkbit sem porta pública (docker compose ps: 8080/tcp interno)
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Princípio p-category-members-group-lifecycle aprendido e persistido (99 princípios totais): endpoints group-centric /categories/:id/devices com POST idempotente + cross-tenant filter, DELETE membro = operator (não-admin), cascade preserva dispositivos. Documentação Flutter criada em docs/flutter-category-integration.md com tabela RBAC, exemplos JSON para cada endpoint, código Dart de fluxo completo, tabela de erros e seção de cobertura de testes. SKILL.md não precisou atualização (endpoints seguem padrões existentes do módulo). README não menciona endpoints individuais.
+3 princípios aprendidos (103 total): p-hawkbit-reverse-proxy-forward-headers, p-nginx-sse-buffering-already-sent, p-nginx-docker-dynamic-dns-resolution (resolver dinâmico + sem USER nginx + healthcheck IPv4). README+SKILL.md com arquitetura nginx. Plano docs/nginx-reverse-proxy-plan.md marcado IMPLEMENTADO+VALIDADO EMPÍRICAMENTE com todos os resultados dos curls e os ajustes técnicos.
 
-**Evidence**: docs/flutter-category-integration.md (7.3KB); .harness/principles.json p-category-members-group-lifecycle
+**Evidence**: README arquitetura+tabela; SKILL.md stack/architecture/padrões; plano status 🟢 VALIDADO EMPÍRICAMENTE
 
 ## Overall Notes
 
-## Verificação completa do ciclo de vida de categorização de dispositivos no Docker
+## Proxy Reverso Nginx — IMPLEMENTADO + VALIDADO EMPÍRICAMENTE no Docker (sem commit)
 
-### Diagnóstico empírico inicial (estado pré-mudança)
-Testei via HTTP real contra o container `ninbus-api` (hawkBit habilitado) todos os endpoints existentes. Confirmei que o CRUD de **grupos** (categorias) já funcionava nos 3 tipos pré-existentes (`bus_line` | `garage` | `region`): criar/listar/editar-nome/excluir. A atribuição reversa (PUT /devices/:id/categories, substituição total) e listagem de categorias de um dispositivo também funcionavam.
+### Validação empírica COMPLETA (3 containers healthy)
+Confirmado via HTTP real contra o nginx:
+1. **API (Flutter)** via `api.ninbus.frt.com.br:80` → **HTTP 200** (JSON /health saudável) ✅
+2. **Management API** `/rest/v1/targets` via `hb.` → **HTTP 404** (protegida, mesmo c/ admin:admin) ✅
+3. **UI hawkbit** `/login` via `hb.` → **HTTP 404** ✅
+4. **Dashboard** `ninbus.` → **HTTP 503** (placeholder) ✅
+5. **DDI poll** via `hb.:8080` c/ TargetToken → **HTTP 200** ✅
+6. **_links do DDI** → **`http://hb.ninbus.frt.com.br:8080/...`** (NÃO `hawkbit:8080`) ✅✅✅ — o ponto mais crítico provado: o firmware recebe links resolvíveis
+7. DDI sem token → **HTTP 401** (TargetToken exigido) ✅
+8. Roteamento por Host/SNI name-based confirmado em todos os vhosts
 
-**Lacuna identificada para o Flutter**: não havia endpoints **group-centric** para gerenciar **membros dentro de um grupo** — todas as 4 operações retornavam 404:
-1. GET /categories/:id/devices (listar membros)
-2. POST /categories/:id/devices (adesão de membros)
-3. PUT /categories/:id/devices (edição dos membros)
-4. DELETE /categories/:id/devices/:deviceId (exclusão de membros)
+### Ajustes técnicos descobertos durante a implementação (aprendidos empiricamente)
+1. **Resolução DNS dinâmica** — `upstream {}` blocks faziam o nginx abortar no startup ("host not found in upstream api:8081") mesmo o DNS Docker resolvendo (getent api → 172.19.0.3). Trocado por `resolver 127.0.0.11 valid=30s ipv6=off` + `set $backend_*` + `proxy_pass http://$backend_*`.
+2. **Sem `USER nginx`** — causava `mkdir /var/cache/nginx/client_temp failed (Permission denied)`. Master precisa de root p/ bind :80; workers já rodam como nginx por default.
+3. **healthcheck IPv4** — `localhost` resolve para ::1 (IPv6) e nginx não escuta IPv6 → "unhealthy" espúrio. Trocado por `127.0.0.1`.
+4. **Cutover da porta :8080** — conflito esperado: nginx + hawkbit ambos na :8080. Resolvido removendo a publicação da porta do hawkBit (Fase 5), que continua acessível internamente como `http://hawkbit:8080`.
 
-### Implementação (4 novos endpoints, 1 novo arquivo)
-- `src/modules/categories/member-routes.ts` (212 linhas, novo) — 4 handlers com RBAC via `companyRole`: viewer (GET), operator (POST/PUT/DELETE membro).
-- `src/modules/categories/schemas.ts` (147 linhas) — `addDevicesToCategorySchema`, `CategoryDevicesListResponseSchema`, `CategoryDevicesActionResponseSchema`, `CategoryDeviceRemoveResponseSchema`, `selectMemberDeviceSchema`.
-- `src/modules/categories/service.ts` (249 linhas) — `getCategoryDevices`, `addDevicesToCategory` (idempotente + cross-tenant filter), `setCategoryDevices` (transacional), `removeDeviceFromCategory`, `filterCompanyDevices`, `countCategoryDevices`.
-- `src/app.ts` — registro de `categoryMemberRoutes`.
+### Arquivos finais
+- `docker/nginx/nginx.conf` (46 linhas), `conf.d/ninbus.conf` (190 linhas), `Dockerfile` (23 linhas)
+- `docker-compose.yml`: serviço nginx + forward-headers hawkBit + porta pública hawkBit removida
+- `tests/nginx-proxy.test.ts` (132 linhas, **15 testes passam**) — cobre bloqueios 404, DDI routing, resolver dinâmico, forward-headers, vhosts, healthcheck IPv4, cutover de porta
+- README + SKILL.md atualizados com arquitetura nginx
 
-### Validação empírica no Docker (todo o ciclo do enunciado)
-Script `/tmp/test_full_lifecycle.sh` confirmou via HTTP real contra o container com hawkBit habilitado:
-1. ✅ **Adesão de novo grupo** — 3 categorias (bus_line/garage/region) → 201
-2. ✅ **Adesão de membros** — POST idempotente, multi-device, N:N (DEV1 em 2 grupos)
-3. ✅ **Listagem de membros** — GET com assignedAt + total
-4. ✅ **Edição dos membros** — PUT substitui todos
-5. ✅ **Edição do nome do grupo** — PUT /:id
-6. ✅ **Exclusão de membros** — DELETE /:id/devices/:deviceId (removed=1)
-7. ✅ **Exclusão do grupo** — DELETE /:id (cascade atribuições, dispositivos preservados)
-8. ✅ **Dispositivo permanece** após exclusão do grupo
+### Resposta ao cenário do firmware (porta na URL)
+O firmware que envia `hb.ninbus.frt.com.br:8080` (com a porta no cabeçalho/URL) funciona perfeitamente: o vhost `hb.` escuta `:8080`, o nginx ignora a porta "extra" (já é a porta de conexão) e roteia pelo Host. O `_link` retorna já com `:8080` embutido. Validado.
 
-### Testes
-15 novos testes em `tests/categories.test.ts` (bloco "Category Members") → **27 pass / 0 fail**. Cobrem: adesão, idempotência, listagem, remoção individual, substituição, 400/401/403/404, **cross-tenant** (empresa B rejeitada), cascade. As 6 falhas pré-existentes em `devices.test.ts` são hawkBit-dependentes e confirmadas via `git stash` como falhando no main original.
+### Portas para abrir na AWS (explicado ao usuário)
+- **80/TCP** e **443/TCP** públicas (nginx)
+- **8080/TCP** pública (Opção C — firmware com porta hardcoded) [ou só 80 se firmware reconfigurável]
+- **FECHAR 8081 e 8082** ao público (internas)
+- O `hb.` deve ficar DNS-only na Cloudflare (não proxy laranja) — senão força HTTPS e quebra o firmware HTTP
 
-### Build & Lint
-Build limpo (1308 módulos, 3.63MB). Biome: 0 erros nos arquivos modificados.
-
-### Documentação Flutter
-`docs/flutter-category-integration.md` (7.3KB) com: visão geral, tabela RBAC, todos os endpoints com exemplos JSON, código Dart completo, tabela de erros, seção de cobertura de testes.
-
-### Limpeza
-`.env` restaurado ao estado original (rate-limit reativado, e2e-super removido). Container reiniciado e saudável.
+**Sem commit** (aguardando pedido do usuário). Stack validada localmente; replicar na AWS = mesma config + security group.

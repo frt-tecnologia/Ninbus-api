@@ -26,6 +26,35 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 services:
+  # ── Reverse Proxy (nginx) ───────────────────────────────────────────
+  # The ONLY public entry point. Routes by Host header (name-based virtual
+  # hosting) to the API / dashboard / hawkBit-DDI backends. See
+  # docker/nginx/conf.d/ninbus.conf and docs/nginx-reverse-proxy-plan.md.
+  #
+  # Transitional (Fases 1–5): HTTP only, no TLS yet. The api/hawkbit ports
+  # below stay published for a safe rollback until the device cutover and
+  # lockdown (Fases 5–6) are validated.
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: ninbus-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"       # api (HTTP) + hb (DDI) + ninbus (503) vhosts
+      - "8080:8080"   # hb vhost — Opção C: existing firmware keeps working
+      # ── Fase 6 (TLS): publish 443 after issuing the wildcard cert ──
+      # - "443:443"
+    volumes:
+      # Vhosts live on the host so edits apply with a restart, no rebuild.
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Let's Encrypt webroot + cert store (used from Fase 6 onward).
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - hawkbit
+
   # ── Ninbus API ───────────────────────────────────────────────────────
   api:
     build:
@@ -120,8 +149,13 @@ services:
       dockerfile: docker/hawkbit/Dockerfile
     container_name: hawkbit
     restart: unless-stopped
-    ports:
-      - "${HAWKBIT_PORT:-8080}:8080"
+    # Public port REMOVED: the DDI (:8080) is now served by the nginx vhost
+    # `hb.ninbus.frt.com.br` (see nginx service), which proxies ONLY
+    # /<tenant>/controller/v1/* to this container on the internal Docker
+    # network. The Management API (/rest/v1/*) and admin UI are therefore
+    # never public. The API reaches hawkBit via http://hawkbit:8080 (internal).
+    # ports:
+    #   - "${HAWKBIT_PORT:-8080}:8080"
     environment:
       # ── Database: Neon PostgreSQL ──
       PROFILES: postgresql
@@ -152,6 +186,13 @@ services:
       # TargetToken auth: allows devices to authenticate via Authorization: TargetToken <token>
       # Without this, ALL DDI polls return 401 regardless of the securityToken value.
       HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED: ${HAWKBIT_DDI_TARGET_TOKEN_AUTH:-true}
+
+      # ── Reverse-proxy (forward headers) ──
+      # Makes hawkBit build absolute DDI _links from X-Forwarded-Proto/Host/Port
+      # instead of the internal `hawkbit:8080` hostname. Required now that the
+      # DDI is reached through nginx (hb.ninbus.frt.com.br); without it, devices
+      # cannot follow the configData/deploymentBase links.
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
 
       # Auto-provisioning: auto-creates target on first DDI poll.
       # WARNING: When true, ANY device with any token can auto-provision.

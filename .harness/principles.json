@@ -791,6 +791,38 @@
       "category": "architecture",
       "learnedAt": "2026-06-21T01:55:09.543Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-verify-migrations-after-deploy",
+      "rule": "After EVERY deploy that includes a new Drizzle migration, verify the schema was applied by querying information_schema.columns directly against the production DB (via psql or SQL console) — NEVER trust \"container started healthy\" alone. The startup migration runner (src/scripts/migrate.ts) catches errors and lets the server start with an incomplete schema, so a failed migration is SILENT: the app degrades gracefully (queries fail, catch returns empty data, endpoints return 200 with empty lists) while logging level-50 errors. Symptom: GET /deployments returns 200 with [] and logs \"[DEPLOYMENTS] DB query failed: column ... does not exist\". Always check: (1) docker-compose logs api | grep -i migrat for the runner's verdict on each migration tag, (2) SELECT column_name FROM information_schema.columns for new columns, (3) SELECT tablename FROM pg_tables for new tables. The psql client on EC2 may be v15 while RDS is v18 — \\l and \\dt break with \"column d.daticulocale does not exist\"; use SQL queries (SELECT datname FROM pg_database, SELECT tablename FROM pg_tables WHERE schemaname='public') instead of meta-commands. RDS databases: connect to the SPECIFIC database (ninbus_api_db), not the default 'postgres' database which is empty.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-22T21:45:43.742Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-reverse-proxy-forward-headers",
+      "rule": "When putting hawkBit behind a reverse proxy (Nginx/Caddy/Traefik), you MUST set SERVER_FORWARD_HEADERS_STRATEGY=framework on the hawkBit container AND have the proxy send X-Forwarded-Proto/Host/Port + Host headers. Without this, hawkBit's DDI responses generate _links with absolute URLs pointing to the INTERNAL hostname (http://hawkbit:8080) instead of the public domain — devices cannot resolve/follow the links and polling breaks. Also: only route /<tenant>/controller/v1/* (DDI) through the public proxy; block /rest/v1/* (Management API) publicly — the Ninbus API reaches it via the internal Docker network (HAWKBIT_URL=http://hawkbit:8080). The app's rate limiter already reads x-forwarded-for so it is proxy-ready.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-25T15:07:00.453Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nginx-sse-buffering-already-sent",
+      "rule": "When adding a reverse proxy in front of the Ninbus API, do NOT add X-Accel-Buffering: no to SSE endpoints — it is ALREADY sent in src/modules/sse/index.ts (both company-scoped and global). Just set proxy_buffering off + long proxy_read_timeout in the nginx location for the API vhost. Likewise, deviceKey already has minLength validation in schemas.ts; do not add PUBLIC_DOMAIN/PUBLIC_PROTOCOL to env.ts speculatively — only add env vars when there is a real consumer (adding unused config violates the project's own centralization principle). The nginx config must be HTTP-only in the transitional phase so it starts today without certificates; TLS (:443) blocks stay commented until Fase 6.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-26T02:10:40.474Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nginx-docker-dynamic-dns-resolution",
+      "rule": "When nginx proxies to Docker Compose service names (api:8081, hawkbit:8080), do NOT use `upstream {}` blocks — nginx open-source resolves upstream hostnames ONCE at startup via getaddrinfo(), which races the Docker embedded DNS (127.0.0.11) at container start and aborts with \"host not found in upstream\", sending the container into a restart loop even though `getent hosts api` resolves fine from another container. Instead: add `resolver 127.0.0.11 valid=30s ipv6=off;` to the http/server context and use `set $backend \"api:8081\"; proxy_pass http://$backend;`. This resolves at REQUEST time, decouples proxy start from backend readiness, and survives backend restarts. ALSO: do NOT force `USER nginx` in the Dockerfile — the master needs root to bind :80 and create /var/cache/nginx/* (workers already run as nginx by default). AND: the healthcheck must use `http://127.0.0.1/health` not `localhost` — in alpine, localhost resolves to ::1 (IPv6) which nginx doesn't listen on, causing a spurious \"unhealthy\". All three learned empirically against the live stack.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-26T13:19:59.764Z",
+      "reinforcementCount": 1
     }
   ]
 }

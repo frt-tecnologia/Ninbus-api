@@ -13,11 +13,17 @@ Internet
   │
   ├── Flutter App ─── Cookie/Bearer Auth ──┐
   │                                         │
+  │   ┌── nginx (:80 / :443 / :8080) ────────┘  ← único ponto público
+  │   │   name-based vhost (Host header / SNI):
+  │   │     api.ninbus.frt.com.br → API
+  │   │     hb.ninbus.frt.com.br  → hawkBit DDI (só DDI; /rest/v1/* = 404)
+  │   │     ninbus.frt.com.br    → dashboard (futura)
+  │   ▼
   │                    Ninbus API (:8081)    │
   │                     ├── Better Auth     │
   │                     ├── Sync Engine     │
   │                     └── SSE Emitter     │
-  │                              │          │
+  │                              │          │  (rede interna — não passa pelo nginx)
   │                   hawkBit (:8080)       │
   │                     ├── Management API (Basic Auth)
   │                     └── DDI API (TargetToken)
@@ -25,14 +31,18 @@ Internet
   │              ┌───────────────┤          │
   │              │               │          │
   │         PostgreSQL      S3 / R2    IoT Device
-  │          (Neon)      (artifacts)   (DDI poll)
+  │          (Neon)      (artifacts)   (DDI poll → CloudFront download)
 ```
+
+**Proxy reverso:** o nginx é a única porta pública. O hawkBit Management API e
+a UI admin **não são expostos** (apenas o path DDI `/<tenant>/controller/v1/*`).
+Veja `docs/nginx-reverse-proxy-plan.md` e `docker/nginx/`.
 
 **Fluxo de dados:**
 
-1. **Flutter** → Ninbus API (cookie ou Bearer) → hawkBit Management API (Basic Auth)
+1. **Flutter** → nginx → Ninbus API (cookie ou Bearer) → hawkBit Management API (Basic Auth, rede interna)
 2. **Sync Engine** → hawkBit → DB local (background) → SSE → Flutter (real-time)
-3. **Dispositivo** → hawkBit DDI (TargetToken) → download firmware → feedback
+3. **Dispositivo** → nginx (`hb.`) → hawkBit DDI (TargetToken) → download firmware via **CloudFront** → feedback
 
 ---
 
@@ -55,6 +65,7 @@ docker compose logs -f api
 
 | Serviço | Porta | Descrição |
 |---------|-------|-----------|
+| `nginx` | 80 / 443 / 8080 | Proxy reverso (name-based vhost) — único ponto público |
 | `api` | 8081 | Ninbus API |
 | `hawkbit` | 8080 | hawkBit 1.0.3 (custom build com S3 extension + CDN) |
 

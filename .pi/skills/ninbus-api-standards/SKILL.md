@@ -9,12 +9,13 @@ description: >
 ## Stack
 
 | Camada | Tecnologia |
-|--------|-----------|
+|--------|------------|
 | Runtime | Bun ≥1.1 |
 | Framework | Elysia.js |
 | ORM | Drizzle ORM + postgres.js |
 | Auth | Better Auth (cookie sessions + Bearer token) |
 | OTA | Eclipse hawkBit 1.0.3 |
+| Proxy reverso | nginx (name-based vhost — único ponto público) |
 | Validação | TypeBox (via Elysia) |
 | Logging | Pino (JSON em prod) |
 
@@ -23,12 +24,21 @@ description: >
 ## Arquitetura
 
 ```
-Flutter → Ninbus API (Cookie/Bearer) → hawkBit Management (Basic Auth)
+Internet → nginx (:80/:443/:8080) ── name-based vhost (Host/SNI) ──┐
+  │                                                                  │
+  │   api.ninbus.frt.com.br → API          hb.ninbus.frt.com.br → DDI only
+Flutter → Ninbus API (Cookie/Bearer) → hawkBit Management (Basic Auth, rede interna)
                 │                              │
                 │                              └── DDI (TargetToken, device polling)
                 │
                 └── PostgreSQL (Neon) ← Sync Engine (background)
 ```
+
+**Proxy reverso (nginx):** único ponto público. Management API e UI do hawkBit
+não são expostas — só o path DDI `/<tenant>/controller/v1/*`. hawkBit usa
+`SERVER_FORWARD_HEADERS_STRATEGY=framework` para gerar `_links` DDI com o domínio
+público (`hb…`) em vez do hostname interno. Detalhes: `docker/nginx/` e
+`docs/nginx-reverse-proxy-plan.md`.
 
 **Módulos:** Auth · Companies · Categories · Devices · Deployments · Artifacts · Health
 
@@ -138,6 +148,7 @@ estar em N grupos simultaneamente.
 - **Artifact upload:** `FormData` + `formData.append('file', file)` — nunca raw File
 - **Cancel two-step:** step 1 (DELETE sem force) → step 2 (DELETE com force)
 - **DDI TargetToken:** `HAWKBIT_DDI_TARGET_TOKEN_AUTH=true` obrigatório
+- **DDI atrás de proxy:** `SERVER_FORWARD_HEADERS_STRATEGY=framework` no hawkBit + o proxy envia `Host`, `X-Forwarded-Proto/Host/Port`. Sem isso, os `_links` das respostas DDI saem com o hostname interno (`hawkbit:8080`) e os devices não conseguem segui-los. Só o path `/<tenant>/controller/v1/*` fica público; `/rest/v1/*` (Management API) é bloqueado no proxy.
 - **SM names:** UUID-based (`sm-{uuid}`), nunca nomes legíveis (hawkBit unique constraint inclui soft-deleted)
 - **DS names:** UUID-based (`ds-{uuid}`)
 

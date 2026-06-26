@@ -823,6 +823,14 @@
       "category": "process",
       "learnedAt": "2026-06-26T13:19:59.764Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-single-tenant-ownership-via-local-table",
+      "rule": "hawkBit runs as a SINGLE tenant (\"DEFAULT\") and has NO concept of companyId. Therefore ANY global lookup into hawkBit (hawkbitSoftwareModules.get/list by SM ID, hawkbitTargets.get by controllerId, hawkbitDistributionSets.get by DS ID) is cross-tenant BY DESIGN — it returns whatever matches the ID regardless of company. Tenant isolation MUST be enforced via the local Ninbus tables filtered by companyId, NEVER via hawkBit queries. This was the root cause of the findSoftwareModule cross-tenant bug: it called hawkbitSoftwareModules.get(numericId) directly, letting an operator of company A reference company B's artifact by guessing the sequential SM ID (brute-force enumeration returns the whole catalog). Fix: findSoftwareModule(companyId, nameOrId) queries the `artifacts` table with WHERE company_id. Same class of bug applies to routes receiving a raw targetId in the path (action-status, ddi-check): companyRole only checks company MEMBERSHIP, not that the target belongs to that company — those routes MUST call isTargetOwnedByCompany(companyId, targetId) before any hawkBit call, returning 404 (never 403, to avoid leaking target existence). Also: nginx Basic Auth for /docs protects /docs AND /docs/json (the spec exposes all schemas/request examples) in one location block — .htpasswd is gitignored and BCrypt-hashed (nginx:alpine supports $2y$).",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-26T19:45:36.139Z",
+      "reinforcementCount": 1
     }
   ]
 }

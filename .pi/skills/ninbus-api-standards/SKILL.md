@@ -74,6 +74,26 @@ O `companyRole` macro verifica apenas se o usuário é **membro** da empresa. El
 2. Filtrar/buscar com `WHERE company_id = :companyId`
 3. Verificar ownership via `requireOwnership(companyId, hawkbitId)` antes de qualquer mutation
 
+### ⚠️ hawkBit é single-tenant — ownership SEMPRE pela tabela local
+
+hawkBit roda com **um tenant só ("DEFAULT")** e **não tem noção de companyId**.
+Portanto, qualquer lookup global no hawkBit (por SM ID, targetId, DS ID) é
+**cross-tenant por design**. O ownership DEVE ser enforced pela tabela local
+Ninbus, filtrada por `companyId`:
+
+- **Artifacts (Software Modules):** `findSoftwareModule(companyId, nameOrId)`
+  busca na tabela `artifacts` com `WHERE company_id` — nunca `hawkbitSoftwareModules.get/list`
+  direto. Aceita nome de exibição OU SM-ID, ambos validados contra a empresa.
+- **Targets (Devices):** rotas que recebem `targetId` no path (action-status,
+  ddi-check) DEVEM chamar `isTargetOwnedByCompany(companyId, targetId)` antes
+  de qualquer chamada hawkBit → 404 se não pertencer (nunca 403, para não
+  vazar existência).
+- **Distribution Sets (Deployments):** já escopados por `requireDeploymentOwnership`
+  e `WHERE company_id`.
+
+Brute-force de IDs sequenciais do hawkBit (SM ID 1, 2, 3...) retorna 404 para
+qualquer empresa — não enumera o catálogo alheio.
+
 ### Tenant Isolation Pattern (Write-Through)
 
 Todos os recursos do hawkBit têm tabela local com `companyId`:

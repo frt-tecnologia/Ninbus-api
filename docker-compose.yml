@@ -48,6 +48,11 @@ services:
     volumes:
       # Vhosts live on the host so edits apply with a restart, no rebuild.
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Basic Auth credential for /docs (generated on the host, gitignored).
+      # Generate with:  htpasswd -cb docker/nginx/.htpasswd ninbus-docs '<PASSWORD>'
+      # Then start/restart nginx. File is optional — if absent, /docs returns
+      # 503-ish auth failure (never open).
+      - ./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       # Let's Encrypt webroot + cert store (used from Fase 6 onward).
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro

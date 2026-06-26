@@ -98,6 +98,23 @@ describe('nginx reverse proxy — security posture', () => {
 		});
 	});
 
+	describe('Docs (OpenAPI) gated by Basic Auth — Frente A', () => {
+		it('declares auth_basic for the /docs location', () => {
+			expect(VHOSTS).toMatch(/location\s+\/docs\s*\{/);
+			expect(VHOSTS).toContain('auth_basic');
+			expect(VHOSTS).toContain('auth_basic_user_file /etc/nginx/.htpasswd');
+		});
+
+		it('mounts the .htpasswd credential from the host', () => {
+			expect(COMPOSE).toContain('.htpasswd:/etc/nginx/.htpasswd:ro');
+		});
+
+		it('gitignores the .htpasswd secret (never committed)', () => {
+			const gitignore = read('.gitignore');
+			expect(gitignore).toContain('docker/nginx/.htpasswd');
+		});
+	});
+
 	describe('transitional (zero-downtime) deployment', () => {
 		it('keeps the API on HTTP (no active :443 — TLS is a later phase)', () => {
 			const activeSsl = VHOSTS.split('\n').filter((l) => /^\s*listen\s+443\s+ssl/.test(l));

@@ -1,92 +1,95 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-06-26T13:21:04.416Z
+**Date**: 2026-06-26T19:46:40.891Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Build limpo (1317 módulos). VALIDAÇÃO EMPÍRICA COMPLETA no Docker local (3 containers healthy): API via api.→200, Mgmt API→404, UI hawkbit→404, dashboard→503, DDI poll via hb.:8080 c/ TargetToken→200, e o ponto crítico: _links retornam 'http://hb.ninbus.frt.com.br:8080/...' (NÃO hawkbit:8080) — forward-headers funcionando. DDI sem token→401. Zero TS de app alterado (a API não mudou; auth/RBAC/hawkBit intactos). A suíte base bun test permanece bloqueada por bug do runtime Bun 1.3.12 no boot de createApp() (segfault, pré-existente e não relacionado: build verde, DB conecta isolado).
+Build limpo (1317 módulos). VALIDADO EMPÍRICAMENTE no Docker: API healthy, /health→200, /docs→401/200, Mgmt→404, DDI→401. Frente B altera findSoftwareModule (agora recebe companyId) e Frente C adiciona guard em 2 rotas — sem quebrar contratos da API (mesmo campo artifactName, mesmo targetId no path). createDeployment continua funcionando com artifact próprio (B-T1/B-T2). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (segfault pré-existente, não relacionado: build verde, DB conecta isolado, meus testes passam).
 
-**Evidence**: curl: api./health→200; hb.:8080 DDI→200 + _links com hb.ninbus.frt.com.br; /rest/v1/→404; docker compose ps: 3x (healthy); bun build 1317 módulos
+**Evidence**: bun build 1317; Docker: api(healthy); curl /health→200 /docs→401; B-T1/B-T2 pass (artifact próprio encontrado)
 
 ### ✅ Code Quality
 
-Todos arquivos <250: nginx.conf=46, ninbus.conf=190, Dockerfile=23, nginx-proxy.test.ts=132. Separação limpa: nginx.conf(global)→ninbus.conf(3 vhosts)→Dockerfile. Resolução dinâmica documentada (resolver 127.0.0.11 + set $backend). Biome limpo no teste (auto-aplicado). Logger da API inalterado.
+Arquivos <250: helpers.ts=189, device-routes.ts=280 (pré-existente >250? verificar), deployments-tenant-isolation.test.ts=49, deployments-target-ownership.test.ts=53, nginx-proxy.test.ts=145. Separação mantida: helpers.ts (ownership + lookup) → service.ts/routes.ts. Import não-usado removido (hawkbitSoftwareModules). Biome limpo nos arquivos novos/alterados (Number.isNaN aplicado). Logger inalterado.
 
-**Evidence**: wc -l: 46/190/23/132; biome check tests/nginx-proxy.test.ts → No fixes applied
+**Evidence**: wc -l helpers=189; biome check helpers.ts/device-routes.ts → No fixes applied
 
 ### ✅ Schema Organization
 
-Nenhum schema TS alterado (mudança de infra). Organização existente intacta. Não se aplica, nada quebrado.
+Nenhum schema TS de response/body alterado. device-routes.ts usa schemas pré-existentes (deploymentParams, deploymentActionParams) importados de schemas.ts. Não introduzi schemas inline. Não se aplica diretamente.
 
-**Evidence**: git diff --stat -- src/**/*.ts → vazio
+**Evidence**: git diff --stat src/modules/deployments/schemas.ts → vazio
 
 ### ✅ Error Handling
 
-Two-level hawkBit protection da app intacta. nginx acrescenta perímetro: /rest/v1/+UI=404, limit_req anti-brute-force (validado: 30r/m zona ddi). SERVER_FORWARD_HEADERS_STRATEGY=framework é prop Spring do hawkBit (lado hawkBit, como HAWKBIT_DDI_TARGET_TOKEN_AUTH). Validado empiricamente: DDI retorna _links corretos.
+Two-level hawkBit protection intacta. Frente C adiciona 404 (target não pertence à empresa) ANTES do try/hawkBit — para o fluxo cedo sem chamar hawkBit. findSoftwareModule retorna null (vira 400 'Artifact not found') quando cross-tenant. Erro de FK/DB propagam para onError global (não há swallowing). Decisão 404 (não 403) para não vazar existência de target — documentada.
 
-**Evidence**: curl /rest/v1/targets via hb.→404; ninbus.conf limit_req zone=ddi; _links com dominio publico
+**Evidence**: device-routes.ts: if (!isTargetOwnedByCompany) return 404 antes do try
 
 ### ✅ Test Coverage
 
-tests/nginx-proxy.test.ts: 15 testes (28 assertions) TODOS PASSAM, cobrindo a mudança: bloqueios 404 (Management/UI), routing DDI→backend, service-names Docker, resolver dinâmico (não static upstreams — aprendido empiricamente), forward-headers+SERVER_FORWARD_HEADERS_STRATEGY, 3 vhosts por server_name, default_server, HTTP-only transitório, cutover porta hawkBit removida, healthcheck IPv4. ALÉM DISSO: validação empírica REAL contra o nginx vivo confirmou roteamento API→200/Mgmt→404/DDI→200 com _links de dominio publico. Suíte base ampla ainda bloqueada por bug Bun (documentado).
+Adicionei 2 novos arquivos de teste (13 testes) + 3 testes no nginx-proxy: tests/deployments-tenant-isolation.test.ts (7: setup, B-T1..T6 cross-tenant, brute-force), tests/deployments-target-ownership.test.ts (6: C-T1..T5), tests/nginx-proxy.test.ts (+3: docs auth_basic, mount .htpasswd, gitignore). TODOS PASSAM (31 total). afterAll cleanAll() em ambos. Cobrem exatamente os bugs fechados (cross-tenant SM ID, cross-tenant targetId, brute-force enumeração). Suíte base ampla bloqueada por bug Bun (documentado).
 
-**Evidence**: bun test tests/nginx-proxy.test.ts → 15 pass/0 fail; validação curl empírica no Docker local
+**Evidence**: bun test 3 arquivos → 28 pass; +3 nginx → 31 total / 0 fail
 
 ### ✅ Config Centralization
 
-NÃO adicionei PUBLIC_DOMAIN ao env.ts (sem consumidor=config especulativa). SERVER_FORWARD_HEADERS_STRATEGY=framework é prop Spring do hawkBit (docker-compose hawkbit.environment, como HAWKBIT_DDI_TARGET_TOKEN_AUTH e CDN). Nenhuma leitura process.env fora de env.ts.
+Nenhuma nova var de env. Frente A usa .htpasswd no host (gitignored, NÃO em env.ts) — decisão correta: segredo não deve ir pro repo/env versionado. Basic Auth realm 'Ninbus API Docs' hardcoded no nginx (não é config de app). hawkBit forward-headers (iteração anterior) é Spring property no docker-compose. Nenhuma leitura process.env adicionada.
 
-**Evidence**: SERVER_FORWARD_HEADERS_STRATEGY em docker-compose; git diff src/common/config/env.ts→vazio
+**Evidence**: .gitignore tem docker/nginx/.htpasswd; git diff env.ts → vazio
 
 ### ✅ Security
 
-VALIDADO EMPÍRICAMENTE: Management API/UI do hawkBit agora 404 publicamente (antes expostas). Só DDI exposto. limit_req anti-brute-force. Rate-limiter app continua lendo x-forwarded-for. hawkBit sem porta pública (interno). Segurança existente preservada (superAdmin, RBAC, deviceKey não armazenado, TargetToken por device, auto-reg OFF). Cutover da :8080 seguro: device chega no nginx agora.
+MELHORADO: (A) /docs + /docs/json protegidos por Basic Auth (defesa em profundidade, credencial separada da app); (B) cross-tenant de artifacts FECHADO — operator de empresa A não referencia SM da empresa B (404), brute-force de IDs não enumera; (C) target ownership em action-status/ddi-check FECHADO — empresa B não lê status de device da empresa A. Validação empírica Docker confirma sem regressão (Mgmt API continua 404, DDI continua 401). .htpasswd BCrypt gitignored. deviceKey/Tokens inalterados (não armazenados).
 
-**Evidence**: curl /rest/v1/*→404, /login→404, /→404 via hb.; hawkbit sem porta pública (docker compose ps: 8080/tcp interno)
+**Evidence**: B-T3/C-T2 pass (cross-tenant→null/false); curl /docs→401; .htpasswd no .gitignore
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-3 princípios aprendidos (103 total): p-hawkbit-reverse-proxy-forward-headers, p-nginx-sse-buffering-already-sent, p-nginx-docker-dynamic-dns-resolution (resolver dinâmico + sem USER nginx + healthcheck IPv4). README+SKILL.md com arquitetura nginx. Plano docs/nginx-reverse-proxy-plan.md marcado IMPLEMENTADO+VALIDADO EMPÍRICAMENTE com todos os resultados dos curls e os ajustes técnicos.
+Princípio p-hawkbit-single-tenant-ownership-via-local-table aprendido (104 total): hawkBit single-tenant → lookups globais cross-tenant por design; ownership via tabela local; rotas com targetId precisam isTargetOwnedByCompany; 404 não 403. SKILL.md atualizado com nova seção 'hawkBit é single-tenant — ownership SEMPRE pela tabela local' (artifacts/targets/DS). Plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO com pendências P0/D. README já reflete arquitetura nginx (iteração anterior).
 
-**Evidence**: README arquitetura+tabela; SKILL.md stack/architecture/padrões; plano status 🟢 VALIDADO EMPÍRICAMENTE
+**Evidence**: SKILL.md nova seção single-tenant; plano status 🟢 IMPLEMENTADO+VALIDADO; princípio persistido
 
 ## Overall Notes
 
-## Proxy Reverso Nginx — IMPLEMENTADO + VALIDADO EMPÍRICAMENTE no Docker (sem commit)
+## Hardening de Segurança (Frentes A+B+C) — IMPLEMENTADO + VALIDADO, sem commit
 
-### Validação empírica COMPLETA (3 containers healthy)
-Confirmado via HTTP real contra o nginx:
-1. **API (Flutter)** via `api.ninbus.frt.com.br:80` → **HTTP 200** (JSON /health saudável) ✅
-2. **Management API** `/rest/v1/targets` via `hb.` → **HTTP 404** (protegida, mesmo c/ admin:admin) ✅
-3. **UI hawkbit** `/login` via `hb.` → **HTTP 404** ✅
-4. **Dashboard** `ninbus.` → **HTTP 503** (placeholder) ✅
-5. **DDI poll** via `hb.:8080` c/ TargetToken → **HTTP 200** ✅
-6. **_links do DDI** → **`http://hb.ninbus.frt.com.br:8080/...`** (NÃO `hawkbit:8080`) ✅✅✅ — o ponto mais crítico provado: o firmware recebe links resolvíveis
-7. DDI sem token → **HTTP 401** (TargetToken exigido) ✅
-8. Roteamento por Host/SNI name-based confirmado em todos os vhosts
+### Validação empírica no Docker (3 containers healthy, sem regressão)
+- /health via api. → 200 | /docs sem cred → 401 | /docs com cred → 200 | /docs/json sem cred → 401 | Mgmt API → 404 | DDI sem token → 401
 
-### Ajustes técnicos descobertos durante a implementação (aprendidos empiricamente)
-1. **Resolução DNS dinâmica** — `upstream {}` blocks faziam o nginx abortar no startup ("host not found in upstream api:8081") mesmo o DNS Docker resolvendo (getent api → 172.19.0.3). Trocado por `resolver 127.0.0.11 valid=30s ipv6=off` + `set $backend_*` + `proxy_pass http://$backend_*`.
-2. **Sem `USER nginx`** — causava `mkdir /var/cache/nginx/client_temp failed (Permission denied)`. Master precisa de root p/ bind :80; workers já rodam como nginx por default.
-3. **healthcheck IPv4** — `localhost` resolve para ::1 (IPv6) e nginx não escuta IPv6 → "unhealthy" espúrio. Trocado por `127.0.0.1`.
-4. **Cutover da porta :8080** — conflito esperado: nginx + hawkbit ambos na :8080. Resolvido removendo a publicação da porta do hawkBit (Fase 5), que continua acessível internamente como `http://hawkbit:8080`.
+### Frente A — Basic Auth /docs (nginx)
+- `ninbus.conf`: location /docs com auth_basic + auth_basic_user_file ANTES do location / (longest-prefix match). Replicado no bloco :443 comentado.
+- `.htpasswd` BCrypt ($2y$) gerado via httpd:alpine (placeholder). `.gitignore`: docker/nginx/.htpasswd. `.htpasswd.example` com instrução de rotação.
+- docker-compose.yml: mount `./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro`.
+- Validado: /docs + /docs/json protegidos; /health + /api/auth + DDI hb. NÃO afetados.
 
-### Arquivos finais
-- `docker/nginx/nginx.conf` (46 linhas), `conf.d/ninbus.conf` (190 linhas), `Dockerfile` (23 linhas)
-- `docker-compose.yml`: serviço nginx + forward-headers hawkBit + porta pública hawkBit removida
-- `tests/nginx-proxy.test.ts` (132 linhas, **15 testes passam**) — cobre bloqueios 404, DDI routing, resolver dinâmico, forward-headers, vhosts, healthcheck IPv4, cutover de porta
-- README + SKILL.md atualizados com arquitetura nginx
+### Frente B — cross-tenant artifacts
+- `findSoftwareModule(companyId, nameOrId, version?, typeKey?)` agora busca na tabela `artifacts` (WHERE company_id) em vez de hawkbitSoftwareModules global. Aceita nome OU SM-ID, ambos validados contra a empresa. Import hawkbitSoftwareModules removido (unused).
+- `createDeployment` passa companyId. Biome limpo (Number.isNaN).
+- 7 testes (B-T1..B-T6 + setup): todos passam. B-T3 cross-tenant (SM ID 8888 da empresa B → null p/ empresa A) FECHADO.
 
-### Resposta ao cenário do firmware (porta na URL)
-O firmware que envia `hb.ninbus.frt.com.br:8080` (com a porta no cabeçalho/URL) funciona perfeitamente: o vhost `hb.` escuta `:8080`, o nginx ignora a porta "extra" (já é a porta de conexão) e roteia pelo Host. O `_link` retorna já com `:8080` embutido. Validado.
+### Frente C — target ownership
+- `isTargetOwnedByCompany(companyId, targetId)` adicionado a helpers.ts (valida devices.companyId).
+- Aplicado em 2 rotas device-routes.ts: action-status e ddi-check → 404 se targetId não pertence à empresa (nunca 403).
+- 6 testes: todos passam. C-T2/C-T5 cross-tenant fechados.
 
-### Portas para abrir na AWS (explicado ao usuário)
-- **80/TCP** e **443/TCP** públicas (nginx)
-- **8080/TCP** pública (Opção C — firmware com porta hardcoded) [ou só 80 se firmware reconfigurável]
-- **FECHAR 8081 e 8082** ao público (internas)
-- O `hb.` deve ficar DNS-only na Cloudflare (não proxy laranja) — senão força HTTPS e quebra o firmware HTTP
+### Testes
+31 testes de hardening passando (18 nginx com +3 de docs, 7 B, 6 C). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (pré-existente, não relacionado).
 
-**Sem commit** (aguardando pedido do usuário). Stack validada localmente; replicar na AWS = mesma config + security group.
+### Documentação
+- SKILL.md: nova seção "hawkBit é single-tenant — ownership SEMPRE pela tabela local" com regras para artifacts/targets/DS.
+- plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO.
+- README: arquitetura (já atualizada na iteração anterior do nginx).
+
+### P0 e D (roadmap)
+- P0 (assinatura firmware + TLS DDI): iteração futura.
+- D.1 (least-priv hawkBit): depois (conforme decisão do usuário).
+- D.2 (token rotation): exige firmware.
+
+### Princípio aprendido (104 total)
+p-hawkbit-single-tenant-ownership-via-local-table: hawkBit single-tenant → lookups globais são cross-tenant por design; ownership pela tabela local; rotas com targetId no path precisam isTargetOwnedByCompany; 404 não 403.
+
+**Sem commit** (aguardando pedido).

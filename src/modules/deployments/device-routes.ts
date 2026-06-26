@@ -19,6 +19,7 @@ import {
 	deploymentParams,
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
+import { isTargetOwnedByCompany } from './helpers';
 import * as service from './service';
 const { DeploymentNotFoundError } = service;
 
@@ -49,9 +50,16 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer', params: deploymentParams,
+			auth: true,
+			companyRole: 'viewer',
+			params: deploymentParams,
 			detail: { tags: ['Deployments'], summary: 'Get deployment statistics' },
-			response: { 200: DeploymentStatisticsResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: DeploymentStatisticsResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -62,20 +70,28 @@ export const deploymentDeviceRoutes = withAuth(
 			try {
 				// Ownership check
 				await service.getDeployment(params.companyId, Number(params.deploymentId));
-				const result = await service.getDeploymentTargetStatuses(
-					Number(params.deploymentId),
-					{ offset: query?.offset, limit: query?.limit },
-				);
+				const result = await service.getDeploymentTargetStatuses(Number(params.deploymentId), {
+					offset: query?.offset,
+					limit: query?.limit,
+				});
 				return { data: result.content, total: result.total };
 			} catch (error) {
-				appLogger.warn('[DEPLOYMENTS] target-statuses failed: %s', error instanceof Error ? error.message : String(error));
+				appLogger.warn(
+					'[DEPLOYMENTS] target-statuses failed: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer', params: deploymentParams,
-			query: t.Object({ offset: t.Optional(t.Number()), limit: t.Optional(t.Number({ maximum: 500 })) }),
+			auth: true,
+			companyRole: 'viewer',
+			params: deploymentParams,
+			query: t.Object({
+				offset: t.Optional(t.Number()),
+				limit: t.Optional(t.Number({ maximum: 500 })),
+			}),
 			detail: {
 				tags: ['Deployments'],
 				summary: 'Get all target statuses with phase and progress',
@@ -84,7 +100,11 @@ export const deploymentDeviceRoutes = withAuth(
 					'Phase values: assigned, pending, downloading, downloaded, installing, installed, error, canceled. ' +
 					'See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.',
 			},
-			response: { 200: TargetStatusesResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: TargetStatusesResponseSchema,
+				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -102,13 +122,17 @@ export const deploymentDeviceRoutes = withAuth(
 				}
 				return { data: trail };
 			} catch (error) {
-				appLogger.warn('[DEPLOYMENTS] status-trail failed: %s', error instanceof Error ? error.message : String(error));
+				appLogger.warn(
+					'[DEPLOYMENTS] status-trail failed: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer',
+			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit DS ID' }),
@@ -122,7 +146,12 @@ export const deploymentDeviceRoutes = withAuth(
 					'Phase values: assigned, pending, downloading, downloaded, installing, installed, error, canceled. ' +
 					'See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.',
 			},
-			response: { 200: TargetStatusTrailResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: TargetStatusTrailResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -134,20 +163,33 @@ export const deploymentDeviceRoutes = withAuth(
 				// Ownership check
 				await service.getDeployment(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentTargets(Number(params.deploymentId), {
-					offset: query?.offset, limit: query?.limit,
+					offset: query?.offset,
+					limit: query?.limit,
 				});
 				return { data: result.content, total: result.total };
 			} catch (error) {
-				appLogger.warn('[DEPLOYMENTS] list targets failed: %s', error instanceof Error ? error.message : String(error));
+				appLogger.warn(
+					'[DEPLOYMENTS] list targets failed: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer', params: deploymentParams,
-			query: t.Object({ offset: t.Optional(t.Number()), limit: t.Optional(t.Number({ maximum: 500 })) }),
+			auth: true,
+			companyRole: 'viewer',
+			params: deploymentParams,
+			query: t.Object({
+				offset: t.Optional(t.Number()),
+				limit: t.Optional(t.Number({ maximum: 500 })),
+			}),
 			detail: { tags: ['Deployments'], summary: 'List targets in deployment' },
-			response: { 200: RawTargetListResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: RawTargetListResponseSchema,
+				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -155,8 +197,18 @@ export const deploymentDeviceRoutes = withAuth(
 	.get(
 		'/:deploymentId/targets/:targetId/actions/:actionId/status',
 		async ({ params, set }) => {
+			// Tenant isolation: verify the target belongs to this company before
+			// reading its action status from hawkBit. 404 (not 403) to avoid
+			// leaking target existence across tenants.
+			if (!(await isTargetOwnedByCompany(params.companyId, params.targetId))) {
+				set.status = 404;
+				return { error: 'Not Found', message: 'Target not found in this company' };
+			}
 			try {
-				const statusList = await hawkbitTargets.getActionStatus(params.targetId, Number(params.actionId));
+				const statusList = await hawkbitTargets.getActionStatus(
+					params.targetId,
+					Number(params.actionId),
+				);
 				return { data: statusList.content, total: statusList.total };
 			} catch {
 				set.status = 404;
@@ -164,9 +216,16 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer', params: deploymentActionParams,
+			auth: true,
+			companyRole: 'viewer',
+			params: deploymentActionParams,
 			detail: { tags: ['Deployments'], summary: 'Get raw action status history' },
-			response: { 200: ActionStatusListResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: ActionStatusListResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -181,12 +240,16 @@ export const deploymentDeviceRoutes = withAuth(
 				// STICKY-SNAPSHOT: if the target already finished, freeze as 'installed'
 				// BEFORE cancelling — preserves real outcome. Else mark 'canceled'.
 				try {
-					const statusList = await hawkbitTargets.getActionStatus(params.targetId, actionId, { limit: 5 });
+					const statusList = await hawkbitTargets.getActionStatus(params.targetId, actionId, {
+						limit: 5,
+					});
 					if (statusList.content[0]?.type === 'finished') {
 						const { freezeTargetAsInstalled } = await import('./snapshot');
 						await freezeTargetAsInstalled(dsId, params.targetId, actionId);
 					}
-				} catch { /* status lookup best-effort */ }
+				} catch {
+					/* status lookup best-effort */
+				}
 
 				await hawkbitTargets.cancelAction(params.targetId, actionId, true);
 
@@ -204,9 +267,16 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 		},
 		{
-			auth: true, companyRole: 'operator', params: deploymentActionParams,
+			auth: true,
+			companyRole: 'operator',
+			params: deploymentActionParams,
 			detail: { tags: ['Deployments'], summary: 'Cancel deployment action' },
-			response: { 200: GenericActionResponseSchema, 403: ErrorResponseSchema, 422: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: GenericActionResponseSchema,
+				403: ErrorResponseSchema,
+				422: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -214,6 +284,12 @@ export const deploymentDeviceRoutes = withAuth(
 	.get(
 		'/:deploymentId/ddi-check/:targetId',
 		async ({ params, set }) => {
+			// Tenant isolation: verify the target belongs to this company before
+			// diagnosing it. 404 (not 403) to avoid leaking target existence.
+			if (!(await isTargetOwnedByCompany(params.companyId, params.targetId))) {
+				set.status = 404;
+				return { error: 'Not Found', message: 'Target not found in this company' };
+			}
 			if (!hawkbitConfig.enabled) {
 				set.status = 400;
 				return { error: 'Bad Request', message: 'hawkBit integration is disabled' };
@@ -222,13 +298,17 @@ export const deploymentDeviceRoutes = withAuth(
 				const diag = await service.checkDDiReadiness(params.targetId);
 				return { data: diag };
 			} catch (error) {
-				appLogger.warn('[DEPLOYMENTS] ddi-check failed: %s', error instanceof Error ? error.message : String(error));
+				appLogger.warn(
+					'[DEPLOYMENTS] ddi-check failed: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer',
+			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit DS ID' }),
@@ -242,7 +322,12 @@ export const deploymentDeviceRoutes = withAuth(
 					'Checks for active update/cancel actions, DS completeness, and potential blockers. ' +
 					'Use this to debug DDI issues when device polls but gets no deployment.',
 			},
-			response: { 200: RawDiagnosticResponseSchema, 400: ErrorResponseSchema, 403: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: RawDiagnosticResponseSchema,
+				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 
@@ -258,19 +343,30 @@ export const deploymentDeviceRoutes = withAuth(
 			}
 			try {
 				const actions = await hawkbitTargets.getActions(device.hawkbitTargetId, {
-					limit: query?.limit ?? 50, sort: 'id:DESC',
+					limit: query?.limit ?? 50,
+					sort: 'id:DESC',
 				});
 				return { data: actions.content, total: actions.total };
 			} catch (error) {
-				appLogger.warn('[DEPLOYMENTS] device actions failed: %s', error instanceof Error ? error.message : String(error));
+				appLogger.warn(
+					'[DEPLOYMENTS] device actions failed: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
 		},
 		{
-			auth: true, companyRole: 'viewer', params: deviceParams,
+			auth: true,
+			companyRole: 'viewer',
+			params: deviceParams,
 			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },
-			response: { 200: RawActionListResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema, 503: ErrorResponseSchema },
+			response: {
+				200: RawActionListResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	);

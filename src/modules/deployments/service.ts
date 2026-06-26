@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { db } from '@common/db';
 import { artifacts, deployments } from '@common/db/schema';
 import {
@@ -9,16 +10,21 @@ import {
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
 
-import { enrichDeployment, enrichOrphanedDeployment, summarizeStatistics, computeDeploymentStatus, type LocalDeploymentRecord } from './enrichment';
+import {
+	type LocalDeploymentRecord,
+	computeDeploymentStatus,
+	enrichDeployment,
+	enrichOrphanedDeployment,
+	summarizeStatistics,
+} from './enrichment';
 export { deleteDeployment, requireDeploymentOwnership } from './delete';
 import { requireDeploymentOwnership } from './delete';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
 import { forceCloseActiveActions, forceCloseCancelActions } from './actions';
 export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
-import { resolveHawkbitTargetIds, findSoftwareModule, getLocalDeployment } from './helpers';
+import { findSoftwareModule, getLocalDeployment, resolveHawkbitTargetIds } from './helpers';
 
 export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
@@ -48,7 +54,11 @@ export interface CreateDeploymentInput {
 	allDevices?: boolean;
 }
 
-export async function createDeployment(companyId: string, userId: string, data: CreateDeploymentInput) {
+export async function createDeployment(
+	companyId: string,
+	userId: string,
+	data: CreateDeploymentInput,
+) {
 	const targetIds = await resolveHawkbitTargetIds(companyId, {
 		deviceIds: data.deviceIds,
 		categoryIds: data.categoryIds,
@@ -60,11 +70,11 @@ export async function createDeployment(companyId: string, userId: string, data: 
 	}
 
 	const smVersion = data.version ?? '1.0';
-	const sm = await findSoftwareModule(data.artifactName, smVersion, data.artifactType);
+	const sm = await findSoftwareModule(companyId, data.artifactName, smVersion, data.artifactType);
 	if (!sm) {
 		throw new Error(
 			`Artifact "${data.artifactName}" (${data.artifactType}) not found. ` +
-			'Upload the artifact first via POST /artifacts before creating a deployment.',
+				'Upload the artifact first via POST /artifacts before creating a deployment.',
 		);
 	}
 
@@ -79,7 +89,7 @@ export async function createDeployment(companyId: string, userId: string, data: 
 	if (!smHasArtifacts) {
 		throw new Error(
 			`Software Module "${sm.name}" (#${sm.id}) has no artifacts (binary files). ` +
-			'Upload the artifact file first. DDI will not offer deploymentBase for an incomplete DS.',
+				'Upload the artifact file first. DDI will not offer deploymentBase for an incomplete DS.',
 		);
 	}
 
@@ -128,12 +138,18 @@ export async function createDeployment(companyId: string, userId: string, data: 
 	}
 
 	if (failedTargets.length > 0) {
-		appLogger.warn('[DEPLOY] %d/%d targets FAILED verification.', failedTargets.length, targetIds.length);
+		appLogger.warn(
+			'[DEPLOY] %d/%d targets FAILED verification.',
+			failedTargets.length,
+			targetIds.length,
+		);
 		for (const targetId of failedTargets.slice(0, 3)) {
 			try {
 				const diag = await checkDDiReadiness(targetId);
 				appLogger.error({ targetId, ...diag }, '[DEPLOY] DDI Diagnostic');
-			} catch { /* diagnostic failed */ }
+			} catch {
+				/* diagnostic failed */
+			}
 		}
 	}
 
@@ -150,7 +166,9 @@ export async function createDeployment(companyId: string, userId: string, data: 
 			artifactDisplayName = localArtifact.name;
 			artifactOrigFile = localArtifact.originalFilename ?? null;
 		}
-	} catch { /* non-critical */ }
+	} catch {
+		/* non-critical */
+	}
 
 	await db.insert(deployments).values({
 		companyId,
@@ -172,9 +190,15 @@ export async function createDeployment(companyId: string, userId: string, data: 
 	);
 
 	return {
-		dsId: ds.id, name: data.name, version: ds.version,
-		targetsAssigned: targetIds.length, artifactType: data.artifactType,
-		smId: sm.id, smName: sm.name, verified: verifiedCount, failed: failedTargets.length,
+		dsId: ds.id,
+		name: data.name,
+		version: ds.version,
+		targetsAssigned: targetIds.length,
+		artifactType: data.artifactType,
+		smId: sm.id,
+		smName: sm.name,
+		verified: verifiedCount,
+		failed: failedTargets.length,
 	};
 }
 
@@ -200,7 +224,10 @@ export async function getDeploymentStatistics(dsId: number) {
  *  Uses local DB as source of truth — hawkBit enrichment is optional.
  *  Orphaned deployments (DS deleted) show audit data from local records.
  */
-export async function listDeployments(companyId: string, _params?: { offset?: number; limit?: number }) {
+export async function listDeployments(
+	companyId: string,
+	_params?: { offset?: number; limit?: number },
+) {
 	// 1. Get local deployment records for this company
 	let localDeployments: any[];
 	try {
@@ -245,6 +272,9 @@ export async function listDeployments(companyId: string, _params?: { offset?: nu
 	return { data: enriched, total: enriched.length };
 }
 
-export async function getDeploymentTargets(dsId: number, params?: { offset?: number; limit?: number }) {
+export async function getDeploymentTargets(
+	dsId: number,
+	params?: { offset?: number; limit?: number },
+) {
 	return hawkbitDistributionSets.getAssignedTargets(dsId, params);
 }

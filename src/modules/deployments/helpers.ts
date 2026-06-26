@@ -2,8 +2,7 @@
  * Deployment helpers — target resolution and software module lookup.
  */
 import { db } from '@common/db';
-import { deployments, devices } from '@common/db/schema';
-import { hawkbitSoftwareModules } from '@common/hawkbit/client';
+import { artifacts, deployments, devices } from '@common/db/schema';
 import type { LocalDeploymentRecord } from '@modules/deployments/enrichment';
 import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -78,34 +77,99 @@ export async function resolveHawkbitTargetIds(
 	return [...targetIds];
 }
 
+/**
+ * Resolve the hawkBit Software Module for a deployment, **scoped by company**.
+ *
+ * Accepts either the artifact display name OR its hawkBit SM ID, but in BOTH
+ * cases the lookup goes through the local `artifacts` table filtered by
+ * companyId. This is the tenant-isolation boundary: a SM that exists in hawkBit
+ * but is NOT registered for this company is rejected (null) — so an operator
+ * cannot reference another company's artifact by guessing/enumerating the
+ * sequential SM ID, and brute-forcing IDs returns 404 for every foreign one.
+ *
+ * hawkBit itself is single-tenant ("DEFAULT") and has no notion of companyId,
+ * so ownership MUST be enforced here on the local registry (write-through
+ * pattern, same as devices/artifacts modules).
+ */
 export async function findSoftwareModule(
+	companyId: string,
 	artifactNameOrSmId: string,
-	version: string,
-	typeKey: string,
-): Promise<{ id: number; name: string; version: string } | null> {
+	version?: string,
+	typeKey?: string,
+): Promise<{ id: number; name: string; version: string; artifactType: string } | null> {
 	const asNumber = Number(artifactNameOrSmId);
-	if (!isNaN(asNumber) && asNumber > 0 && String(asNumber) === artifactNameOrSmId) {
-		try {
-			const sm = await hawkbitSoftwareModules.get(asNumber);
-			return { id: sm.id, name: sm.name, version: sm.version };
-		} catch {
-			return null;
-		}
+	const isNumericId =
+		!Number.isNaN(asNumber) && asNumber > 0 && String(asNumber) === artifactNameOrSmId;
+
+	const conditions = [eq(artifacts.companyId, companyId)];
+	if (isNumericId) {
+		conditions.push(eq(artifacts.hawkbitSmId, asNumber));
+	} else {
+		conditions.push(eq(artifacts.name, artifactNameOrSmId));
 	}
-	const result = await hawkbitSoftwareModules.list({
-		q: `name==${artifactNameOrSmId};version==${version};type==${typeKey}`,
-	});
-	if (result.content.length > 0) {
-		const sm = result.content[0]!;
-		return { id: sm.id, name: sm.name, version: sm.version };
+	if (version) conditions.push(eq(artifacts.version, version));
+	if (typeKey) conditions.push(eq(artifacts.artifactType, typeKey));
+
+	// Best match: fully-qualified lookup first, then relax version/type
+	// (an artifact may be referenced by name alone). Both paths stay scoped by
+	// companyId — never a global hawkBit lookup.
+	let [row] = await db
+		.select({
+			hawkbitSmId: artifacts.hawkbitSmId,
+			name: artifacts.name,
+			version: artifacts.version,
+			artifactType: artifacts.artifactType,
+		})
+		.from(artifacts)
+		.where(and(...conditions))
+		.limit(1);
+
+	if (!row && !isNumericId && (version || typeKey)) {
+		// Relax: match by name only (still company-scoped)
+		[row] = await db
+			.select({
+				hawkbitSmId: artifacts.hawkbitSmId,
+				name: artifacts.name,
+				version: artifacts.version,
+				artifactType: artifacts.artifactType,
+			})
+			.from(artifacts)
+			.where(and(eq(artifacts.companyId, companyId), eq(artifacts.name, artifactNameOrSmId)))
+			.orderBy(artifacts.updatedAt)
+			.limit(1);
 	}
-	const byNameType = await hawkbitSoftwareModules.list({
-		q: `name==${artifactNameOrSmId};type==${typeKey}`,
-	});
-	if (byNameType.content.length > 0) {
-		const sorted = byNameType.content.sort((a, b) => b.id - a.id);
-		const sm = sorted[0]!;
-		return { id: sm.id, name: sm.name, version: sm.version };
-	}
-	return null;
+
+	if (!row) return null; // cross-tenant or genuinely missing → 404
+
+	return {
+		id: row.hawkbitSmId,
+		name: row.name,
+		version: row.version,
+		artifactType: row.artifactType,
+	};
+}
+
+/**
+ * Verify that a hawkBit target (controllerId) belongs to `companyId`.
+ *
+ * Tenant-isolation guard for routes that receive a raw `targetId` in the
+ * path (e.g. action status, ddi-check). `companyRole` only validates that
+ * the caller is a member of the path's company — it does NOT verify the
+ * `targetId` belongs to that company. Without this check, a viewer of
+ * company A could read action/diagnostic data of a target that belongs to
+ * company B by guessing its controllerId.
+ *
+ * @returns true if the target belongs to the company, false otherwise (caller
+ *          should respond 404 — never 403, to avoid leaking existence).
+ */
+export async function isTargetOwnedByCompany(
+	companyId: string,
+	targetId: string,
+): Promise<boolean> {
+	const [device] = await db
+		.select({ id: devices.id })
+		.from(devices)
+		.where(and(eq(devices.hawkbitTargetId, targetId), eq(devices.companyId, companyId)))
+		.limit(1);
+	return !!device;
 }

@@ -3,6 +3,7 @@
  */
 import { db } from '@common/db';
 import { artifacts, deployments, devices } from '@common/db/schema';
+import { appLogger } from '@common/logger';
 import type { LocalDeploymentRecord } from '@modules/deployments/enrichment';
 import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -101,45 +102,77 @@ export async function findSoftwareModule(
 	const isNumericId =
 		!Number.isNaN(asNumber) && asNumber > 0 && String(asNumber) === artifactNameOrSmId;
 
-	const conditions = [eq(artifacts.companyId, companyId)];
-	if (isNumericId) {
-		conditions.push(eq(artifacts.hawkbitSmId, asNumber));
-	} else {
-		conditions.push(eq(artifacts.name, artifactNameOrSmId));
-	}
-	if (version) conditions.push(eq(artifacts.version, version));
-	if (typeKey) conditions.push(eq(artifacts.artifactType, typeKey));
+	const selectCols = {
+		hawkbitSmId: artifacts.hawkbitSmId,
+		name: artifacts.name,
+		version: artifacts.version,
+		artifactType: artifacts.artifactType,
+	};
 
-	// Best match: fully-qualified lookup first, then relax version/type
-	// (an artifact may be referenced by name alone). Both paths stay scoped by
-	// companyId — never a global hawkBit lookup.
+	if (isNumericId) {
+		// SM ID is globally unique (uniqueIndex on hawkbit_sm_id). Once we confirm
+		// it belongs to this company, it identifies the EXACT artifact — version/type
+		// are metadata, NOT identity. We must NOT filter by version here: the caller
+		// passes a default '1.0' (or a client-supplied version) that may diverge from
+		// the stored version, causing a false 422 "not found". There is also no
+		// relax path for numeric IDs (the name-relax below is name-only), so a
+		// version mismatch here was an unrecoverable 422. Cross-tenant is still
+		// blocked: a foreign SM ID simply has no row for this companyId → null.
+		const [row] = await db
+			.select(selectCols)
+			.from(artifacts)
+			.where(and(eq(artifacts.companyId, companyId), eq(artifacts.hawkbitSmId, asNumber)))
+			.limit(1);
+		if (!row) {
+			appLogger.debug(
+				{ companyId, smId: asNumber },
+				'[findSoftwareModule] no local artifact record for SM ID — not registered for this company (run backfill-artifacts.ts) or cross-tenant.',
+			);
+			return null;
+		}
+		return {
+			id: row.hawkbitSmId,
+			name: row.name,
+			version: row.version,
+			artifactType: row.artifactType,
+		};
+	}
+
+	// Name lookup: try fully-qualified (name + version + type) first, then relax to
+	// name only. Version/type are ADVISORY here — they disambiguate when several
+	// artifacts share a display name, but never cause a false 422. Both paths stay
+	// scoped by companyId (tenant isolation). Never a global hawkBit lookup.
+	const qualified: ReturnType<typeof eq>[] = [
+		eq(artifacts.companyId, companyId),
+		eq(artifacts.name, artifactNameOrSmId),
+	];
+	if (version) qualified.push(eq(artifacts.version, version));
+	if (typeKey) qualified.push(eq(artifacts.artifactType, typeKey));
+
 	let [row] = await db
-		.select({
-			hawkbitSmId: artifacts.hawkbitSmId,
-			name: artifacts.name,
-			version: artifacts.version,
-			artifactType: artifacts.artifactType,
-		})
+		.select(selectCols)
 		.from(artifacts)
-		.where(and(...conditions))
+		.where(and(...qualified))
 		.limit(1);
 
-	if (!row && !isNumericId && (version || typeKey)) {
-		// Relax: match by name only (still company-scoped)
+	if (!row) {
+		// Relax: match by name only (still company-scoped). Latest-updated wins
+		// when several artifacts share the name.
 		[row] = await db
-			.select({
-				hawkbitSmId: artifacts.hawkbitSmId,
-				name: artifacts.name,
-				version: artifacts.version,
-				artifactType: artifacts.artifactType,
-			})
+			.select(selectCols)
 			.from(artifacts)
 			.where(and(eq(artifacts.companyId, companyId), eq(artifacts.name, artifactNameOrSmId)))
 			.orderBy(artifacts.updatedAt)
 			.limit(1);
 	}
 
-	if (!row) return null; // cross-tenant or genuinely missing → 404
+	if (!row) {
+		appLogger.debug(
+			{ companyId, name: artifactNameOrSmId, version, typeKey },
+			'[findSoftwareModule] no local artifact record for this name — not registered for this company (run backfill-artifacts.ts), name mismatch, or cross-tenant.',
+		);
+		return null; // cross-tenant or genuinely missing → 422
+	}
 
 	return {
 		id: row.hawkbitSmId,

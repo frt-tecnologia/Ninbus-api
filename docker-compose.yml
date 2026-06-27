@@ -89,9 +89,10 @@ services:
       # Frontend base URL — email links (password reset, verification) point here
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       # Base for app deep links in emails (takes precedence over FRONTEND_URL).
-      # Custom scheme (ninbus://) until the web domain is verified; switch to
-      # https://ninbus.frt.com.br (App Link) once the domain is live.
-      APP_DEEP_LINK_BASE: ${APP_DEEP_LINK_BASE:-ninbus://}
+      # MUST be an https App Link so email links are clickable on mobile.
+      # Custom schemes (ninbus://) are NOT clickable in Gmail/Outlook/Yahoo.
+      # Requires /.well-known/{assetlinks.json,apple-app-site-association}.
+      APP_DEEP_LINK_BASE: ${APP_DEEP_LINK_BASE:-https://ninbus.frt.com.br}
       # Resend Dashboard template aliases (must be PUBLISHED at resend.com).
       # Unset → falls back to inline HTML.
       RESEND_TEMPLATE_PASSWORD_RESET: ${RESEND_TEMPLATE_PASSWORD_RESET:-}

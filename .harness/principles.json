@@ -831,6 +831,22 @@
       "category": "security",
       "learnedAt": "2026-06-26T19:45:36.139Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-custom-scheme-email-links-not-clickable",
+      "rule": "Custom URL schemes (e.g. \"ninbus://\") in email body links are NOT clickable inside most mobile email clients (Gmail, Outlook, Yahoo strip non-http(s) hrefs as an anti-phishing measure). Always use an https App Link (e.g. \"https://domain.com/path\") for email CTAs: it is clickable everywhere AND opens the app directly when the domain is verified via /.well-known/assetlinks.json (Android) + /.well-known/apple-app-site-association (iOS). Extract deep-link builders into their own module (deep-link.ts) so they can be unit-tested WITHOUT importing auth.ts (which initializes Better Auth + DB connection at module load). Tests mutate env.APP_DEEP_LINK_BASE directly. Keep the fallback-to-original-URL + warn behavior for missing config.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-27T02:57:57.563Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-version-not-identity-sm-id-unique",
+      "rule": "When resolving a hawkBit Software Module for a deployment, version and artifactType are METADATA, not IDENTITY. The SM ID (hawkbitSmId) is globally unique (uniqueIndex) and the display name scoped by companyId is the identifier. NEVER filter a numeric SM ID lookup by version: createDeployment defaults version to data.version ?? '1.0', which diverges from the stored version → false 422 \"Artifact not found\". Numeric SM ID lookups have NO relax path (the name-relax is name-only), so a version mismatch there was an unrecoverable 422 regression. Fix: for numeric IDs, confirm company-ownership ONLY (no version/type filter — the ID already identifies the exact artifact). For names, keep a relax-to-name-only path (version/type are advisory disambiguation). Cross-tenant stays blocked: a foreign SM ID simply has no local row for that companyId → null.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-27T03:46:12.870Z",
+      "reinforcementCount": 1
     }
   ]
 }

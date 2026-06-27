@@ -3,6 +3,7 @@ import { appLogger } from '@common/logger';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
+import { buildAppDeepLink } from './deep-link';
 import { sendEmail, sendTemplatedEmail } from './email';
 import { env } from './env';
 
@@ -10,34 +11,6 @@ import { env } from './env';
 function firstNameOf(fullName: string | null | undefined): string {
 	if (!fullName) return '';
 	return fullName.trim().split(/\s+/)[0] ?? fullName;
-}
-
-/**
- * Build an app deep link from a Better Auth callback URL and token.
- *
- * Better Auth generates `url` using BETTER_AUTH_URL (which points at the API).
- * We rewrite it to a link the mobile app can intercept:
- *   - Prefer APP_DEEP_LINK_BASE (custom scheme like "ninbus://" or App Link https URL).
- *   - Fall back to FRONTEND_URL (web).
- *   - Fall back to the original Better Auth URL (best effort) + warn.
- *
- * Result: `${base}/reset-password?token=...`  →  e.g. `ninbus://reset-password?token=XXX`
- */
-function buildAppDeepLink(originalUrl: string, token: string, path: string): string {
-	const base = env.APP_DEEP_LINK_BASE ?? env.FRONTEND_URL;
-	if (!base) {
-		appLogger.warn(
-			{ path },
-			'Neither APP_DEEP_LINK_BASE nor FRONTEND_URL is set — email links will point at the API (BETTER_AUTH_URL). Set APP_DEEP_LINK_BASE (e.g. ninbus://) to route links into the mobile app.',
-		);
-		return originalUrl;
-	}
-	const cleanPath = path.replace(/^\/+/, '');
-	// Custom schemes (e.g. "ninbus://") end with "://" — append the path directly
-	// so we get "ninbus://reset-password" (not "ninbus:/reset-password").
-	// Host-based URLs (e.g. "https://ninbus.frt.com.br") need a "/" separator.
-	const separator = base.endsWith('://') ? '' : '/';
-	return `${base}${separator}${cleanPath}?token=${encodeURIComponent(token)}`;
 }
 
 /**

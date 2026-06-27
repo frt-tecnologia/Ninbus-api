@@ -69,8 +69,7 @@ export async function createDeployment(
 		throw new Error('No eligible devices found for deployment');
 	}
 
-	const smVersion = data.version ?? '1.0';
-	const sm = await findSoftwareModule(companyId, data.artifactName, smVersion, data.artifactType);
+	const sm = await findSoftwareModule(companyId, data.artifactName, data.version, data.artifactType);
 	if (!sm) {
 		throw new Error(
 			`Artifact "${data.artifactName}" (${data.artifactType}) not found. ` +

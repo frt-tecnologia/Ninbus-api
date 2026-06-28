@@ -58,12 +58,12 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 	const user = await fetchSession(cookieHeader);
 	if (!user) {
-		redirect('/admin/auth/login');
+		redirect('/auth/login');
 	}
 
 	const admin = await isPlatformAdmin(cookieHeader);
 	if (!admin) {
-		redirect('/admin/auth/login?error=forbidden');
+		redirect('/auth/login?error=forbidden');
 	}
 
 	return user;

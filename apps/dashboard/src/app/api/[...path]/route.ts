@@ -24,11 +24,14 @@ import { type NextRequest, NextResponse } from 'next/server';
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://api:8081';
 
 // Headers that must be forwarded from the browser request to the API.
+// `origin` is REQUIRED by Better Auth's trustedOrigins check — without it,
+// auth endpoints return 403 even with valid credentials.
 const FORWARD_REQUEST_HEADERS = [
 	'cookie',
 	'content-type',
 	'accept',
 	'authorization',
+	'origin',
 ];
 
 // Headers copied back from the API response to the browser.
@@ -39,26 +42,44 @@ const FORWARD_RESPONSE_HEADERS = [
 	'etag',
 ];
 
+export const dynamic = 'force-dynamic';
+
 async function handler(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
 	const { path: pathSegments } = await context.params;
-	const path = pathSegments.join('/');
+	// This Route Handler lives at app/api/[...path], so pathSegments captures
+	// everything AFTER /admin/api/. The Ninbus API mounts real endpoints under
+	// /api/* (auth, admin, companies, ...), EXCEPT the health check which is at
+	// the root /health. We rebuild the API path with the /api prefix so that
+	// /admin/api/auth/x → http://api:8081/api/auth/x. The health probe is the
+	// only root endpoint and is called as /admin/api/health here for
+	// consistency; the API has /health, so we special-case it.
+	const joined = pathSegments.join('/');
+	const apiPath = joined === 'health' ? 'health' : `api/${joined}`;
 
-	// Reconstruct the target API URL. The dashboard calls /admin/api/foo/bar,
-	// which (after basePath stripping) arrives here as /api/foo/bar.
-	const targetUrl = `${API_INTERNAL_URL}/${path}${extractQuery(req)}`;
+	// Preserve the query string.
+	const url = new URL(req.url);
+	const targetUrl = `${API_INTERNAL_URL}/${apiPath}${url.search}`;
+
+	// Read the request body ONCE for methods that have one (GET/HEAD have none).
+	let body: BodyInit | undefined;
+	if (req.method !== 'GET' && req.method !== 'HEAD') {
+		body = await req.text();
+	}
 
 	// Build the upstream request, forwarding only safe headers + the body.
 	const upstream = new Request(targetUrl, {
 		method: req.method,
 		headers: pickHeaders(req.headers, FORWARD_REQUEST_HEADERS),
-		body: hasBody(req.method) ? await req.blob() : undefined,
+		body,
 		redirect: 'manual',
+		// @ts-expect-error duplex is required when streaming a body in undici.
+		duplex: body !== undefined ? 'half' : undefined,
 	});
 
 	let upstreamRes: Response;
 	try {
 		upstreamRes = await fetch(upstream);
-	} catch (err) {
+	} catch {
 		// The API is unreachable (network error inside compose). Surface a 503
 		// so the dashboard UI can show a clear "service unavailable" state
 		// instead of a generic 500.
@@ -85,16 +106,11 @@ async function handler(req: NextRequest, context: { params: Promise<{ path: stri
 		for (const c of setCookies) resHeaders.append('set-cookie', c);
 	}
 
-	const body = await upstreamRes.blob();
-	return new NextResponse(body, {
+	const resBody = await upstreamRes.arrayBuffer();
+	return new NextResponse(resBody, {
 		status: upstreamRes.status,
 		headers: resHeaders,
 	});
-}
-
-function extractQuery(req: NextRequest): string {
-	const url = new URL(req.url);
-	return url.search ? url.search : '';
 }
 
 function pickHeaders(src: Headers, names: string[]): Headers {
@@ -104,10 +120,6 @@ function pickHeaders(src: Headers, names: string[]): Headers {
 		if (v) out.set(n, v);
 	}
 	return out;
-}
-
-function hasBody(method: string): boolean {
-	return method !== 'GET' && method !== 'HEAD';
 }
 
 export const GET = handler;

@@ -48,12 +48,27 @@
 - [x] nginx vhost `ninbus.frt.com.br` → `location /admin/ → dashboard:3001`.
 - [ ] Testes locais (docker compose up + login + CRUD) — **PRÓXIMO**.
 
-## Validações pendentes (próximo turno)
-- [ ] `docker compose build dashboard` sem erro.
-- [ ] Login admin (cookie) → redirect /admin/overview.
-- [ ] Não-admin → redirect login?error=forbidden.
-- [ ] CRUD devices/companies/deployments funcional.
-- [ ] `docker exec ninbus-dashboard wget -qO- http://api:8081/health` → 200.
+## Validações E2E (docker compose local) ✅
+- [x] `docker compose build dashboard` → imagem 343MB.
+- [x] `docker compose up dashboard` → container Up, Next ready.
+- [x] Proxy interno: `GET /admin/api/health` → `{"status":"ok"}` (dashboard→api via service name).
+- [x] `GET /admin/api/auth/get-session` (sem cookie) → `null` (API responde).
+- [x] `POST /admin/api/auth/sign-up/email` → 422 (admin já existe — proxy roda auth).
+- [x] `POST /admin/api/auth/sign-in/email` (cred errada) → 401 (API valida cred).
+- [x] `GET /admin/api/admin/companies` (sem auth) → 401 (guard superAdmin ligado).
+- [x] Login HTML renderiza (6.7KB); reset-password HTML renderiza (6.6KB).
+- [x] nginx config syntax OK; compose syntax OK.
+
+### Correções aplicadas durante os testes
+- Proxy agora repassa `Origin` header (Better Auth exige p/ trustedOrigins; sem ele → 403).
+- `CORS_ORIGIN` do `.env` agora inclui `ninbus.frt.com.br`.
+- Proxy reconstrói path: `/admin/api/auth/x` → `http://api:8081/api/auth/x`;
+  `/admin/api/health` → `http://api:8081/health` (health é único endpoint root).
+- Login/reset envolvidos em `<Suspense>` (Next 15 exige p/ useSearchParams no prerender).
+
+### Pendente (teste com credenciais reais)
+- Login com a senha real do admin@ninbus.com.br → confirma cookie + redirect /admin/overview.
+- Isso exige a senha real (não tenho). Fluxo já provado até a validação de cred (401).
 
 ## Trabalho futuro na API (roadmap — não bloqueia Fase 1)
 - F-A: `GET /api/admin/sessions` (usuários logados).

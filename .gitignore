@@ -99,3 +99,6 @@ pnpm-lock.yaml
 # Docker environment files (contain secrets)
 .env.docker
 .env.test
+
+# Windows reserved name artifact
+nul

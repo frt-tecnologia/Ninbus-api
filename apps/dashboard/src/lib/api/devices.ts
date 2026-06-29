@@ -35,4 +35,9 @@ export const deviceService = {
 			`/devices/deprovision/${encodeURIComponent(serialNumber)}`,
 		);
 	},
+
+	/** Force-refresh every device's connection status from hawkBit. */
+	async syncAll(): Promise<ActionResponse> {
+		return http.post<ActionResponse>('/admin/devices/sync');
+	},
 };

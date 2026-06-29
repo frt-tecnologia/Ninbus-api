@@ -190,6 +190,29 @@ export const DeviceSyncEngine = {
 		return localDevices.length;
 	},
 
+	/**
+	 * Force a FULL sync of ALL devices from hawkBit (bypasses the isRunning
+	 * guard). Used by the admin "Atualizar status" button to refresh every
+	 * device's connectionStatus / lastSeenAt / pollStatus on demand. Returns
+	 * the number of devices whose state changed.
+	 */
+	async forceSyncAll(): Promise<{ updated: number; disabled: boolean }> {
+		if (!hawkbitConfig.enabled) return { updated: 0, disabled: true };
+		const startTime = Date.now();
+		try {
+			// syncPeriodic fetches ALL hawkBit targets and batch-updates local
+			// devices (connectionStatus, lastSeenAt, hawkbitUpdateStatus, ...).
+			const updated = await syncPeriodic();
+			state.lastFullSyncAt = new Date();
+			state.lastDurationMs = Date.now() - startTime;
+			return { updated, disabled: false };
+		} catch (error: any) {
+			state.errors++;
+			appLogger.error('[SYNC] forceSyncAll failed: %s', error?.message);
+			throw error;
+		}
+	},
+
 	/** Legacy — kept for backward compatibility. */
 	async syncCompany(_companyId: string) { /* no-op */ },
 

@@ -205,6 +205,42 @@ export const adminModule = withAuth(new Elysia({ prefix: '/api/admin' }))
 		},
 	)
 
+	// POST /devices/sync — Force a full hawkBit sync (refresh all connection statuses)
+	.post(
+		'/devices/sync',
+		async ({ set }) => {
+			const { DeviceSyncEngine } = await import('@modules/devices/sync');
+			try {
+				const { updated, disabled } = await DeviceSyncEngine.forceSyncAll();
+				return {
+					message: disabled
+						? 'hawkBit integration is disabled — no sync performed.'
+						: `Status refreshed. ${updated} device(s) updated.`,
+				};
+			} catch {
+				set.status = 503;
+				return { message: 'hawkBit is currently unreachable. Try again in a moment.' };
+			}
+		},
+		{
+			auth: true,
+			superAdmin: true,
+			detail: {
+				tags: ['Admin'],
+				summary: 'Force-refresh device statuses from hawkBit (factory only)',
+				description:
+					'Triggers a full sync of every device from hawkBit, updating ' +
+					'connectionStatus, lastSeenAt and pollStatus. Use this when the ' +
+					'table looks stale (the background sync runs on an interval).',
+			},
+			response: {
+				200: GenericActionResponseSchema,
+				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
+		},
+	)
+
 	// GET /pending-designations — List ALL pending designations
 	.get(
 		'/pending-designations',

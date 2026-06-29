@@ -65,9 +65,9 @@ function BrandLockup({ className }: { className?: string }) {
 			<Image
 				src="/frt-logo.png"
 				alt="FRT Tecnologia"
-				width={56}
-				height={24}
-				className="h-5 w-auto object-contain opacity-80"
+				width={22}
+				height={22}
+				className="h-[22px] w-[22px] shrink-0 object-contain opacity-80"
 			/>
 		</div>
 	);

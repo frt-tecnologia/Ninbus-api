@@ -6,9 +6,9 @@ import { createAuthClient } from 'better-auth/react';
  * Better Auth client for the dashboard (client component only).
  *
  * All auth calls go through the SAME-ORIGIN Route Handler proxy at
- * `/api/auth/*`, which forwards to the API (`http://api:8081`) and repasses
- * the session cookie. The browser therefore NEVER calls the cross-origin API
- * directly.
+ * `/console/api/auth/*`, which forwards to the API (`http://api:8081`) and
+ * repasses the session cookie. The browser therefore NEVER calls the
+ * cross-origin API directly.
  *
  * `baseURL` is intentionally OMITTED: better-auth builds
  * `${window.location.origin}${basePath}` at runtime (browser only). Passing a
@@ -17,7 +17,7 @@ import { createAuthClient } from 'better-auth/react';
  * `window`, no auth request runs server-side — exactly what we want.
  */
 export const authClient = createAuthClient({
-	basePath: '/api/auth',
+	basePath: '/console/api/auth',
 	fetchOptions: {
 		credentials: 'same-origin',
 	},

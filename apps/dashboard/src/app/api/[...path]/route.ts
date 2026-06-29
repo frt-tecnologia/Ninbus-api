@@ -4,7 +4,7 @@ import { type NextRequest, NextResponse } from 'next/server';
  * API Proxy Route Handler — the SINGLE point of communication with the Ninbus API.
  *
  * Why this exists (architecture decision):
- * The dashboard runs at `ninbus.frt.com.br/admin` and the API at
+ * The dashboard runs at `ninbus.frt.com.br/console` and the API at
  * `api.ninbus.frt.com.br`. These are different sites, so the Better Auth session
  * cookie (`sameSite: 'lax'`) does NOT travel from the browser to the API
  * directly (cross-site fetch). The browser therefore NEVER calls the API
@@ -53,11 +53,11 @@ export const dynamic = 'force-dynamic';
 async function handler(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
 	const { path: pathSegments } = await context.params;
 	// This Route Handler lives at app/api/[...path], so pathSegments captures
-	// everything AFTER /api/. The Ninbus API mounts real endpoints under
+	// everything AFTER the basePath + /api/. The Ninbus API mounts real endpoints under
 	// /api/* (auth, admin, companies, ...), EXCEPT the health check which is at
 	// the root /health. We rebuild the API path with the /api prefix so that
-	// /api/auth/x → http://api:8081/api/auth/x. The health probe is the
-	// only root endpoint and is called as /api/health here for
+	// /console/api/auth/x → http://api:8081/api/auth/x. The health probe is the
+	// only root endpoint and is called as /console/api/health here for
 	// consistency; the API has /health, so we special-case it.
 	const joined = pathSegments.join('/');
 	const apiPath = joined === 'health' ? 'health' : `api/${joined}`;

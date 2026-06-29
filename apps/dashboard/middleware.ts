@@ -8,7 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  * visitors get redirected to /auth/login before the layout even runs.
  *
  * Path logic:
- *  - /* (except /auth/* and /api/*) → require cookie.
+ *  - /* under the basePath (except /auth/* and /api/*) → require cookie.
  *  - everything else → passthrough.
  */
 export function middleware(req: NextRequest) {

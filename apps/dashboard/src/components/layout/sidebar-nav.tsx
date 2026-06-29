@@ -17,11 +17,12 @@ import { ROUTES } from '@/lib/routes';
 /**
  * Primary navigation. Routes come from the typed route map (lib/routes.ts) so
  * navigation is refactor-safe. Links use next/link, which:
+ *   • auto-applies basePath '/console' (paths here are prefix-stripped),
  *   • performs instant CLIENT-SIDE navigation (no full page reload),
  *   • PREFETCHES the route on hover/focus → the next page's JS+data is ready
  *     before the click lands. This is the App Router's native performant
  *     navigation; no external router is needed.
- * usePathname() returns the current path, so matching works directly.
+ * usePathname() returns the basePath-stripped path, so matching works directly.
  */
 type NavItem = {
 	key: keyof typeof ROUTES;

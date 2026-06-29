@@ -2,6 +2,7 @@
 
 import { Suspense, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { Eye, EyeOff } from 'lucide-react';
 import { signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
@@ -72,7 +73,7 @@ function LoginForm() {
 			<div className="relative z-10 w-full max-w-sm">
 				{/* Centered logo + headline (matches the mobile auth header) */}
 				<div className="mb-8 flex flex-col items-center gap-4">
-					<img
+					<Image
 						src="/ninbus-logo.png"
 						alt="Ninbus"
 						width={80}

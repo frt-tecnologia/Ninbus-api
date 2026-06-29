@@ -7,11 +7,11 @@ import type { ApiError } from '@/types/domain';
  * fetch wrapper and removes all the manual boilerplate: URL/query building,
  * JSON (de)serialization, timeout and HTTP-error decoding are handled by ky.
  *
- * All calls go through the same-origin Route Handler proxy at `/api/*`
- * (the dashboard is served at root — no basePath). This client NEVER calls the
- * external API URL directly — that is the whole point of the proxy
- * architecture (the Better Auth session cookie is sameSite=lax and would not
- * travel cross-origin).
+ * All calls go through the same-origin Route Handler proxy at
+ * `/console/api/*` (basePath '/console' already applied by Next). This client
+ * NEVER calls the external API URL directly — that is the whole point of the
+ * proxy architecture (the Better Auth session cookie is sameSite=lax and would
+ * not travel cross-origin).
  *
  * This module is a thin TYPED FAÇADE over the shared `ky` instance so the
  * domain service modules (companies, devices, …) keep their clean
@@ -19,7 +19,7 @@ import type { ApiError } from '@/types/domain';
  * so the UI hooks (useFetch/useMutation) read a stable `.message`.
  */
 
-const PREFIX_URL = '/api';
+const PREFIX_URL = '/console/api';
 
 const api = ky.create({
 	prefix: PREFIX_URL,

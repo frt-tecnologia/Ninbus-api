@@ -1,5 +1,6 @@
 import { db } from '@common/db';
 import { companies, companyMembers } from '@common/db/schema';
+import { user } from '@common/db/schema/auth';
 import { appLogger } from '@common/logger';
 import { and, desc, eq } from 'drizzle-orm';
 import { designateMember } from './designation';
@@ -70,6 +71,8 @@ export async function deleteCompany(companyId: string) {
 	await db.delete(companies).where(eq(companies.id, companyId));
 }
 
+// JOIN with `user` so the dashboard can render the member's NAME and EMAIL
+// instead of a bare userId (which is meaningless to a human operator).
 export async function getCompanyMembers(companyId: string) {
 	return await db
 		.select({
@@ -78,8 +81,11 @@ export async function getCompanyMembers(companyId: string) {
 			companyId: companyMembers.companyId,
 			role: companyMembers.role,
 			createdAt: companyMembers.createdAt,
+			name: user.name,
+			email: user.email,
 		})
 		.from(companyMembers)
+		.innerJoin(user, eq(user.id, companyMembers.userId))
 		.where(eq(companyMembers.companyId, companyId));
 }
 

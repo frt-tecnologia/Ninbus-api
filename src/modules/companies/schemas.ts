@@ -103,6 +103,17 @@ export const selectCompanySchema = createSelectSchema(companies, {
 export const selectMemberSchema = createSelectSchema(companyMembers, {
 	createdAt: dateTimeString,
 });
+/**
+ * Member WITH the joined user identity (name + email). The list endpoint
+ * returns this so the dashboard renders a human email instead of a userId.
+ */
+export const memberWithUserSchema = t.Intersect([
+	selectMemberSchema,
+	t.Object({
+		name: t.String(),
+		email: t.String({ format: 'email' }),
+	}),
+]);
 export const selectPendingSchema = createSelectSchema(pendingCompanyMembers, {
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
@@ -150,7 +161,7 @@ export const MemberResponseSchema = t.Object({
 });
 
 export const MemberListResponseSchema = t.Object({
-	data: t.Array(selectMemberSchema),
+	data: t.Array(memberWithUserSchema),
 });
 
 export const MemberAddResponseSchema = t.Object({

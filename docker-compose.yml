@@ -58,6 +58,7 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
       - api
+      - dashboard
       - hawkbit
 
   # ── Ninbus API ───────────────────────────────────────────────────────
@@ -242,6 +243,38 @@ services:
     mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
     cpus: ${HAWKBIT_CPUS:-1.0}
     pids_limit: 200
+    security_opt:
+      - no-new-privileges:true
+
+  # ── Admin Dashboard (Next.js) ──────────────────────────────────────
+  # In PRODUCTION this is served at ninbus.frt.com.br/admin via the nginx
+  # reverse-proxy (port 3001 stays internal there). For LOCAL DEV we publish
+  # 3001 on the host so the dashboard is reachable at http://localhost:3001/admin
+  # WITHOUT needing the nginx vhost + a hosts-file entry (which browsers with
+  # DNS-over-HTTPS ignore). The dashboard talks to the API via the compose
+  # service name (http://api:8081) through its Route Handler proxy.
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      dockerfile: Dockerfile
+    container_name: ninbus-dashboard
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      # Internal API URL (compose service name — never the public domain).
+      # The Route Handler proxy forwards all /api/* calls here.
+      API_INTERNAL_URL: http://api:8081
+      NEXT_PUBLIC_BASE_PATH: /admin
+    ports:
+      # Local dev only. In production, comment this out (nginx is the ingress)
+      # or use docker-compose.prod.yml without it.
+      - "3001:3001"
+    depends_on:
+      - api
+    networks:
+      - default
+    mem_limit: ${DASHBOARD_MEM_LIMIT:-512m}
+    cpus: ${DASHBOARD_CPUS:-0.5}
     security_opt:
       - no-new-privileges:true
 

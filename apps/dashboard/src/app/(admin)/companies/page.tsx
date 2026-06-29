@@ -21,6 +21,7 @@ export default function CompaniesPage() {
 				loading={companies.loading}
 				error={companies.error}
 				onRetry={companies.refetch}
+				onMutate={companies.refetch}
 			/>
 		</>
 	);

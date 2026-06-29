@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ApiClientError } from '@/lib/api';
+import { subscribeData } from '@/lib/data-events';
 
 interface UseFetchState<T> {
 	data: T | null;
@@ -19,6 +20,7 @@ interface UseFetchState<T> {
 export function useFetch<T>(
 	fetcher: () => Promise<T>,
 	deps: unknown[] = [],
+	sync = true,
 ): UseFetchState<T> {
 	const [data, setData] = useState<T | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -26,6 +28,13 @@ export function useFetch<T>(
 	const [nonce, setNonce] = useState(0);
 
 	const refetch = useCallback(() => setNonce((n) => n + 1), []);
+
+	// Auto-refresh on ANY successful mutation across the dashboard. The global
+	// data-event bus is fired by dialogs/inline actions after they mutate data;
+	// bumping the nonce re-runs the effect below → the table re-loads. Disabled
+	// when `sync === false` (e.g. for fetches that shouldn't react to global
+	// events, like a one-shot lookup).
+	useEffect(() => subscribeData(() => setNonce((n) => n + 1)), []);
 
 	useEffect(() => {
 		let active = true;

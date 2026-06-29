@@ -10,6 +10,7 @@ import { Id, Time } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { designationService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
 
 export function DesignationTable() {
 	const router = useRouter();
@@ -22,6 +23,7 @@ export function DesignationTable() {
 			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
 		if (err) return toast.error(err);
 		toast.success('Designação cancelada.');
+		notifyDataChanged();
 		router.refresh();
 		designations.refetch();
 	}

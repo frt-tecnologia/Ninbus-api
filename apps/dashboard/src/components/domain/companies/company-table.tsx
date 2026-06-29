@@ -17,6 +17,7 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { companyService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
 import { MembersManager } from './members-manager';
 
 function companyStatus(s: string): SignalToken {
@@ -30,13 +31,15 @@ export function CompanyTable({
 	loading,
 	error,
 	onRetry,
-	onCreate,
+	onMutate,
 }: {
 	companies: Company[];
 	loading: boolean;
 	error: string | null;
 	onRetry: () => void;
-	onCreate?: () => void;
+	/** Called after any mutation (suspend / reactivate / delete). The parent
+	 * passes its useFetch().refetch so the table re-loads immediately. */
+	onMutate?: () => void;
 }) {
 	const router = useRouter();
 
@@ -48,7 +51,9 @@ export function CompanyTable({
 			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
 		if (err) return toast.error(err);
 		toast.success(next === 'suspended' ? 'Empresa suspensa.' : 'Empresa reativada.');
+		notifyDataChanged();
 		router.refresh();
+		onMutate?.();
 	}
 
 	async function remove(c: Company) {
@@ -59,7 +64,9 @@ export function CompanyTable({
 			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
 		if (err) return toast.error(err);
 		toast.success('Empresa excluída.');
+		notifyDataChanged();
 		router.refresh();
+		onMutate?.();
 	}
 
 	const columns: Column<Company>[] = [

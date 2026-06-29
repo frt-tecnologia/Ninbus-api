@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/system';
 import { companyService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
 
 export function CompanyCreateDialog({ onDone }: { onDone?: () => void }) {
 	const [open, setOpen] = React.useState(false);
@@ -41,6 +42,7 @@ export function CompanyCreateDialog({ onDone }: { onDone?: () => void }) {
 		setOpen(false);
 		setName('');
 		setOwnerEmail('');
+		notifyDataChanged();
 		router.refresh();
 		onDone?.();
 	}

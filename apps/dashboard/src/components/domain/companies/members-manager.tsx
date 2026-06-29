@@ -7,6 +7,7 @@ import { Users } from 'lucide-react';
 import type { Company } from '@/types/domain';
 import type { CompanyRole, Member } from '@/lib/api';
 import { memberService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -82,6 +83,7 @@ function MembersBody({ companyId }: { companyId: string }) {
 		if (err) return toast.error(err);
 		toast.success('Membro adicionado.');
 		setEmail('');
+		notifyDataChanged();
 		router.refresh();
 		members.refetch();
 	}
@@ -93,6 +95,7 @@ function MembersBody({ companyId }: { companyId: string }) {
 			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
 		if (err) return toast.error(err);
 		toast.success('Role atualizada.');
+		notifyDataChanged();
 		members.refetch();
 	}
 
@@ -103,6 +106,7 @@ function MembersBody({ companyId }: { companyId: string }) {
 			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
 		if (err) return toast.error(err);
 		toast.success('Membro removido.');
+		notifyDataChanged();
 		router.refresh();
 		members.refetch();
 	}

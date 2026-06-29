@@ -16,7 +16,14 @@ export default function DevicesPage() {
 			<PageHeader
 				title="Dispositivos"
 				description="Frota OTA — estado de cada dispositivo em tempo real."
-				action={<ProvisionDialog />}
+				action={
+				<ProvisionDialog
+					onDone={() => {
+						devices.refetch();
+						companies.refetch();
+					}}
+				/>
+			}
 			/>
 			<DeviceTable
 				devices={devices.data?.data ?? []}

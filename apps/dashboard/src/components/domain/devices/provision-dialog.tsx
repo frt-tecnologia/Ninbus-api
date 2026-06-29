@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/system';
 import { deviceService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
 
 /**
  * Provision a device by serial + factory key. On success, toasts + refreshes
@@ -51,6 +52,7 @@ export function ProvisionDialog({ onDone }: { onDone?: () => void }) {
 		toast.success('Dispositivo provisionado.');
 		setOpen(false);
 		reset();
+		notifyDataChanged();
 		router.refresh();
 		onDone?.();
 	}

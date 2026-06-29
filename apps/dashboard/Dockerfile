@@ -41,7 +41,10 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy the standalone server bundle + static assets.
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# public/ is optional in Next.js — create it empty so the COPY never fails
+# even if the folder is absent from the repo (empty dirs aren't tracked by git).
+RUN mkdir -p ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public/ ./public/
 
 USER nextjs
 EXPOSE 3001

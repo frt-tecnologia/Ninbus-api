@@ -6,12 +6,14 @@ import {
 	DeviceResponseSchema,
 	DeviceUpdateResponseSchema,
 	ErrorResponseSchema,
-	assignCategoriesSchema,
+	LinkDeviceResponseSchema,
+	linkDeviceSchema,
 	registerDeviceSchema,
 	updateDeviceSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { checkMembership, loadDevice } from './auth';
+import { loadDevice } from './auth';
+import { DeviceSyncEngine } from './sync';
 import * as service from './service';
 
 /** Params with companyId only */
@@ -23,24 +25,36 @@ const deviceParams = t.Object({
 });
 
 /**
- * Devices Module — Ninbus device management with Mender integration.
- * All routes scoped under a company. Members can view; operators can manage.
+ * Devices Module — Ninbus device management with hawkBit integration.
+ *
+ * Architecture: Background sync worker keeps local DB fresh with hawkBit data.
+ * API routes ONLY read from local DB — zero hawkBit calls on list/detail.
+ * Single-device detail uses stale-while-revalidate if data is old.
+ *
+ * Role requirements:
+ * - GET /              → viewer (list devices)
+ * - POST /             → operator (register/claim device)
+ * - GET /:deviceId     → viewer (view details)
+ * - PUT /:deviceId     → operator (update name, metadata)
+ * - DELETE /:deviceId  → admin (remove device)
+ * - PUT /:deviceId/link → operator (link to hawkBit)
  */
 export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId/devices' }))
-	// GET / — List company devices
+	// GET / — List company devices (reads from local DB, synced by background worker)
 	.get(
 		'/',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const devices = await service.getCompanyDevices(params.companyId);
-			return { data: devices, total: devices.length };
+		async ({ params }) => {
+			// Trigger company-scoped sync in hybrid/on_demand modes (stale-while-revalidate).
+			// The sync is fire-and-forget — the current request returns local DB data.
+			// Next request will have fresh data.
+			DeviceSyncEngine.syncCompanyDevices(params.companyId).catch(() => {});
+
+			const deviceList = await service.getCompanyDevices(params.companyId);
+			return { data: deviceList, total: deviceList.length };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: companyParams,
 			detail: { tags: ['Devices'], summary: 'List company devices' },
 			response: {
@@ -50,69 +64,83 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 	)
 
-	// POST / — Register device
+	// POST / — Claim device for this company
 	.post(
 		'/',
 		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const device = await service.registerDevice({
+			const result = await service.registerDevice({
 				companyId: params.companyId,
-				name: body.name,
+				name: body.name || body.serialNumber,
 				serialNumber: body.serialNumber,
-				menderDeviceId: body.menderDeviceId,
 				userId: user.id,
 			});
+			if (!result.success) {
+				if (result.error?.includes('not found')) {
+					set.status = 404;
+					return { error: 'Not Found', message: result.error };
+				}
+				if (result.error === 'Device already claimed by another company') {
+					set.status = 409;
+					return { error: 'Conflict', message: result.error };
+				}
+				if (result.error === 'Device already in this company') {
+					set.status = 409;
+					return { error: 'Conflict', message: result.error };
+				}
+			}
 			set.status = 201;
-			return { message: 'Device registered successfully', data: device };
+
+			// SSE: notify connected clients that device was claimed
+			try {
+				const { sseEmitter } = await import('@common/sse');
+				sseEmitter.emit(params.companyId, 'device.claimed', {
+					deviceId: result.device?.id,
+					action: 'claimed',
+				});
+			} catch { /* SSE emission failure is non-critical */ }
+
+			return {
+				message: result.error || 'Device claimed successfully',
+				data: result.device,
+			};
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: companyParams,
 			body: registerDeviceSchema,
 			detail: {
 				tags: ['Devices'],
-				summary: 'Register a new device',
+				summary: 'Register / claim a device for this company',
 				description:
-					'Registers a Ninbus device to the company. Optionally link to an existing Mender device.',
+					'Claims a pre-provisioned device by serial number. Requires operator role or above. ' +
+					'The device must already exist in hawkBit (provisioned at the factory).',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
 				400: ErrorResponseSchema,
 				403: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// GET /:deviceId — Get device details
+	// GET /:deviceId — Get device details (stale-while-revalidate from local DB)
 	.get(
 		'/:deviceId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
 				return result.body;
 			}
-			let menderInfo = null;
-			if (result.device.menderDeviceId) {
-				try {
-					menderInfo = await service.syncDeviceStatusFromMender(result.device.menderDeviceId);
-				} catch {
-					/* Mender unavailable */
-				}
-			}
-			return { data: result.device, mender: menderInfo };
+			// Return device from local DB immediately
+			// Background worker keeps data fresh. No on-request hawkBit call.
+			return { data: result.device };
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: deviceParams,
 			detail: { tags: ['Devices'], summary: 'Get device details' },
 			response: {
@@ -126,12 +154,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// PUT /:deviceId — Update device
 	.put(
 		'/:deviceId',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, body, set }) => {
 			const device = await service.updateDevice(params.deviceId, params.companyId, body);
 			if (!device) {
 				set.status = 404;
@@ -141,9 +164,10 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deviceParams,
 			body: updateDeviceSchema,
-			detail: { tags: ['Devices'], summary: 'Update device' },
+			detail: { tags: ['Devices'], summary: 'Update device', description: 'Updates device metadata. Requires operator role or above.' },
 			response: {
 				200: DeviceUpdateResponseSchema,
 				403: ErrorResponseSchema,
@@ -155,24 +179,34 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	// DELETE /:deviceId — Remove device
 	.delete(
 		'/:deviceId',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			const result = await loadDevice(params.deviceId, params.companyId);
 			if ('status' in result) {
 				set.status = result.status;
 				return result.body;
 			}
 			await service.deleteDevice(params.deviceId, params.companyId);
+
+			// SSE: notify connected clients that device was unclaimed
+			try {
+				const { sseEmitter } = await import('@common/sse');
+				sseEmitter.emit(params.companyId, 'device.unclaimed', {
+					deviceId: params.deviceId,
+					action: 'unclaimed',
+				});
+			} catch { /* SSE emission failure is non-critical */ }
+
 			return { message: 'Device removed successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: deviceParams,
-			detail: { tags: ['Devices'], summary: 'Remove device' },
+			detail: {
+				tags: ['Devices'],
+				summary: 'Remove device',
+				description: 'Removes (unclaims) a device from the company. The device stays provisioned in hawkBit and reverts to "unclaimed" status, available for re-claim by any company. To permanently remove from hawkBit, use DELETE /api/devices/deprovision/:serialNumber (super admin only).',
+			},
 			response: {
 				200: DeviceDeleteResponseSchema,
 				403: ErrorResponseSchema,
@@ -181,45 +215,42 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 	)
 
-	// GET /:deviceId/categories — List device categories
-	.get(
-		'/:deviceId/categories',
-		async ({ params, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			const cats = await service.getDeviceCategories(params.deviceId);
-			return { data: cats, total: cats.length };
-		},
-		{
-			auth: true,
-			params: deviceParams,
-			detail: { tags: ['Devices'], summary: 'List device categories' },
-		},
-	)
-
-	// PUT /:deviceId/categories — Assign categories to device
+	// PUT /:deviceId/link — Link pending device to hawkBit (admin provides deviceKey)
 	.put(
-		'/:deviceId/categories',
-		async ({ params, body, user, set }) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
+		'/:deviceId/link',
+		async ({ params, body, set }) => {
+			const result = await service.linkDevice(
+				params.deviceId,
+				params.companyId,
+				body.deviceKey,
+			);
+			if (!result.success) {
+				if (result.error === 'Device not found') {
+					set.status = 404;
+					return { error: 'Not Found', message: result.error };
+				}
+				set.status = 409;
+				return { error: 'Conflict', message: result.error };
 			}
-			await service.assignCategories(params.deviceId, body.categoryIds);
-			return { message: 'Categories assigned successfully' };
+			return { message: 'Device linked to hawkBit successfully', data: result.device };
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: deviceParams,
-			body: assignCategoriesSchema,
+			body: linkDeviceSchema,
 			detail: {
 				tags: ['Devices'],
-				summary: 'Assign categories to device',
-				description: 'Replaces all category assignments for a device (N:N relationship)',
+				summary: 'Link pending device to hawkBit',
+				description:
+					'(Legacy) Links a pending device by providing its factory device key. ' +
+					'For new deployments, use POST /api/devices/provision instead. Requires operator role or above.',
+			},
+			response: {
+				200: LinkDeviceResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 			},
 		},
 	);

@@ -1,43 +1,89 @@
-import { appLogger } from '@common/logger';
-import { generateMenderArtifact } from '@common/mender/artifact-generator';
+import { db } from '@common/db';
+import { artifacts } from '@common/db/schema';
 import {
-	type MenderArtifact,
+	type HawkbitArtifact,
+	type HawkbitSoftwareModule,
 	NINBUS_ARTIFACT_TYPE_META,
-	type NinbusArtifactType,
-	menderArtifacts,
+	hawkbitSoftwareModules,
 	resolveArtifactType,
-} from '@common/mender/client';
+} from '@common/hawkbit/client';
+import { hawkbitConfig } from '@common/config/hawkbit';
+import { appLogger } from '@common/logger';
+import { eq } from 'drizzle-orm';
+// Re-exports from split files
+export { resolveLockStatus, deleteArtifact } from './lock-resolution';
+export { uploadArtifact } from './upload';
+// Local import for internal use (re-export does NOT create a local binding)
+import { resolveLockStatus } from './lock-resolution';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
 
 // Types
 
-export interface ArtifactUploadResult {
-	id: string;
-	name: string;
-	description?: string;
-	size: number;
-	ninbusType: NinbusArtifactType | null;
-	ninbusMeta: (typeof NINBUS_ARTIFACT_TYPE_META)[NinbusArtifactType] | null;
+// Types and error classes
+export type { ArtifactUploadResult, ArtifactBinary, EnrichedSoftwareModule } from './types';
+export { ArtifactValidationError, ArtifactNotFoundError, ArtifactLockedError } from './types';
+import type { EnrichedSoftwareModule } from './types';
+import { ArtifactValidationError, ArtifactNotFoundError } from './types';
+
+// Guards
+
+function requireHawkbit(): void {
+	if (!hawkbitConfig.enabled) {
+		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+	}
 }
 
-export interface EnrichedArtifact extends MenderArtifact {
-	ninbusType: NinbusArtifactType | null;
-	ninbusMeta: (typeof NINBUS_ARTIFACT_TYPE_META)[NinbusArtifactType] | null;
+/**
+ * Verify that a hawkBit Software Module belongs to the given company.
+ * Throws ArtifactNotFoundError if not owned by the company.
+ */
+export async function requireOwnership(companyId: string, hawkbitSmId: number): Promise<void> {
+	const [local] = await db
+		.select({ companyId: artifacts.companyId })
+		.from(artifacts)
+		.where(eq(artifacts.hawkbitSmId, hawkbitSmId));
+
+	if (!local || local.companyId !== companyId) {
+		throw new ArtifactNotFoundError(`Artifact #${hawkbitSmId} not found in this company`);
+	}
 }
 
 // Helpers
 
-/** Enrich a Mender artifact with Ninbus type metadata. */
-export function enrichArtifact(artifact: MenderArtifact): EnrichedArtifact {
-	const artifactType = resolveArtifactType(artifact);
+/** Extract user-visible artifactName from SM description (stored as "artifactName: X"). */
+function extractDisplayName(sm: HawkbitSoftwareModule): string {
+	const desc = sm.description ?? '';
+	const match = desc.match(/artifactName:\s*([^|]+)/);
+	return match ? match[1]!.trim() : sm.name;
+}
+
+/** Enrich SM with Ninbus metadata + artifact binaries + lock status. */
+export async function enrichSoftwareModule(sm: HawkbitSoftwareModule, companyId?: string): Promise<EnrichedSoftwareModule> {
+	const artifactType = resolveArtifactType(sm);
+	let smArtifacts: HawkbitArtifact[] = [];
+	try { smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
+	const totalSize = smArtifacts.reduce((s, a) => s + (a.size ?? 0), 0);
+
+	// Only resolve lock status if companyId provided and SM is locked (avoids unnecessary API calls)
+	const lockInfo = companyId
+		? await resolveLockStatus(companyId, sm.id, sm.locked ?? false)
+		: { lockedByDistributionSets: [], deletable: true };
+
 	return {
-		...artifact,
+		...sm,
+		name: extractDisplayName(sm),
+		createdAt: sm.createdAt ? new Date(sm.createdAt).toISOString() as any : undefined,
+		lastModifiedAt: sm.lastModifiedAt ? new Date(sm.lastModifiedAt).toISOString() as any : undefined,
 		ninbusType: artifactType,
 		ninbusMeta: artifactType ? NINBUS_ARTIFACT_TYPE_META[artifactType] : null,
+		artifacts: smArtifacts.map((a) => ({ id: a.id, filename: a.providedFilename ?? undefined, size: a.size ?? undefined, hashes: a.hashes ?? undefined })),
+		size: totalSize || undefined,
+		lockedByDistributionSets: lockInfo.lockedByDistributionSets,
+		deletable: lockInfo.deletable,
 	};
 }
 
-/** Validate file extension for Mender artifact upload. */
+/** Validate file extension for firmware upload. */
 export function validateFileExtension(filename: string): string {
 	const lowerName = filename.toLowerCase();
 	const ext = ARTIFACT_ALLOWED_EXTENSIONS.find((e: string) => lowerName.endsWith(e));
@@ -50,7 +96,7 @@ export function validateFileExtension(filename: string): string {
 	return ext;
 }
 
-/** Validate file size for Mender artifact upload. */
+/** Validate file size. */
 export function validateFileSize(
 	size: number,
 	maxBytes?: number,
@@ -66,192 +112,92 @@ export function validateFileSize(
 	return size;
 }
 
-// Error
-
-export class ArtifactValidationError extends Error {
-	constructor(
-		message: string,
-		public readonly code: 'INVALID_EXTENSION' | 'FILE_TOO_LARGE' | 'EMPTY_FILE' | 'MISSING_FILE',
-	) {
-		super(message);
-		this.name = 'ArtifactValidationError';
-	}
-}
-
-// Service functions
-
-/** Upload pre-built .mender artifact to Mender Gateway. */
-export async function uploadArtifact(
-	file: File,
-	description?: string,
-): Promise<ArtifactUploadResult> {
-	validateFileExtension(file.name);
-	validateFileSize(file.size);
-	appLogger.info(`[ARTIFACT] Uploading: ${file.name} (${Math.round(file.size / 1024)} KB)`);
-
-	const formData = new FormData();
-	formData.append('artifact', file);
-	if (description?.trim().length) formData.append('description', description.trim());
-
-	await menderArtifacts.upload(formData);
-	appLogger.info(`[ARTIFACT] Upload complete: ${file.name}`);
-
-	const artifacts = await menderArtifacts.list({ name: file.name });
-	const uploaded = artifacts.find((a) => a.name === file.name);
-	if (!uploaded) {
-		appLogger.warn(`[ARTIFACT] Artifact uploaded but not yet indexed: ${file.name}`);
-		return {
-			id: '',
-			name: file.name,
-			description,
-			size: file.size,
-			ninbusType: null,
-			ninbusMeta: null,
-		};
-	}
-	const enriched = enrichArtifact(uploaded);
-	return {
-		id: enriched.id,
-		name: enriched.name,
-		description: enriched.description,
-		size: enriched.size,
-		ninbusType: enriched.ninbusType,
-		ninbusMeta: enriched.ninbusMeta,
-	};
-}
-
-/** List artifacts with Ninbus enrichment. */
-export async function listArtifacts(params?: {
-	page?: number;
-	perPage?: number;
-	name?: string;
-}): Promise<{ data: EnrichedArtifact[]; total: number }> {
-	const artifacts = await menderArtifacts.list(params);
-	const enriched = artifacts.map(enrichArtifact);
-	return { data: enriched, total: enriched.length };
-}
-
-/** Get single artifact with enrichment. */
-export async function getArtifact(artifactId: string): Promise<EnrichedArtifact> {
-	return enrichArtifact(await menderArtifacts.get(artifactId));
-}
-
-/** Get a pre-signed download link. */
-export async function getArtifactDownloadLink(
-	artifactId: string,
-): Promise<{ uri: string; expire: string }> {
-	return menderArtifacts.getDownloadLink(artifactId);
-}
-
-/** Delete an artifact. */
-export async function deleteArtifact(artifactId: string): Promise<void> {
-	return menderArtifacts.delete(artifactId);
-}
-
-/** Update artifact description. */
-export async function updateArtifact(artifactId: string, description: string): Promise<void> {
-	return menderArtifacts.update(artifactId, { description });
-}
-
-/** Raw payload extensions allowed for artifact generation. */
-const GENERATE_ALLOWED_EXTENSIONS = [
-	'.fir',
-	'.frz',
-	'.nfx',
-	'.bin',
-	'.hex',
-	'.fw',
-	'.cfg',
-	'.conf',
-];
-
-/** Maximum raw payload size for generation (100 MB — before .mender wrapping). */
-const GENERATE_MAX_SIZE = 100 * 1024 * 1024;
+// ---------------------------------------------------------------------------
+// CRUD — all scoped by companyId (same pattern as devices/service.ts)
+// ---------------------------------------------------------------------------
 
 /**
- * Generate a .mender artifact from a raw firmware file and upload to Mender.
- *
- * Creates a Mender Artifact v3 with the specified type embedded in the header,
- * so the embedded device can identify and take the correct action.
- *
- * Flow: raw file → generate .mender in memory → upload to Mender → return enriched data
+ * Upload raw firmware file to hawkBit + register in local DB.
+ * Write-through: creates SM in hawkBit AND inserts local artifact record.
  */
-export async function generateAndUploadArtifact(
-	rawFile: File,
-	artifactName: string,
-	artifactType: NinbusArtifactType,
-	description?: string,
-): Promise<ArtifactUploadResult> {
-	// Validate raw file
-	validateGenerateExtension(rawFile.name);
-	validateFileSize(rawFile.size || 0, GENERATE_MAX_SIZE, 'FILE_TOO_LARGE');
 
-	appLogger.info(
-		`[ARTIFACT-GEN] Generating .mender: name=${artifactName}, type=${artifactType}, file=${rawFile.name} (${Math.round(rawFile.size / 1024)} KB)`,
-	);
-
-	// Read raw payload
-	const payloadBuffer = await rawFile.arrayBuffer();
-	const payloadData = new Uint8Array(payloadBuffer);
-
-	// Generate .mender artifact in memory
-	const menderArtifactData = await generateMenderArtifact({
-		artifactName,
-		artifactType,
-		payloadFileName: rawFile.name,
-		payloadData,
-	});
-
-	appLogger.info(`[ARTIFACT-GEN] Generated .mender: ${menderArtifactData.length} bytes`);
-
-	// Create File from generated .mender data
-	const menderFile = new File([menderArtifactData], `${artifactName}.mender`, {
-		type: 'application/octet-stream',
-	});
-
-	// Upload to Mender using existing upload flow
-	const formData = new FormData();
-	formData.append('artifact', menderFile);
-	if (description && description.trim().length > 0)
-		formData.append('description', description.trim());
-
-	await menderArtifacts.upload(formData);
-	appLogger.info(`[ARTIFACT-GEN] Upload complete: ${artifactName}`);
-
-	// Retrieve enriched data from Mender
-	const artifacts = await menderArtifacts.list({ name: artifactName });
-	const uploaded = artifacts.find((a) => a.name === artifactName);
-	if (!uploaded) {
-		appLogger.warn(`[ARTIFACT-GEN] Artifact uploaded but not yet indexed: ${artifactName}`);
-		return {
-			id: '',
-			name: artifactName,
-			description,
-			size: rawFile.size,
-			ninbusType: artifactType,
-			ninbusMeta: NINBUS_ARTIFACT_TYPE_META[artifactType],
-		};
+export async function listArtifacts(companyId: string, _params?: {
+	offset?: number;
+	limit?: number;
+}): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
+	// 1. Get local artifact records for this company
+	let localArtifacts: any[];
+	try {
+		localArtifacts = await db
+			.select()
+			.from(artifacts)
+			.where(eq(artifacts.companyId, companyId));
+	} catch (dbError: any) {
+		appLogger.error('[ARTIFACTS] DB query failed: %s', dbError?.message ?? 'unknown');
+		return { data: [], total: 0 };
 	}
-	const enriched = enrichArtifact(uploaded);
-	return {
-		id: enriched.id,
-		name: enriched.name,
-		description: enriched.description,
-		size: enriched.size,
-		ninbusType: enriched.ninbusType,
-		ninbusMeta: enriched.ninbusMeta,
-	};
+
+	if (!hawkbitConfig.enabled || localArtifacts.length === 0) {
+		return { data: [], total: 0 };
+	}
+
+	// 2. Fetch SM data from hawkBit by IDs (company-scoped)
+	const smIds = localArtifacts.map((a: any) => a.hawkbitSmId);
+	try {
+		const hawkbitSMs = await hawkbitSoftwareModules.listByIds(smIds);
+		// 3. Build lookup by hawkbitSmId for enrichment
+		const enriched = await Promise.all(hawkbitSMs.map((sm) => enrichSoftwareModule(sm, companyId)));
+		return { data: enriched, total: enriched.length };
+	} catch (hbError: any) {
+		appLogger.warn('[ARTIFACTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
+		return { data: [], total: 0 };
+	}
 }
 
-/** Validate raw file extension for artifact generation. */
-function validateGenerateExtension(filename: string): string {
-	const lowerName = filename.toLowerCase();
-	const ext = GENERATE_ALLOWED_EXTENSIONS.find((e) => lowerName.endsWith(e));
-	if (!ext) {
-		throw new ArtifactValidationError(
-			`Invalid raw file extension for generation. Allowed: ${GENERATE_ALLOWED_EXTENSIONS.join(', ')}`,
-			'INVALID_EXTENSION',
-		);
-	}
-	return ext;
+/** Get single artifact — verify ownership first (like getDeviceById). */
+export async function getArtifact(companyId: string, smId: number): Promise<EnrichedSoftwareModule> {
+	await requireOwnership(companyId, smId);
+	requireHawkbit();
+	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId), companyId);
+}
+
+/** Update artifact description — verify ownership first. */
+export async function updateArtifact(companyId: string, smId: number, description: string): Promise<void> {
+	await requireOwnership(companyId, smId);
+	requireHawkbit();
+
+	// Update hawkBit SM description
+	await hawkbitSoftwareModules.update(smId, { description });
+
+	// Update local record
+	await db
+		.update(artifacts)
+		.set({ description, updatedAt: new Date() })
+		.where(eq(artifacts.hawkbitSmId, smId));
+}
+
+/** Get download URL — verify ownership first. */
+export async function getArtifactDownloadUrl(
+	companyId: string,
+	smId: number,
+	artifactId: number,
+): Promise<{
+	smId: number;
+	artifactId: number;
+	filename?: string;
+	size?: number;
+	downloadUrl: string;
+}> {
+	await requireOwnership(companyId, smId);
+	requireHawkbit();
+
+	const artifactFile = await hawkbitSoftwareModules.getArtifact(smId, artifactId);
+	const baseUrl = hawkbitConfig.baseUrl;
+	return {
+		smId,
+		artifactId: artifactFile.id,
+		filename: artifactFile.providedFilename,
+		size: artifactFile.size ?? undefined,
+		downloadUrl: `${baseUrl}/rest/v1/softwaremodules/${smId}/artifacts/${artifactId}/download`,
+	};
 }

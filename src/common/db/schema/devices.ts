@@ -1,14 +1,14 @@
-import { pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { categories } from './categories';
 import { companies } from './companies';
 
 /**
- * Ninbus devices — local registry linked to Mender device IDs.
- * device_category_assignments provides N:N with categories.
+ * Ninbus devices — local registry linked to hawkBit target IDs.
  */
 
 export const deviceStatusEnum = pgEnum('device_status', [
+	'unclaimed',
 	'pending',
 	'accepted',
 	'rejected',
@@ -16,19 +16,38 @@ export const deviceStatusEnum = pgEnum('device_status', [
 	'decommissioned',
 ]);
 
+/** hawkBit update status — mirrors hawkBit Target updateStatus field. */
+export const hawkbitUpdateStatusEnum = pgEnum('hawkbit_update_status', [
+	'unknown',
+	'in_sync',
+	'pending',
+	'registered',
+	'error',
+]);
+
 export const devices = pgTable('devices', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	companyId: uuid('company_id')
-		.notNull()
 		.references(() => companies.id, { onDelete: 'cascade' }),
-	menderDeviceId: text('mender_device_id'),
+	hawkbitTargetId: text('hawkbit_target_id'),
 	name: text('name').notNull(),
+	/** hawkBit controllerId — 16-char uppercase HEX (e.g. "1A50F00100309FFF"). Converted from decimal input via nibble packing. */
 	serialNumber: text('serial_number'),
+	/** User-visible display format (e.g. "26.6.15.001.00031"). Month uses hex: 0-9, A=Oct, B=Nov, C=Dec. Auto-derived from serialNumber HEX. */
+	serialDisplay: text('serial_display'),
 	status: deviceStatusEnum('status').notNull().default('pending'),
 	lastSeenAt: timestamp('last_seen_at'),
-	createdBy: text('created_by')
-		.notNull()
-		.references(() => user.id, { onDelete: 'cascade' }),
+	/** hawkBit connection status — derived from pollStatus.overdue. */
+	connectionStatus: varchar('connection_status', { length: 20 }).default('unknown'),
+	/** hawkBit update status — from target.updateStatus. */
+	hawkbitUpdateStatus: hawkbitUpdateStatusEnum('hawkbit_update_status').default('unknown'),
+	/** hawkBit IP address — from target.ipAddress. */
+	ipAddress: text('ip_address'),
+	/** hawkBit last poll time — from target.pollStatus.lastRequestAt. */
+	lastPollAt: timestamp('last_poll_at'),
+	/** hawkBit next expected poll — from target.pollStatus.nextExpectedRequestAt. */
+	nextExpectedPollAt: timestamp('next_expected_poll_at'),
+	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

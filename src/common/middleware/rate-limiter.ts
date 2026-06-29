@@ -58,7 +58,7 @@ export const createRateLimiter = (options: {
 };
 
 export const globalRateLimit = createRateLimiter({
-	max: env.RATE_LIMIT_MAX ?? 100,
+	max: env.RATE_LIMIT_MAX ?? 150,
 	windowMs: env.RATE_LIMIT_WINDOW_MS ?? 60000,
 	cache: globalCache,
 	skip: (req) => {
@@ -69,7 +69,7 @@ export const globalRateLimit = createRateLimiter({
 });
 
 export const authRateLimit = createRateLimiter({
-	max: env.AUTH_RATE_LIMIT_MAX ?? 10,
+	max: env.AUTH_RATE_LIMIT_MAX ?? 20,
 	windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60000,
 	cache: authCache,
 });

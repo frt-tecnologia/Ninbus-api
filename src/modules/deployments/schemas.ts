@@ -2,7 +2,7 @@ import { t } from 'elysia';
 
 /**
  * Artifact type identifiers for Ninbus devices.
- * These MUST match the Mender artifact header type field exactly.
+ * These map to hawkBit Software Module Types.
  *
  * | Type                     | Destination                    | Risk  | Reboot |
  * |--------------------------|--------------------------------|-------|--------|
@@ -20,157 +20,167 @@ export const NINBUS_ARTIFACT_TYPE_VALUES = [
 	ARTIFACT_TYPE_NFX_CONFIGURATION,
 ] as const;
 
-export const createOtaDeploymentSchema = t.Object(
-	{
-		name: t.String({ minLength: 1, maxLength: 255, description: 'Deployment name' }),
-		artifactName: t.String({
-			minLength: 1,
-			description: 'Artifact name to deploy (e.g. ninbus-firmware-3.3.0)',
-		}),
-		/** Artifact type — determines the update destination on the device */
-		artifactType: t.Union(
-			[
-				t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, {
-					description: 'Firmware Ninbus (STM32F407) → NAND → Bootloader → Reboot',
-				}),
-				t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, {
-					description: 'Firmware Controlador LightDot → CAN Bus',
-				}),
-				t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, {
-					description: 'Configuração NFX/FRZ → NAND NFX → CAN → LightDot',
-				}),
-			],
-			{
-				description:
-					'Type of artifact being deployed. Determines the update path on the embedded device.',
-			},
-		),
-		deviceIds: t.Optional(
-			t.Array(t.String({ format: 'uuid' }), {
-				description: 'Specific Ninbus device IDs to deploy to',
-			}),
-		),
-		categoryIds: t.Optional(
-			t.Array(t.String({ format: 'uuid' }), {
-				description: 'Deploy to all devices in these categories',
-			}),
-		),
-		allDevices: t.Optional(
-			t.Boolean({
-				description: 'Deploy to all accepted devices in the company',
-			}),
-		),
-		retries: t.Optional(
-			t.Number({ minimum: 0, maximum: 10, description: 'Retry count on failure' }),
-		),
-	},
-	{
-		default: {
-			name: 'Atualização de Firmware Q3',
-			artifactName: 'ninbus-firmware-v3.1.2',
-			artifactType: 'firmware-ninbus',
-			allDevices: true,
-			retries: 3,
-		},
-	},
+export const createOtaDeploymentSchema = t.Object({
+	name: t.String({ minLength: 1, maxLength: 255 }),
+	artifactName: t.String({ minLength: 1, description: 'Artifact name or numeric SM ID' }),
+	artifactType: t.Union(
+		[
+			t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, { description: 'STM32F407 → NAND → Reboot' }),
+			t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, { description: 'LightDot → CAN Bus' }),
+			t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, { description: 'NFX/FRZ → CAN → LightDot' }),
+		],
+		{ description: 'Determines the update path on the embedded device.' },
+	),
+	version: t.Optional(t.String({ maxLength: 64 })),
+	deviceIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+	categoryIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+	allDevices: t.Optional(t.Boolean()),
+}, {
+	default: { name: 'Deployment', artifactName: 'sm-1', artifactType: 'firmware-ninbus', allDevices: true },
+});
+
+export const abortActionSchema = t.Object({
+	force: t.Optional(t.Boolean({ default: true })),
+}, { default: { force: true } });
+
+// ── Deployment Status (computed from hawkBit action statistics) ─────
+
+/**
+ * Deployment status computed from hawkBit action statistics.
+ *
+ * Mapping from hawkBit action statuses:
+ *   RUNNING, SCHEDULED          → 'pending'
+ *   RETRIEVED, DOWNLOAD,
+ *   DOWNLOADED                  → 'in_progress'
+ *   FINISHED (all targets)      → 'completed'
+ *   ERROR, WARNING              → 'failed'
+ *   CANCELED, CANCELING         → 'canceled'
+ *   (no targets assigned)       → 'no_targets'
+ *
+ * Per-target phase values (from target-statuses endpoint):
+ *   assigned, pending, downloading, downloaded, installing, installed, error, canceled, unknown
+ * See docs/hawkbit-status-flow-mapping.md for full DDI feedback mapping.
+ */
+export const DEPLOYMENT_STATUS_VALUES = [
+	'pending',
+	'in_progress',
+	'completed',
+	'failed',
+	'canceled',
+	'no_targets',
+	'unknown',
+] as const;
+export type DeploymentStatusType = (typeof DEPLOYMENT_STATUS_VALUES)[number];
+
+export const DeploymentStatusSchema = t.Union(
+	DEPLOYMENT_STATUS_VALUES.map((s) => t.Literal(s)),
 );
 
-export const abortDeploymentSchema = t.Object(
-	{
-		status: t.Literal('aborted', { description: 'Must be "aborted"' }),
-	},
-	{
-		default: {
-			status: 'aborted',
-		},
-	},
-);
-
-export const DeploymentStatisticsSchema = t.Object({
-	success: t.Number(),
+export const DeploymentStatisticsSummarySchema = t.Object({
+	totalTargets: t.Number(),
+	finished: t.Number(),
+	failed: t.Number(),
+	inProgress: t.Number(),
 	pending: t.Number(),
-	failure: t.Number(),
-	downloading: t.Number(),
-	installing: t.Number(),
-	rebooting: t.Number(),
-	noartifact: t.Number(),
-	'already-installed': t.Number(),
-	aborted: t.Number(),
-	decommissioned: t.Number(),
-	pause_before_installing: t.Number(),
-	pause_before_committing: t.Number(),
-	pause_before_rebooting: t.Number(),
+	canceled: t.Number(),
 });
 
-export const DeploymentSchema = t.Object({
-	id: t.String(),
+export const DSMetadataSchema = t.Object({
+	locked: t.Boolean(),
+	complete: t.Boolean(),
+	valid: t.Boolean(),
+});
+
+/** Enriched distribution set with real deployment status. */
+export const EnrichedDistributionSetSchema = t.Object({
+	id: t.Number(),
 	name: t.String(),
-	artifact_name: t.String(),
+	displayName: t.Optional(t.String({ description: 'User-visible deployment name extracted from DS description' })),
+	/** Artifact version (semantic, e.g. "2.1.0"). Merged from local DB audit; falls back to DS version. */
+	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
-	created: t.String(),
-	finished: t.Optional(t.String()),
-	status: t.String(),
-	device_count: t.Optional(t.Number()),
-	max_devices: t.Optional(t.Number()),
-	artifacts: t.Optional(t.Array(t.String())),
-	statistics: t.Optional(t.Object({
-		status: DeploymentStatisticsSchema,
-		total_size: t.Number(),
-	})),
-	filter: t.Optional(t.Any()),
+	typeName: t.Optional(t.String()),
+	description: t.Optional(t.String()),
+	createdAt: t.Optional(t.Number()),
+	lastModifiedAt: t.Optional(t.Number()),
+	status: DeploymentStatusSchema,
+	statistics: DeploymentStatisticsSummarySchema,
+	dsMetadata: DSMetadataSchema,
+	/** Audit: artifact name at deployment time (survives artifact deletion). */
+	artifactName: t.Optional(t.String()),
+	/** Audit: artifact version at deployment time. */
+	artifactVersion: t.Optional(t.String()),
+	/** Audit: original uploaded filename. */
+	artifactOriginalFile: t.Optional(t.String()),
+	/** Audit: number of targets assigned. */
+	targetCount: t.Optional(t.Number()),
+	/** Audit: hawkBit controllerIds assigned at deployment time.
+	 *  Source of truth for historical target lists (hawkBit assignedTargets
+	 *  only reflects the CURRENT assignment). */
+	targetIds: t.Optional(t.Array(t.String())),
 });
 
-export const DeviceDeploymentSchema = t.Object({
-	id: t.String(),
-	device_id: t.String(),
-	deployment_id: t.Optional(t.String()),
-	status: t.String(),
-	created: t.Optional(t.String()),
-	finished: t.Optional(t.String()),
-	log: t.Optional(t.Boolean()),
-	substate: t.Optional(t.String()),
-	image: t.Optional(t.Any()),
+// ── hawkBit Action Schema ────────────────────────────────────────────
+
+export const ActionSchema = t.Object({
+	id: t.Number(),
+	type: t.Optional(t.String()),
+	active: t.Optional(t.Boolean()),
+	status: t.Optional(t.String()),
+	forceType: t.Optional(t.String()),
+	weight: t.Optional(t.Number()),
+	rollout: t.Optional(t.Number()),
+	rolloutName: t.Optional(t.String()),
+	lastStatusCode: t.Optional(t.Number()),
 });
 
-export const DeviceDeploymentLogSchema = t.Object({
-	data: t.String(),
+export const ActionStatusSchema = t.Object({
+	id: t.Number(),
+	type: t.String(),
+	messages: t.Optional(t.Array(t.String())),
+	reportedAt: t.Optional(t.Number()),
+	code: t.Optional(t.Number()),
 });
+
+// ── Response Schemas ─────────────────────────────────────────────────
 
 export const DeploymentResponseSchema = t.Object({
-	data: DeploymentSchema,
+	data: EnrichedDistributionSetSchema,
 });
 
 export const DeploymentListResponseSchema = t.Object({
-	data: t.Array(DeploymentSchema),
+	data: t.Array(EnrichedDistributionSetSchema),
 	total: t.Number(),
 });
 
 export const DeploymentCreateResponseSchema = t.Object({
 	message: t.String(),
-	data: DeploymentSchema,
-});
-
-export const DeviceHistoryEntrySchema = t.Object({
-	id: t.String(),
-	deployment: DeploymentSchema,
-	device: DeviceDeploymentSchema,
-});
-
-export const DeviceDeploymentLogResponseSchema = t.Object({
-	data: t.String(),
+	data: t.Object({
+		dsId: t.Number(),
+		name: t.String(),
+		version: t.Optional(t.String()),
+		targetsAssigned: t.Number(),
+		artifactType: t.String(),
+		smId: t.Optional(t.Number()),
+	}),
 });
 
 export const DeploymentStatisticsResponseSchema = t.Object({
-	data: DeploymentStatisticsSchema,
+	data: t.Object({
+		raw: t.Any({ description: 'Raw hawkBit statistics response' }),
+		summary: DeploymentStatisticsSummarySchema,
+		status: DeploymentStatusSchema,
+	}),
 });
 
-export const DeviceDeploymentListResponseSchema = t.Object({
-	data: t.Array(DeviceDeploymentSchema),
+export const DeviceActionsResponseSchema = t.Object({
+	data: t.Array(ActionSchema),
 	total: t.Optional(t.Number()),
 });
 
-export const DeviceHistoryResponseSchema = t.Object({
-	data: t.Array(DeviceHistoryEntrySchema),
+export const ActionStatusListResponseSchema = t.Object({
+	data: t.Array(ActionStatusSchema),
+	total: t.Optional(t.Number()),
 });
 
 // Shared generic schemas
@@ -191,15 +201,46 @@ export const ArtifactTypeListResponseSchema = t.Object({
 	data: t.Array(ArtifactTypeItemSchema),
 });
 
-// ── Params (used by device-routes.ts) ────────────────────────────────────
+// ── Target Status Schemas (enriched with phase + progress) ───────────
+// (moved to trail-schemas.ts to keep this file under 250 lines)
+export {
+	TargetActionStatusSchema,
+	TargetDeploymentStatusSchema,
+	EnrichedActionStatusEntrySchema,
+	TargetStatusTrailDataSchema,
+	TargetStatusesResponseSchema,
+	TargetStatusTrailResponseSchema,
+} from './trail-schemas';
+
+// ── Params ────────────────────────────────────────────────────────────
 
 export const companyParams = t.Object({ companyId: t.String({ format: 'uuid' }) });
 export const deploymentParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
 	deploymentId: t.String(),
 });
-export const deploymentDeviceLogParams = t.Object({
+export const deploymentActionParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
-	deploymentId: t.String(),
-	menderDeviceId: t.String(),
+	deploymentId: t.String({ description: 'hawkBit Distribution Set ID' }),
+	targetId: t.String(),
+	actionId: t.String(),
+});
+
+// ── hawkBit Proxy Responses (raw data passthrough) ────────────────────
+
+/** Raw hawkBit target list (passthrough, no enrichment). */
+export const RawTargetListResponseSchema = t.Object({
+	data: t.Array(t.Any({ description: 'Raw hawkBit target objects' })),
+	total: t.Number(),
+});
+
+/** Raw DDI diagnostic result. */
+export const RawDiagnosticResponseSchema = t.Object({
+	data: t.Any({ description: 'DDI diagnostic result' }),
+});
+
+/** Raw device action history. */
+export const RawActionListResponseSchema = t.Object({
+	data: t.Array(t.Any({ description: 'Raw hawkBit action objects' })),
+	total: t.Number(),
 });

@@ -9,17 +9,16 @@ import { t } from 'elysia';
 // ── Drizzle Timestamp Overrides ─────────────────────────────────────────
 
 /**
- * `drizzle-typebox` generates `t.Date()` for `timestamp` columns,
- * which produces `"type": "Date"` — NOT a valid OpenAPI 3.0.3 type.
- * Use this override in `createSelectSchema(table, overrides)` to produce
- * `"type": "string", "format": "date-time"` instead.
+ * Use in response schemas for timestamp columns.
+ * Accepts both Date objects (from Drizzle) and ISO strings (from JSON).
+ * Elysia's t.Date() produces: anyOf[Date, date-time string, date string, number]
  */
-export const dateTimeString = t.String({ format: 'date-time' });
+export const dateTimeString = t.Date();
 
 /**
  * Nullable variant for optional timestamp columns (e.g. lastSeenAt).
  */
-export const nullableDateTimeString = t.Union([t.String({ format: 'date-time' }), t.Null()]);
+export const nullableDateTimeString = t.Union([t.Date(), t.Null()]);
 
 // ── Generic Responses ──────────────────────────────────────────────────
 

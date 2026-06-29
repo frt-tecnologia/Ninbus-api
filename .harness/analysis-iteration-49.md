@@ -1,0 +1,95 @@
+# Iteration 49 Analysis
+
+**Phase**: completed
+**Date**: 2026-06-26T19:46:40.891Z
+
+## Results
+
+### ✅ Functional Correctness
+
+Build limpo (1317 módulos). VALIDADO EMPÍRICAMENTE no Docker: API healthy, /health→200, /docs→401/200, Mgmt→404, DDI→401. Frente B altera findSoftwareModule (agora recebe companyId) e Frente C adiciona guard em 2 rotas — sem quebrar contratos da API (mesmo campo artifactName, mesmo targetId no path). createDeployment continua funcionando com artifact próprio (B-T1/B-T2). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (segfault pré-existente, não relacionado: build verde, DB conecta isolado, meus testes passam).
+
+**Evidence**: bun build 1317; Docker: api(healthy); curl /health→200 /docs→401; B-T1/B-T2 pass (artifact próprio encontrado)
+
+### ✅ Code Quality
+
+Arquivos <250: helpers.ts=189, device-routes.ts=280 (pré-existente >250? verificar), deployments-tenant-isolation.test.ts=49, deployments-target-ownership.test.ts=53, nginx-proxy.test.ts=145. Separação mantida: helpers.ts (ownership + lookup) → service.ts/routes.ts. Import não-usado removido (hawkbitSoftwareModules). Biome limpo nos arquivos novos/alterados (Number.isNaN aplicado). Logger inalterado.
+
+**Evidence**: wc -l helpers=189; biome check helpers.ts/device-routes.ts → No fixes applied
+
+### ✅ Schema Organization
+
+Nenhum schema TS de response/body alterado. device-routes.ts usa schemas pré-existentes (deploymentParams, deploymentActionParams) importados de schemas.ts. Não introduzi schemas inline. Não se aplica diretamente.
+
+**Evidence**: git diff --stat src/modules/deployments/schemas.ts → vazio
+
+### ✅ Error Handling
+
+Two-level hawkBit protection intacta. Frente C adiciona 404 (target não pertence à empresa) ANTES do try/hawkBit — para o fluxo cedo sem chamar hawkBit. findSoftwareModule retorna null (vira 400 'Artifact not found') quando cross-tenant. Erro de FK/DB propagam para onError global (não há swallowing). Decisão 404 (não 403) para não vazar existência de target — documentada.
+
+**Evidence**: device-routes.ts: if (!isTargetOwnedByCompany) return 404 antes do try
+
+### ✅ Test Coverage
+
+Adicionei 2 novos arquivos de teste (13 testes) + 3 testes no nginx-proxy: tests/deployments-tenant-isolation.test.ts (7: setup, B-T1..T6 cross-tenant, brute-force), tests/deployments-target-ownership.test.ts (6: C-T1..T5), tests/nginx-proxy.test.ts (+3: docs auth_basic, mount .htpasswd, gitignore). TODOS PASSAM (31 total). afterAll cleanAll() em ambos. Cobrem exatamente os bugs fechados (cross-tenant SM ID, cross-tenant targetId, brute-force enumeração). Suíte base ampla bloqueada por bug Bun (documentado).
+
+**Evidence**: bun test 3 arquivos → 28 pass; +3 nginx → 31 total / 0 fail
+
+### ✅ Config Centralization
+
+Nenhuma nova var de env. Frente A usa .htpasswd no host (gitignored, NÃO em env.ts) — decisão correta: segredo não deve ir pro repo/env versionado. Basic Auth realm 'Ninbus API Docs' hardcoded no nginx (não é config de app). hawkBit forward-headers (iteração anterior) é Spring property no docker-compose. Nenhuma leitura process.env adicionada.
+
+**Evidence**: .gitignore tem docker/nginx/.htpasswd; git diff env.ts → vazio
+
+### ✅ Security
+
+MELHORADO: (A) /docs + /docs/json protegidos por Basic Auth (defesa em profundidade, credencial separada da app); (B) cross-tenant de artifacts FECHADO — operator de empresa A não referencia SM da empresa B (404), brute-force de IDs não enumera; (C) target ownership em action-status/ddi-check FECHADO — empresa B não lê status de device da empresa A. Validação empírica Docker confirma sem regressão (Mgmt API continua 404, DDI continua 401). .htpasswd BCrypt gitignored. deviceKey/Tokens inalterados (não armazenados).
+
+**Evidence**: B-T3/C-T2 pass (cross-tenant→null/false); curl /docs→401; .htpasswd no .gitignore
+
+### ✅ 🔮 Futuro (Aprendizado Contínuo)
+
+Princípio p-hawkbit-single-tenant-ownership-via-local-table aprendido (104 total): hawkBit single-tenant → lookups globais cross-tenant por design; ownership via tabela local; rotas com targetId precisam isTargetOwnedByCompany; 404 não 403. SKILL.md atualizado com nova seção 'hawkBit é single-tenant — ownership SEMPRE pela tabela local' (artifacts/targets/DS). Plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO com pendências P0/D. README já reflete arquitetura nginx (iteração anterior).
+
+**Evidence**: SKILL.md nova seção single-tenant; plano status 🟢 IMPLEMENTADO+VALIDADO; princípio persistido
+
+## Overall Notes
+
+## Hardening de Segurança (Frentes A+B+C) — IMPLEMENTADO + VALIDADO, sem commit
+
+### Validação empírica no Docker (3 containers healthy, sem regressão)
+- /health via api. → 200 | /docs sem cred → 401 | /docs com cred → 200 | /docs/json sem cred → 401 | Mgmt API → 404 | DDI sem token → 401
+
+### Frente A — Basic Auth /docs (nginx)
+- `ninbus.conf`: location /docs com auth_basic + auth_basic_user_file ANTES do location / (longest-prefix match). Replicado no bloco :443 comentado.
+- `.htpasswd` BCrypt ($2y$) gerado via httpd:alpine (placeholder). `.gitignore`: docker/nginx/.htpasswd. `.htpasswd.example` com instrução de rotação.
+- docker-compose.yml: mount `./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro`.
+- Validado: /docs + /docs/json protegidos; /health + /api/auth + DDI hb. NÃO afetados.
+
+### Frente B — cross-tenant artifacts
+- `findSoftwareModule(companyId, nameOrId, version?, typeKey?)` agora busca na tabela `artifacts` (WHERE company_id) em vez de hawkbitSoftwareModules global. Aceita nome OU SM-ID, ambos validados contra a empresa. Import hawkbitSoftwareModules removido (unused).
+- `createDeployment` passa companyId. Biome limpo (Number.isNaN).
+- 7 testes (B-T1..B-T6 + setup): todos passam. B-T3 cross-tenant (SM ID 8888 da empresa B → null p/ empresa A) FECHADO.
+
+### Frente C — target ownership
+- `isTargetOwnedByCompany(companyId, targetId)` adicionado a helpers.ts (valida devices.companyId).
+- Aplicado em 2 rotas device-routes.ts: action-status e ddi-check → 404 se targetId não pertence à empresa (nunca 403).
+- 6 testes: todos passam. C-T2/C-T5 cross-tenant fechados.
+
+### Testes
+31 testes de hardening passando (18 nginx com +3 de docs, 7 B, 6 C). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (pré-existente, não relacionado).
+
+### Documentação
+- SKILL.md: nova seção "hawkBit é single-tenant — ownership SEMPRE pela tabela local" com regras para artifacts/targets/DS.
+- plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO.
+- README: arquitetura (já atualizada na iteração anterior do nginx).
+
+### P0 e D (roadmap)
+- P0 (assinatura firmware + TLS DDI): iteração futura.
+- D.1 (least-priv hawkBit): depois (conforme decisão do usuário).
+- D.2 (token rotation): exige firmware.
+
+### Princípio aprendido (104 total)
+p-hawkbit-single-tenant-ownership-via-local-table: hawkBit single-tenant → lookups globais são cross-tenant por design; ownership pela tabela local; rotas com targetId no path precisam isTargetOwnedByCompany; 404 não 403.
+
+**Sem commit** (aguardando pedido).

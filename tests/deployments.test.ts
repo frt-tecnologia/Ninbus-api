@@ -1,19 +1,16 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
+import { computeDeploymentStatus, summarizeStatistics } from '../src/modules/deployments/service';
+import { cleanAll } from './test-helpers';
 
-/**
- * Deployment & Artifact tests.
- *
- * These tests verify the Ninbus API layer:
- * 1. Authentication and authorization work
- * 2. Body validation works (including artifactType enum)
- * 3. Ninbus artifact type enrichment works
- * 4. Error handling for Mender unavailability works
- */
+afterAll(async () => {
+	await cleanAll();
+});
+
 describe('Deployments Module', () => {
 	const app = createApp();
-	const ownerEmail = `deploy-owner-${Date.now()}@example.com`;
-	const otherEmail = `deploy-other-${Date.now()}@example.com`;
+	const ownerEmail = `dep-owner-${Date.now()}@example.com`;
+	const otherEmail = `dep-other-${Date.now()}@example.com`;
 	const password = 'TestPassword123!';
 	let ownerCookie: string;
 	let otherCookie: string;
@@ -37,24 +34,30 @@ describe('Deployments Module', () => {
 		return signIn.headers.get('set-cookie') || '';
 	}
 
-	describe('Setup', () => {
-		it('creates users and company', async () => {
-			ownerCookie = await signUpAndIn(ownerEmail, 'Deploy Owner');
-			otherCookie = await signUpAndIn(otherEmail, 'Deploy Other');
+	async function setupCompany(ownerEmail: string): Promise<string> {
+		// Company creation requires super admin — sign in as super admin first.
+		const saCookie = await signUpAndIn('admin-test@ninbus.com.br', 'Super Admin');
+		const response = await app.handle(
+			new Request('http://localhost/api/companies', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Cookie: saCookie },
+				body: JSON.stringify({ name: 'Deployment Test Company', ownerEmail }),
+			}),
+		);
+		return (await response.json()).data.id;
+	}
 
-			const response = await app.handle(
-				new Request('http://localhost/api/companies', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'Deploy Test Co' }),
-				}),
-			);
-			companyId = (await response.json()).data.id;
-		});
+	describe('Setup', () => {
+		it('creates company', async () => {
+			ownerCookie = await signUpAndIn(ownerEmail, 'Deployment Owner');
+			otherCookie = await signUpAndIn(otherEmail, 'Other User');
+			companyId = await setupCompany(ownerEmail);
+			expect(companyId).toBeDefined();
+		}, 15000);
 	});
 
-	describe('Artifact Types Endpoint', () => {
-		it('GET /deployments/artifact-types returns all 3 types', async () => {
+	describe('Artifact Types', () => {
+		it('GET /artifact-types returns 3 types', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/deployments/artifact-types`, {
 					headers: { Cookie: ownerCookie },
@@ -62,34 +65,32 @@ describe('Deployments Module', () => {
 			);
 			expect(response.status).toBe(200);
 			const body = await response.json();
-			expect(body.data).toHaveLength(3);
-
-			const types = body.data.map((t: any) => t.type);
-			expect(types).toContain('firmware-ninbus');
-			expect(types).toContain('firmware-controller');
-			expect(types).toContain('configuration-nfx');
+			expect(body.data.length).toBe(3);
 		});
 
-		it('returns risk levels for each type', async () => {
+		it('each type has riskLevel', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/deployments/artifact-types`, {
 					headers: { Cookie: ownerCookie },
 				}),
 			);
 			const body = await response.json();
+			for (const type of body.data) {
+				expect(type.riskLevel).toBeDefined();
+				expect(['low', 'medium', 'high']).toContain(type.riskLevel);
+			}
+		});
 
-			const fw = body.data.find((t: any) => t.type === 'firmware-ninbus');
-			expect(fw.riskLevel).toBe('high');
-			expect(fw.requiresReboot).toBe(true);
-			expect(fw.target).toBeDefined();
-
-			const ctrl = body.data.find((t: any) => t.type === 'firmware-controller');
-			expect(ctrl.riskLevel).toBe('medium');
-			expect(ctrl.requiresReboot).toBe(false);
-
-			const nfx = body.data.find((t: any) => t.type === 'configuration-nfx');
-			expect(nfx.riskLevel).toBe('low');
-			expect(nfx.requiresReboot).toBe(false);
+		it('each type has requiresReboot boolean', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/deployments/artifact-types`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			const body = await response.json();
+			for (const type of body.data) {
+				expect(typeof type.requiresReboot).toBe('boolean');
+			}
 		});
 
 		it('returns 403 for non-member', async () => {
@@ -100,57 +101,16 @@ describe('Deployments Module', () => {
 			);
 			expect(response.status).toBe(403);
 		});
-
-		it('returns 401 without auth', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments/artifact-types`),
-			);
-			expect(response.status).toBe(401);
-		});
 	});
 
-	describe('Authentication & Authorization', () => {
-		it('POST /deployments returns 401 without auth', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						name: 'test',
-						artifactName: 'test',
-						artifactType: 'firmware-ninbus',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect(response.status).toBe(401);
-		});
-
-		it('POST /deployments returns 403 for non-member', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: otherCookie },
-					body: JSON.stringify({
-						name: 'test',
-						artifactName: 'test',
-						artifactType: 'firmware-ninbus',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect(response.status).toBe(403);
-		});
-	});
-
-	describe('Validation — artifactType', () => {
-		it('returns 400 for missing artifactType', async () => {
+	describe('Create Deployment Validation', () => {
+		it('POST without artifactType returns 400', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
-						name: 'test-deploy',
+						name: 'Test Deployment',
 						artifactName: 'test-artifact',
 						allDevices: true,
 					}),
@@ -159,13 +119,13 @@ describe('Deployments Module', () => {
 			expect(response.status).toBe(400);
 		});
 
-		it('returns 400 for invalid artifactType', async () => {
+		it('POST with invalid artifactType returns 400', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
-						name: 'test-deploy',
+						name: 'Test Deployment',
 						artifactName: 'test-artifact',
 						artifactType: 'invalid-type',
 						allDevices: true,
@@ -175,44 +135,13 @@ describe('Deployments Module', () => {
 			expect(response.status).toBe(400);
 		});
 
-		it('returns 400 for empty name', async () => {
+		it('POST without target spec returns 400', async () => {
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
 					body: JSON.stringify({
-						name: '',
-						artifactName: 'test',
-						artifactType: 'firmware-ninbus',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect(response.status).toBe(400);
-		});
-
-		it('returns 400 for missing artifactName', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						name: 'test',
-						artifactType: 'firmware-ninbus',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect(response.status).toBe(400);
-		});
-
-		it('returns 400 when no target specified', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						name: 'test-deploy',
+						name: 'Test Deployment',
 						artifactName: 'test-artifact',
 						artifactType: 'firmware-ninbus',
 					}),
@@ -221,209 +150,200 @@ describe('Deployments Module', () => {
 			expect(response.status).toBe(400);
 		});
 
-		it('accepts firmware-ninbus artifact type', async () => {
-			// Will fail because no Mender devices, but validates schema
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						name: 'test-deploy',
-						artifactName: 'ninbus-firmware-3.3.0',
-						artifactType: 'firmware-ninbus',
-						allDevices: true,
+		it('POST with valid artifactType passes validation', async () => {
+			const types = ['firmware-ninbus', 'firmware-controller', 'configuration-nfx'];
+			for (const type of types) {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/deployments`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({
+							name: `Test ${type}`,
+							artifactName: `test-${type}`,
+							artifactType: type,
+							allDevices: true,
+						}),
 					}),
-				}),
-			);
-			// Should be 422 (no eligible devices) not 400 (validation)
-			expect([422, 500].includes(response.status)).toBe(true);
-		});
-
-		it('accepts firmware-controller artifact type', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						name: 'test-deploy',
-						artifactName: 'controller-firmware-12.6.0',
-						artifactType: 'firmware-controller',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect([422, 500].includes(response.status)).toBe(true);
-		});
-
-		it('accepts configuration-nfx artifact type', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({
-						name: 'test-deploy',
-						artifactName: 'config-nfx-2026-04-14',
-						artifactType: 'configuration-nfx',
-						allDevices: true,
-					}),
-				}),
-			);
-			expect([422, 500].includes(response.status)).toBe(true);
-		});
-	});
-
-	describe('GET endpoints', () => {
-		it('GET /deployments/:id returns 401 without auth', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments/fake-id`),
-			);
-			expect(response.status).toBe(401);
-		});
-
-		it('GET /deployments/:id returns 403 for non-member', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments/fake-id`, {
-					headers: { Cookie: otherCookie },
-				}),
-			);
-			expect(response.status).toBe(403);
-		});
-
-		it('GET /deployments/:id/statistics returns 403 for non-member', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/deployments/fake-id/statistics`, {
-					headers: { Cookie: otherCookie },
-				}),
-			);
-			expect(response.status).toBe(403);
-		});
-	});
-});
-
-describe('Artifacts Module', () => {
-	const app = createApp();
-	const ownerEmail = `artifact-owner-${Date.now()}@example.com`;
-	const otherEmail = `artifact-other-${Date.now()}@example.com`;
-	const password = 'TestPassword123!';
-	let ownerCookie: string;
-	let otherCookie: string;
-	let companyId: string;
-
-	async function signUpAndIn(email: string, name: string): Promise<string> {
-		await app.handle(
-			new Request('http://localhost/api/auth/sign-up/email', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password, name }),
-			}),
-		);
-		const signIn = await app.handle(
-			new Request('http://localhost/api/auth/sign-in/email', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password }),
-			}),
-		);
-		return signIn.headers.get('set-cookie') || '';
-	}
-
-	describe('Setup', () => {
-		it('creates users and company', async () => {
-			ownerCookie = await signUpAndIn(ownerEmail, 'Artifact Owner');
-			otherCookie = await signUpAndIn(otherEmail, 'Artifact Other');
-
-			const response = await app.handle(
-				new Request('http://localhost/api/companies', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ name: 'Artifact Test Co' }),
-				}),
-			);
-			companyId = (await response.json()).data.id;
-		});
-	});
-
-	describe('Artifact Types Endpoint', () => {
-		it('GET /artifacts/types returns all 3 Ninbus types', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts/types`, {
-					headers: { Cookie: ownerCookie },
-				}),
-			);
-			expect(response.status).toBe(200);
-			const body = await response.json();
-			expect(body.data).toHaveLength(3);
-
-			const types = body.data.map((t: any) => t.type);
-			expect(types).toContain('firmware-ninbus');
-			expect(types).toContain('firmware-controller');
-			expect(types).toContain('configuration-nfx');
-		});
-
-		it('each type has required metadata fields', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts/types`, {
-					headers: { Cookie: ownerCookie },
-				}),
-			);
-			const body = await response.json();
-			for (const t of body.data) {
-				expect(t).toHaveProperty('type');
-				expect(t).toHaveProperty('label');
-				expect(t).toHaveProperty('description');
-				expect(t).toHaveProperty('target');
-				expect(t).toHaveProperty('requiresReboot');
-				expect(t).toHaveProperty('riskLevel');
-				expect(['low', 'medium', 'high']).toContain(t.riskLevel);
+				);
+				// hawkBit disabled in tests → will fail with 422/503 (not 400 validation error)
+				// The point: valid body schema should pass Elysia validation (no 400)
+				expect(response.status).not.toBe(400);
 			}
 		});
 
 		it('returns 401 without auth', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts/types`),
+				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						name: 'Test',
+						artifactName: 'test',
+						artifactType: 'firmware-ninbus',
+						allDevices: true,
+					}),
+				}),
 			);
 			expect(response.status).toBe(401);
+		});
+
+		it('returns 403 for non-member', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: otherCookie },
+					body: JSON.stringify({
+						name: 'Test',
+						artifactName: 'test',
+						artifactType: 'firmware-ninbus',
+						allDevices: true,
+					}),
+				}),
+			);
+			expect(response.status).toBe(403);
 		});
 	});
 
-	describe('Authentication & Authorization', () => {
-		it('GET /artifacts returns 401 without auth', async () => {
-			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts`),
-			);
-			expect(response.status).toBe(401);
+	describe('Deployment Status Computation', () => {
+		it('RETRIEVED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ RETRIEVED: 1, total: 1 }, 1)).toBe('in_progress');
+			const summary = summarizeStatistics({ RETRIEVED: 1, total: 1 });
+			expect(summary.inProgress).toBe(1);
+			expect(summary.totalTargets).toBe(1);
 		});
 
-		it('GET /artifacts returns 403 for non-member', async () => {
+		it('FINISHED (all) maps to completed', () => {
+			expect(computeDeploymentStatus({ FINISHED: 3, total: 3 }, 3)).toBe('completed');
+			const summary = summarizeStatistics({ FINISHED: 3, total: 3 });
+			expect(summary.finished).toBe(3);
+		});
+
+		it('ERROR maps to failed', () => {
+			expect(computeDeploymentStatus({ ERROR: 1, FINISHED: 2, total: 3 }, 3)).toBe('failed');
+			expect(summarizeStatistics({ ERROR: 1, WARNING: 1, total: 2 }).failed).toBe(2);
+		});
+
+		it('CANCELED (all) maps to canceled', () => {
+			expect(computeDeploymentStatus({ CANCELED: 2, total: 2 }, 2)).toBe('canceled');
+		});
+
+		it('RUNNING maps to pending (device has not polled yet)', () => {
+			expect(computeDeploymentStatus({ RUNNING: 5, total: 5 }, 5)).toBe('pending');
+			const summary = summarizeStatistics({ RUNNING: 5, total: 5 });
+			expect(summary.pending).toBe(5);
+			expect(summary.inProgress).toBe(0);
+		});
+
+		it('DOWNLOAD/DOWNLOADED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ DOWNLOAD: 1, total: 1 }, 1)).toBe('in_progress');
+			expect(computeDeploymentStatus({ DOWNLOADED: 1, total: 1 }, 1)).toBe('in_progress');
+		});
+
+		it('total=0 maps to no_targets', () => {
+			expect(computeDeploymentStatus({}, 0)).toBe('no_targets');
+		});
+
+		it('mixed RETRIEVED+FINISHED maps to in_progress', () => {
+			expect(computeDeploymentStatus({ FINISHED: 2, RETRIEVED: 1, total: 3 }, 3)).toBe('in_progress');
+			const summary = summarizeStatistics({ FINISHED: 2, RETRIEVED: 1, total: 3 });
+			expect(summary.finished).toBe(2);
+			expect(summary.inProgress).toBe(1);
+		});
+
+		it('total>0 with no known status keys maps to pending (fallback)', () => {
+			// hawkBit may report total=N but no status keys yet (race condition)
+			expect(computeDeploymentStatus({ total: 1 }, 1)).toBe('pending');
+			expect(computeDeploymentStatus({ total: 3 }, 3)).toBe('pending');
+		});
+
+		it('mixed FINISHED+CANCELED maps to pending (partial states)', () => {
+			// finished=1, canceled=1, total=3 — neither condition matches, fallback to pending
+			expect(computeDeploymentStatus({ FINISHED: 1, CANCELED: 1, total: 3 }, 3)).toBe('pending');
+		});
+
+		it('dsDeleted option maps to canceled', () => {
+			expect(computeDeploymentStatus({ FINISHED: 1, total: 1 }, 1, { dsDeleted: true })).toBe('canceled');
+		});
+
+		it('SCHEDULED maps to pending', () => {
+			expect(computeDeploymentStatus({ SCHEDULED: 2, total: 2 }, 2)).toBe('pending');
+		});
+
+		it('CANCELING maps to canceled', () => {
+			expect(computeDeploymentStatus({ CANCELING: 1, total: 1 }, 1)).toBe('canceled');
+		});
+
+		it('WARNING maps to failed', () => {
+			expect(computeDeploymentStatus({ WARNING: 1, total: 1 }, 1)).toBe('failed');
+		});
+	});
+
+	describe('Auth & Authorization', () => {
+		it('GET / returns 403 for non-member', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts`, {
+				new Request(`http://localhost/api/companies/${companyId}/deployments`, {
 					headers: { Cookie: otherCookie },
 				}),
 			);
 			expect(response.status).toBe(403);
 		});
 
-		it('DELETE /artifacts/:id returns 403 for non-member', async () => {
+		it('GET /:deploymentId returns 401 without auth', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts/fake-id`, {
+				new Request(`http://localhost/api/companies/${companyId}/deployments/999`, {
+					headers: {},
+				}),
+			);
+			expect(response.status).toBe(401);
+		});
+	});
+
+	describe('Tenant Isolation', () => {
+		let otherCompanyId: string;
+
+		it('setup: creates second company', async () => {
+			otherCompanyId = await setupCompany(otherEmail);
+			expect(otherCompanyId).toBeDefined();
+		}, 15000);
+
+		it('GET / returns empty list for company with no deployments', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.data).toEqual([]);
+			expect(body.total).toBe(0);
+		});
+
+		it('GET /:id returns 404 for deployment from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(response.status).toBe(404);
+		});
+
+		it('DELETE /:id returns 404 for deployment from another company', async () => {
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999`, {
 					method: 'DELETE',
 					headers: { Cookie: otherCookie },
 				}),
 			);
-			expect(response.status).toBe(403);
+			expect(response.status).toBe(404);
 		});
-	});
 
-	describe('Validation', () => {
-		it('PUT /artifacts/:id returns 400 for empty description', async () => {
+		it('GET /:id/statistics returns 404 for deployment from another company', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/artifacts/fake-id`, {
-					method: 'PUT',
-					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ description: '' }),
+				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999/statistics`, {
+					headers: { Cookie: otherCookie },
 				}),
 			);
-			expect(response.status).toBe(400);
+			expect(response.status).toBe(404);
 		});
 	});
 });

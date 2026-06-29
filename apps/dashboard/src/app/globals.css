@@ -1,0 +1,155 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens — "Fleet Control Surface".
+ *
+ * Dark-first: `:root, .dark` carry the dark (NOC) palette; `.light` overrides
+ * for the light theme. next-themes (attribute="class", defaultTheme="dark")
+ * toggles by adding/removing `.dark` on <html>.
+ *
+ * Color is SEMANTIC: one action accent (`--primary`, indigo) + five SIGNAL
+ * tones (`--signal-*`) used ONLY to convey domain state (online/offline,
+ * downloading/installed/failed, …). The identity comes from typography
+ * (mono identifiers), signal geometry and density — not a brand hue.
+ */
+
+@layer base {
+	:root,
+	.dark {
+		/* ── Surfaces (dark / NOC) ─────────────────────────────────── */
+		--background: 240 10% 4%; /* #0a0a0d */
+		--foreground: 0 0% 96%;
+		--card: 240 9% 6%; /* one notch above bg */
+		--card-foreground: 0 0% 96%;
+		--popover: 240 10% 5%;
+		--popover-foreground: 0 0% 96%;
+		--muted: 240 6% 13%;
+		--muted-foreground: 240 5% 62%;
+		--secondary: 240 6% 13%;
+		--secondary-foreground: 0 0% 96%;
+		--accent: 240 6% 14%;
+		--accent-foreground: 0 0% 96%;
+		--border: 240 6% 17%;
+		--input: 240 6% 17%;
+		--ring: 243 75% 63%;
+
+		/* ── Action accent (indigo — the only "brand" hue) ─────────── */
+		--primary: 243 75% 59%; /* indigo-600 #4f46e5 */
+		--primary-foreground: 0 0% 100%;
+		--destructive: 0 72% 51%;
+		--destructive-foreground: 0 0% 100%;
+
+		/* ── SIGNAL tones (state only) — bright for dark bg ────────── */
+		--signal-ok: 142 65% 49%; /* green  */
+		--signal-busy: 38 92% 55%; /* amber  */
+		--signal-fault: 0 72% 58%; /* red    */
+		--signal-idle: 240 5% 58%; /* neutral */
+		--signal-info: 192 85% 52%; /* cyan   */
+
+		--radius: 0.5rem;
+	}
+
+	.light {
+		/* ── Surfaces (light / paper) ──────────────────────────────── */
+		--background: 30 12% 98%; /* warm paper, not pure white */
+		--foreground: 240 10% 8%;
+		--card: 0 0% 100%;
+		--card-foreground: 240 10% 8%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 240 10% 8%;
+		--muted: 240 6% 95%;
+		--muted-foreground: 240 4% 42%;
+		--secondary: 240 5% 94%;
+		--secondary-foreground: 240 10% 8%;
+		--accent: 240 5% 94%;
+		--accent-foreground: 240 10% 8%;
+		--border: 240 6% 88%;
+		--input: 240 6% 88%;
+		--ring: 243 75% 59%;
+
+		--primary: 243 75% 53%; /* indigo-700, deeper on paper */
+		--primary-foreground: 0 0% 100%;
+		--destructive: 0 72% 48%;
+		--destructive-foreground: 0 0% 100%;
+
+		/* signals slightly deeper for legibility on paper */
+		--signal-ok: 142 60% 38%;
+		--signal-busy: 32 90% 45%;
+		--signal-fault: 0 68% 45%;
+		--signal-idle: 240 4% 45%;
+		--signal-info: 192 75% 42%;
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+	/* Scale up the base type ladder slightly for better legibility — the
+	 * original density was tuned too tight (12-13px primary content). 16.5px
+	 * base scales every rem-based size proportionally without rewriting each
+	 * component. */
+	html {
+		font-size: 16.5px;
+	}
+	body {
+		@apply bg-background text-foreground antialiased;
+		font-feature-settings: 'cv11', 'ss01';
+		font-variation-settings: 'opsz' 32;
+		font-family: 'Poppins', sans-serif;
+	}
+	/* Subtle top-of-page grid texture for the "console" feel. Cheap, pure CSS. */
+	body::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 0;
+		background-image: radial-gradient(
+			hsl(var(--border) / 0.5) 1px,
+			transparent 1px
+		);
+		background-size: 32px 32px;
+		opacity: 0.4;
+		mask-image: linear-gradient(to bottom, black, transparent 60%);
+	}
+}
+
+/*
+ * Signal geometry primitives. <Signal> renders a 0.5rem shape per `shape`:
+ * dot (filled circle), ring (outline), square, diamond (rotated square),
+ * slash (a small strike). `.live` adds a slow opacity pulse for active state
+ * (online, downloading). Kept here (not inline) so shapes stay crisp & cheap.
+ */
+@layer components {
+	.sig {
+		@apply inline-block h-2 w-2 shrink-0;
+	}
+	.sig-dot {
+		border-radius: 9999px;
+	}
+	.sig-ring {
+		border-radius: 9999px;
+		border: 1.5px solid currentColor;
+		background: transparent;
+	}
+	.sig-square {
+		border-radius: 2px;
+	}
+	.sig-diamond {
+		border-radius: 1.5px;
+		transform: rotate(45deg);
+	}
+	.sig-slash {
+		width: 0.4rem;
+		height: 0.125rem;
+		border-radius: 2px;
+		@apply self-center;
+	}
+	.sig-live {
+		@apply animate-pulse-signal;
+	}
+}

@@ -1,56 +1,64 @@
 import { withAuth } from '@common/middleware/auth-guard';
-import { checkMembership } from '@common/middleware/company-check';
+import { appLogger } from '@common/logger';
 import {
 	ArtifactDeleteResponseSchema,
 	ArtifactListResponseSchema,
 	ArtifactResponseSchema,
-	DownloadLinkResponseSchema,
+	DownloadArtifactResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
-	ReleaseListResponseSchema,
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
 import { Elysia, t } from 'elysia';
+import { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './service';
 import * as service from './service';
 
 /**
- * Artifact management routes — list, get, update, delete, download, releases.
+ * Artifact management routes — list, get, update, delete, download.
+ *
+ * Role requirements:
+ * - GET /                → viewer (list artifacts)
+ * - GET /:id             → viewer (view artifact)
+ * - GET /:id/download    → viewer (download info)
+ * - PUT /:id             → operator (update metadata)
+ * - DELETE /:id          → admin (delete artifact)
  */
 export const artifactManageRoutes = withAuth(
 	new Elysia({ prefix: '/api/companies/:companyId/artifacts' }),
 )
-	// GET / — List artifacts (with Ninbus type enrichment)
+	// GET / — List software modules (artifacts) for this company only
 	.get(
 		'/',
-		async ({ params, query, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
+		async ({ params, query, set }) => {
+			try {
+				const result = await service.listArtifacts(params.companyId, {
+					offset: query?.offset,
+					limit: query?.limit,
+				});
+				return result;
+			} catch (error: any) {
+				appLogger.error('[ARTIFACTS] Failed to list artifacts: %s', error?.message ?? 'unknown');
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}
-			const result = await service.listArtifacts({
-				page: query?.page,
-				perPage: query?.perPage,
-				name: query?.name,
-			});
-			return result;
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
-				page: t.Optional(t.Number()),
-				perPage: t.Optional(t.Number({ maximum: 500 })),
-				name: t.Optional(t.String({ description: 'Filter by artifact name' })),
+				offset: t.Optional(t.Number()),
+				limit: t.Optional(t.Number({ maximum: 500 })),
 			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'List OTA artifacts',
-				description: 'Lists all firmware artifacts enriched with Ninbus type metadata',
+				summary: 'List OTA artifacts (Software Modules)',
+				description: 'Lists software modules belonging to this company from hawkBit enriched with Ninbus type metadata',
 			},
 			response: {
 				200: ArtifactListResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -58,71 +66,40 @@ export const artifactManageRoutes = withAuth(
 	// GET /:artifactId — Get artifact details
 	.get(
 		'/:artifactId',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
+		async ({ params, set }) => {
 			try {
-				const artifact = await service.getArtifact(params.artifactId);
+				const artifact = await service.getArtifact(params.companyId, Number(params.artifactId));
 				return { data: artifact };
-			} catch {
-				set.status = 404;
-				return { error: 'Not Found', message: 'Artifact not found' };
+			} catch (error) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
+					set.status = 400;
+					return { error: 'Bad Request', message: error.message };
+				}
+				appLogger.warn('[ARTIFACTS] Failed to get artifact:', error);
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}
 		},
 		{
 			auth: true,
+			companyRole: 'viewer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'Get artifact details',
-				description: 'Artifact metadata enriched with Ninbus type info',
+				summary: 'Get artifact details (Software Module)',
 			},
 			response: {
 				200: ArtifactResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
-			},
-		},
-	)
-
-	// GET /:artifactId/download — Get download link
-	.get(
-		'/:artifactId/download',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
-			}
-			try {
-				const link = await service.getArtifactDownloadLink(params.artifactId);
-				return { data: link };
-			} catch {
-				set.status = 404;
-				return { error: 'Not Found', message: 'Artifact not found' };
-			}
-		},
-		{
-			auth: true,
-			params: t.Object({
-				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
-			}),
-			detail: {
-				tags: ['Artifacts'],
-				summary: 'Get artifact download link',
-				description: 'Returns a pre-signed URL for downloading',
-			},
-			response: {
-				200: DownloadLinkResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -130,25 +107,45 @@ export const artifactManageRoutes = withAuth(
 	// DELETE /:artifactId — Delete artifact
 	.delete(
 		'/:artifactId',
-		async ({ params, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
+		async ({ params, set }) => {
+			try {
+				const result = await service.deleteArtifact(params.companyId, Number(params.artifactId));
+				return { message: result.message, cleanedUp: result.cleanedUp };
+			} catch (error) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
+					set.status = 400;
+					return { error: 'Bad Request', message: error.message };
+				}
+				if (error instanceof ArtifactLockedError) {
+					set.status = 409;
+					return { error: 'Locked', message: error.message, blockingDS: error.blockingDS };
+				}
+				appLogger.warn('[ARTIFACTS] Failed to delete artifact:', error);
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}
-			await service.deleteArtifact(params.artifactId);
-			return { message: 'Artifact deleted successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'admin',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
-			detail: { tags: ['Artifacts'], summary: 'Delete artifact' },
+			detail: {
+				tags: ['Artifacts'],
+				summary: 'Delete artifact (Software Module)',
+				description: 'Deletes an artifact from hawkBit. Requires admin role or above.',
+			},
 			response: {
 				200: ArtifactDeleteResponseSchema,
 				403: ErrorResponseSchema,
+				409: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
@@ -156,55 +153,91 @@ export const artifactManageRoutes = withAuth(
 	// PUT /:artifactId — Update artifact metadata
 	.put(
 		'/:artifactId',
-		async ({ params, body, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
+		async ({ params, body, set }) => {
+			try {
+				await service.updateArtifact(params.companyId, Number(params.artifactId), body.description);
+				return { message: 'Artifact updated successfully' };
+			} catch (error) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
+					set.status = 400;
+					return { error: 'Bad Request', message: error.message };
+				}
+				appLogger.warn('[ARTIFACTS] Failed to update artifact:', error);
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}
-			await service.updateArtifact(params.artifactId, body.description);
-			return { message: 'Artifact updated successfully' };
 		},
 		{
 			auth: true,
+			companyRole: 'operator',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
-				artifactId: t.String({ description: 'Mender artifact ID' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
 			}),
 			body: updateArtifactSchema,
-			detail: { tags: ['Artifacts'], summary: 'Update artifact metadata' },
+			detail: {
+				tags: ['Artifacts'],
+				summary: 'Update artifact metadata',
+				description: 'Updates artifact description. Requires operator role or above.',
+			},
 			response: {
 				200: GenericActionResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	)
 
-	// GET /releases — List releases
+	// GET /:artifactId/download — Get artifact download info
 	.get(
-		'/releases',
-		async ({ params, query, user, set }: any) => {
-			const err = await checkMembership(params.companyId, user.id);
-			if (err) {
-				set.status = err.status;
-				return err.body;
+		'/:artifactId/download',
+		async ({ params, query, set }) => {
+			try {
+				const downloadInfo = await service.getArtifactDownloadUrl(
+					params.companyId,
+					Number(params.artifactId),
+					Number(query?.artifactFileId ?? 0),
+				);
+				return { data: downloadInfo };
+			} catch (error) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
+					set.status = 400;
+					return { error: 'Bad Request', message: error.message };
+				}
+				appLogger.warn('[ARTIFACTS] Failed to get download info:', error);
+				set.status = 503;
+				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
 			}
-			const { menderReleases } = await import('@common/mender/client');
-			const releases = await menderReleases.list({ page: query?.page, perPage: query?.perPage });
-			return { data: releases };
 		},
 		{
 			auth: true,
-			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
-			query: t.Object({ page: t.Optional(t.Number()), perPage: t.Optional(t.Number()) }),
+			companyRole: 'viewer',
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
+			}),
+			query: t.Object({
+				artifactFileId: t.Optional(
+					t.Number({ description: 'Specific artifact file ID (within the SM)' }),
+				),
+			}),
 			detail: {
 				tags: ['Artifacts'],
-				summary: 'List releases',
-				description: 'Lists all releases (artifact groupings) from Mender',
+				summary: 'Get artifact download info',
 			},
 			response: {
-				200: ReleaseListResponseSchema,
+				200: DownloadArtifactResponseSchema,
 				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
 			},
 		},
 	);

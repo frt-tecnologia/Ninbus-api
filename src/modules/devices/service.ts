@@ -1,23 +1,16 @@
 import { db } from '@common/db';
 import { categories, deviceCategoryAssignments, devices } from '@common/db/schema';
+import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import {
-	type MenderDevice,
-	menderDeviceAuth,
-	menderDeviceConnect,
-	menderInventory,
-} from '@common/mender/client';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { DeviceSyncEngine } from './sync';
+import { claimDevice } from './provisioning';
+import { syncDeviceNameToHawkbit } from './name-sync';
 
 // ---------------------------------------------------------------------------
 // Device CRUD (local DB)
 // ---------------------------------------------------------------------------
 
 export async function getCompanyDevices(companyId: string) {
-	// Centralized sync
-	await DeviceSyncEngine.syncCompany(companyId);
-
 	return await db
 		.select()
 		.from(devices)
@@ -31,47 +24,21 @@ export async function getDeviceById(deviceId: string, companyId: string) {
 		.from(devices)
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
 
-	// If device is still pending, try sync
-	if (device?.status === 'pending') {
-		await DeviceSyncEngine.syncCompany(companyId);
-		// Fetch again
-		const [updated] = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
-		return updated || device;
-	}
-
 	return device;
 }
 
 export async function registerDevice(data: {
 	companyId: string;
 	name: string;
-	serialNumber?: string;
-	menderDeviceId?: string;
+	serialNumber: string;
 	userId: string;
 }) {
-	const [device] = await db
-		.insert(devices)
-		.values({
-			companyId: data.companyId,
-			name: data.name,
-			serialNumber: data.serialNumber,
-			menderDeviceId: data.menderDeviceId,
-			status: data.menderDeviceId ? 'accepted' : 'pending',
-			createdBy: data.userId,
-		})
-		.returning();
-
-	// Trigger sync
-	if (device && device.status === 'pending') {
-		await DeviceSyncEngine.syncCompany(data.companyId);
-		const [updated] = await db.select().from(devices).where(eq(devices.id, device.id));
-		return updated || device;
-	}
-
-	return device;
+	return claimDevice({
+		companyId: data.companyId,
+		serialNumber: data.serialNumber,
+		name: data.name,
+		userId: data.userId,
+	});
 }
 
 export async function updateDevice(
@@ -84,21 +51,40 @@ export async function updateDevice(
 		.set({ ...data, updatedAt: new Date() })
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)))
 		.returning();
+
+	// If the name changed, propagate to hawkBit so the deployment target list
+	// stays in sync with the device list. Best-effort — never blocks the rename.
+	if (data.name && device?.hawkbitTargetId) {
+		await syncDeviceNameToHawkbit(device.hawkbitTargetId, data.name);
+	}
+
 	return device;
 }
 
+/**
+ * Remove device from company (unclaim).
+ * The device stays provisioned in hawkBit — it reverts to "unclaimed" status.
+ * Only a super admin can permanently deprovision via DELETE /api/devices/deprovision/:serialNumber.
+ */
 export async function deleteDevice(deviceId: string, companyId: string) {
 	const [device] = await db
 		.select()
 		.from(devices)
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
 
-	if (device?.menderDeviceId) {
-		appLogger.info(`[DEVICES] Removing device ${deviceId}. Triggering Mender decommission...`);
-		await DeviceSyncEngine.decommissionDevice(device.menderDeviceId);
-	}
+	if (!device) return;
 
-	await db.delete(devices).where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)));
+	// Unclaim: set company to null, revert to unclaimed status
+	// Device stays in local DB and hawkBit — can be re-claimed by another company
+	await db
+		.update(devices)
+		.set({ companyId: null, status: 'unclaimed', updatedAt: new Date() })
+		.where(eq(devices.id, deviceId));
+
+	appLogger.info(
+		`[DEVICES] Device ${deviceId} (${device.serialNumber}) unclaimed from company ${companyId}. ` +
+		`hawkBit target ${device.hawkbitTargetId ?? 'none'} preserved.`,
+	);
 }
 
 export async function updateDeviceStatus(deviceId: string, status: string) {
@@ -137,12 +123,10 @@ export async function getDeviceCategories(deviceId: string) {
 }
 
 export async function assignCategories(deviceId: string, categoryIds: string[]) {
-	// Remove existing assignments
 	await db
 		.delete(deviceCategoryAssignments)
 		.where(eq(deviceCategoryAssignments.deviceId, deviceId));
 
-	// Add new assignments
 	if (categoryIds.length > 0) {
 		await db.insert(deviceCategoryAssignments).values(
 			categoryIds.map((categoryId) => ({
@@ -168,71 +152,76 @@ export async function getDeviceIdsByCategories(companyId: string, categoryIds: s
 	return [...new Set(assignments.map((a) => a.deviceId))];
 }
 
-export async function getMenderDeviceIdsForCompany(companyId: string): Promise<string[]> {
+export async function getHawkbitTargetIdsForCompany(companyId: string): Promise<string[]> {
 	const companyDevices = await db
-		.select({ menderDeviceId: devices.menderDeviceId })
+		.select({ hawkbitTargetId: devices.hawkbitTargetId })
 		.from(devices)
 		.where(and(eq(devices.companyId, companyId), eq(devices.status, 'accepted')));
 
-	return companyDevices.map((d) => d.menderDeviceId).filter((id): id is string => id !== null);
+	return companyDevices.map((d) => d.hawkbitTargetId).filter((id): id is string => id !== null);
 }
 
 // ---------------------------------------------------------------------------
-// Mender Gateway integration
+// hawkBit integration
 // ---------------------------------------------------------------------------
 
-export async function getMenderDeviceInfo(menderDeviceId: string): Promise<MenderDevice> {
-	return menderDeviceAuth.getDevice(menderDeviceId);
+export async function getHawkbitTargetInfo(targetId: string): Promise<HawkbitTarget> {
+	return hawkbitTargets.get(targetId);
 }
 
-export async function approveDevice(deviceId: string, menderDeviceId: string, authId: string) {
-	return await DeviceSyncEngine.acceptDevice(deviceId, menderDeviceId, authId);
-}
-
-export async function rejectDevice(deviceId: string, menderDeviceId: string, authId: string) {
-	return await DeviceSyncEngine.rejectDevice(deviceId, menderDeviceId, authId);
-}
-
-export async function getMenderConnectionState(menderDeviceId: string) {
+export async function getHawkbitConnectionState(targetId: string) {
 	try {
-		return await menderDeviceConnect.getConnectionState(menderDeviceId);
+		const target = await hawkbitTargets.get(targetId);
+		const isConnected = target.pollStatus ? !target.pollStatus.overdue : false;
+		return {
+			targetId: target.controllerId,
+			connected: isConnected,
+			lastRequestAt: target.pollStatus?.lastRequestAt ?? null,
+			nextExpectedRequestAt: target.pollStatus?.nextExpectedRequestAt ?? null,
+			ipAddress: target.ipAddress ?? null,
+		};
 	} catch (error: any) {
-		// If Mender returns 404, the device simply hasn't connected to the 'deviceconnect' service yet.
 		if (error.status === 404) {
 			return {
-				device_id: menderDeviceId,
-				status: 'disconnected',
-				updated_ts: null,
+				targetId,
+				connected: false,
+				lastRequestAt: null,
+				nextExpectedRequestAt: null,
+				ipAddress: null,
 			};
 		}
 		throw error;
 	}
 }
 
-export async function forceDeviceCheckUpdate(menderDeviceId: string) {
-	return menderDeviceConnect.forceCheckUpdate(menderDeviceId);
+export async function getHawkbitTargetAttributes(targetId: string) {
+	return hawkbitTargets.getAttributes(targetId);
 }
 
-export async function decommissionDevice(deviceId: string, menderDeviceId: string) {
-	await DeviceSyncEngine.decommissionDevice(menderDeviceId);
-	await updateDeviceStatus(deviceId, 'decommissioned');
+export async function getHawkbitTargetActions(targetId: string) {
+	const actions = await hawkbitTargets.getActions(targetId, { limit: 50, sort: 'id:DESC' });
+	return actions.content;
 }
 
-export async function getMenderInventory(menderDeviceId: string) {
-	return menderInventory.getDevice(menderDeviceId);
+export async function cancelHawkbitAction(targetId: string, actionId: number) {
+	return hawkbitTargets.cancelAction(targetId, actionId, true);
 }
 
-export async function syncDeviceStatusFromMender(menderDeviceId: string) {
+export async function syncDeviceStatusFromHawkbit(targetId: string) {
 	try {
-		const menderDevice = await menderDeviceAuth.getDevice(menderDeviceId);
-		const state = await menderDeviceConnect.getConnectionState(menderDeviceId);
+		const target = await hawkbitTargets.get(targetId);
+		const isConnected = target.pollStatus ? !target.pollStatus.overdue : false;
 
 		return {
-			menderStatus: menderDevice.status,
-			connectionStatus: state.status,
-			lastSeen: state.updated_ts,
+			updateStatus: target.updateStatus,
+			connectionStatus: isConnected ? 'connected' : 'disconnected',
+			lastSeen: target.pollStatus?.lastRequestAt
+				? new Date(target.pollStatus.lastRequestAt).toISOString()
+				: null,
 		};
 	} catch {
 		return null;
 	}
 }
+
+export { linkDevice, provisionDevice, listUnclaimedDevices } from './provisioning';

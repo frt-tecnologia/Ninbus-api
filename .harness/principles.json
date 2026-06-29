@@ -1,116 +1,900 @@
 {
-	"principles": [
-		{
-			"id": "p-elysia-body-before-auth",
-			"rule": "Elysia validates body schemas BEFORE macro beforeHandle. For file upload endpoints, use t.Any() for the file field — otherwise validation errors (400) take priority over auth checks (401). Validate file type/size in handler code after auth passes.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-28T20:20:38.246Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-shared-auth-helpers",
-			"rule": "Extract repeated authorization checks (company membership, device ownership, Mender link verification) into shared helpers. This reduces route handler code by 40-60% and eliminates copy-paste errors. Each helper returns either an error response or null.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-28T20:20:48.979Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-better-auth-docs-in-description",
-			"rule": "Better Auth reads request.json() internally — Elysia body schemas cause 'Body already used' errors. Document auth request bodies in route description strings (with JSON examples) instead. Better Auth validates fields internally.",
-			"origin": "learned",
-			"category": "style",
-			"learnedAt": "2026-04-28T20:20:57.779Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-split-routes-by-operation",
-			"rule": "When a route handler file exceeds 200 lines, split by operation type: CRUD routes in index.ts, external API operations (Mender approve/reject/decommission) in a separate file. Both files use the same prefix and share auth helpers.",
-			"origin": "learned",
-			"category": "process",
-			"learnedAt": "2026-04-28T20:21:09.794Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-fix-path-traversal-routes",
-			"rule": "Never use path traversal (../) in route definitions. Elysia normalizes paths, so /artifacts/../releases becomes /releases — breaking the route. Use flat paths like /artifacts/releases instead.",
-			"origin": "learned",
-			"category": "testing",
-			"learnedAt": "2026-04-28T20:21:18.549Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-verify-external-api-source",
-			"rule": "NEVER assume REST conventions for external APIs. Read the actual routing.go / routes.go source code of external services to discover real HTTP methods and paths. Mender uses DELETE (not PUT) for abort, returns 204 (not 200) for status changes, and 202 for check-update. Wrong assumptions = silent failures in production.",
-			"origin": "learned",
-			"category": "security",
-			"learnedAt": "2026-04-28T23:35:34.068Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-presigned-upload-default-off",
-			"rule": "Mender's pre-signed URL upload (POST /artifacts/directupload) is DISABLED by default (SettingStorageEnableDirectUploadDefault = false). Direct multipart upload (POST /artifacts) is the only guaranteed-available upload method. Implement direct upload first; add pre-signed URL as optional enhancement later.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-28T23:35:42.890Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-single-env-source-of-truth",
-			"rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like menderConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults — let env be the only source.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-28T23:52:45.154Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-schemas-in-schemas-ts-only",
-			"rule": "Response schemas (200, 201, 403, etc.) MUST be defined in each module's schemas.ts and imported by route files. Route files (index.ts, *-routes.ts) NEVER define response schemas inline. ErrorResponseSchema and GenericActionResponseSchema live in common/schemas and are re-exported. Params and query schemas can live either in schemas.ts or locally in route files since they're route-specific.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-29T02:53:50.879Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-elysia-params-must-match-path",
-			"rule": "Elysia params schema MUST include ALL path parameters. If a route has /:deploymentId/statistics, the params schema must have both companyId AND deploymentId. Missing params cause 400 \"Unexpected property\" instead of the expected handler behavior. Define param schemas in schemas.ts for complex routes, or locally in route files for simple ones.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-29T02:54:09.955Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-better-auth-accepts-incomplete",
-			"rule": "Better Auth accepts registration without password and without name — it supports passwordless flows. Tests must NOT assert that sign-up rejects missing fields. Instead, test that sign-up succeeds (200) and the returned user object has expected properties. For sign-in without email, Better Auth returns 200 with a session in some configurations — test the absence of a valid session token, not the HTTP status code.",
-			"origin": "learned",
-			"category": "testing",
-			"learnedAt": "2026-04-29T02:54:29.649Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-sync-guard-mender-enabled",
-			"rule": "Any code that calls Mender APIs MUST check menderConfig.enabled first. The sync engine, background jobs, and event handlers all need this guard. When MENDER_ENABLED=false (tests, local dev), no Mender HTTP requests should be attempted. Without this guard, \"Body already used\" and connection refused errors cascade.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-29T02:54:45.129Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-mender-artifact-type-in-updates",
-			"rule": "Mender artifact type (e.g., 'firmware-ninbus') is stored in `updates[0].type_info.type` inside the Mender API response — NOT in a top-level `type` field. The .mender file is a gzipped tar created by `mender-artifact` CLI (`-T` flag sets the type). The Mender server does NOT convert raw files — users must create .mender files before uploading. Use resolveArtifactType() with fallback chain: updates[0].type_info.type → artifact_provides['type'] → null.",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-29T03:56:47.786Z",
-			"reinforcementCount": 1
-		},
-		{
-			"id": "p-mender-generate-single-file-only",
-			"rule": "Mender's POST /artifacts/generate endpoint only supports type=single_file (hardcoded in create-artifact-worker). It CANNOT generate artifacts with custom module types like firmware-ninbus. For custom types, implement .mender format generation in the API itself (tar+gzip with v3 headers) or use mender-artifact CLI. The .mender v3 format: outer tar → version(3) + header.tar.gz(artifact metadata with type_info.type) + data/0000.tar.gz(raw payload) + manifest(SHA-256 checksums).",
-			"origin": "learned",
-			"category": "architecture",
-			"learnedAt": "2026-04-29T04:42:12.285Z",
-			"reinforcementCount": 1
-		}
-	]
+  "principles": [
+    {
+      "id": "p-elysia-body-before-auth",
+      "rule": "Elysia validates body schemas BEFORE macro beforeHandle. For file upload endpoints, use t.Any() for the file field — otherwise validation errors (400) take priority over auth checks (401). Validate file type/size in handler code after auth passes.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-28T20:20:38.246Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-shared-auth-helpers",
+      "rule": "Extract repeated authorization checks (company membership, device ownership, hawkBit link verification) into shared helpers. This reduces route handler code by 40-60% and eliminates copy-paste errors. Each helper returns either an error response or null.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-28T20:20:48.979Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-better-auth-docs-in-description",
+      "rule": "Better Auth reads request.json() internally — Elysia body schemas cause 'Body already used' errors. Document auth request bodies in route description strings (with JSON examples) instead. Better Auth validates fields internally.",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-04-28T20:20:57.779Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-split-routes-by-operation",
+      "rule": "When a route handler file exceeds 200 lines, split by operation type: CRUD routes in index.ts, external API operations (hawkBit actions, diagnostics) in a separate file. Both files use the same prefix and share auth helpers.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-04-28T20:21:09.794Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-fix-path-traversal-routes",
+      "rule": "Never use path traversal (../) in route definitions. Elysia normalizes paths, so /artifacts/../releases becomes /releases — breaking the route. Use flat paths like /artifacts/releases instead.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-04-28T20:21:18.549Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-verify-external-api-source",
+      "rule": "NEVER assume REST conventions for external APIs. Read the actual routing.go / routes.go source code of external services to discover real HTTP methods and paths. Mender uses DELETE (not PUT) for abort, returns 204 (not 200) for status changes, and 202 for check-update. Wrong assumptions = silent failures in production.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-04-28T23:35:34.068Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-single-env-source-of-truth",
+      "rule": "ALL configuration must flow through a single validated env.ts schema with TypeBox. Never read process.env directly outside env.ts. Thin accessors (like hawkbitConfig) provide typed convenience over env but contain ZERO process.env reads. New config vars must be added to: (1) env.ts schema, (2) .env.example, (3) .env.test simultaneously. Remove all hardcoded localhost/URL defaults � let env be the only source.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-28T23:52:45.154Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-schemas-in-schemas-ts-only",
+      "rule": "Response schemas (200, 201, 403, etc.) MUST be defined in each module's schemas.ts and imported by route files. Route files (index.ts, *-routes.ts) NEVER define response schemas inline. ErrorResponseSchema and GenericActionResponseSchema live in common/schemas and are re-exported. Params and query schemas can live either in schemas.ts or locally in route files since they're route-specific.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-29T02:53:50.879Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-elysia-params-must-match-path",
+      "rule": "Elysia params schema MUST include ALL path parameters. If a route has /:deploymentId/statistics, the params schema must have both companyId AND deploymentId. Missing params cause 400 \"Unexpected property\" instead of the expected handler behavior. Define param schemas in schemas.ts for complex routes, or locally in route files for simple ones.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-29T02:54:09.955Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-better-auth-accepts-incomplete",
+      "rule": "Better Auth accepts registration without password and without name — it supports passwordless flows. Tests must NOT assert that sign-up rejects missing fields. Instead, test that sign-up succeeds (200) and the returned user object has expected properties. For sign-in without email, Better Auth returns 200 with a session in some configurations — test the absence of a valid session token, not the HTTP status code.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-04-29T02:54:29.649Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-guard-mender-enabled",
+      "rule": "Any code that calls hawkBit APIs MUST check hawkbitConfig.enabled first. The sync engine, background jobs, and event handlers all need this guard. When HAWKBIT_ENABLED=false (tests, local dev), no hawkBit HTTP requests should be attempted. Without this guard, connection refused errors cascade.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-04-29T02:54:45.129Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-concept-mapping",
+      "rule": "Mender → hawkBit concept mapping: Device → Target (controllerId), Artifact → Software Module + Artifact binary, Deployment → Distribution Set + Target Assignment, Inventory → Target Attributes, Connection State → pollStatus. hawkBit uses HTTP Basic Auth (not PAT). Software Modules must be created before artifacts can be uploaded. Distribution Sets group modules and are assigned to targets.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T13:59:18.926Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-no-artifact-format",
+      "rule": "hawkBit does NOT use a proprietary artifact format like Mender's .mender files. Raw binary files are uploaded directly to Software Modules via multipart/form-data. The artifact type is determined by the Software Module's type key, NOT by the file content. No artifact-generator.ts equivalent is needed — just upload raw firmware files (.fir, .frz, .bin) directly.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T13:59:32.159Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-client-split-by-domain",
+      "rule": "When an API client file exceeds 250 lines, split by domain: targets.ts, distribution-sets.ts, software-modules.ts, etc. Keep client.ts as a barrel re-export hub (<100 lines). Each sub-client imports from shared http.ts. This keeps files under the 250-line limit while maintaining a single import point for consumers.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T13:59:42.023Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-drizzle-date-validation",
+      "rule": "Drizzle ORM returns JavaScript Date objects for timestamp columns. Elysia response schemas using t.String({ format: 'date-time' }) will reject Date objects with validation errors. Use t.Date() instead — it accepts both Date objects and ISO strings, and serializes correctly for OpenAPI docs.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T17:42:24.603Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-s3-extension-rebuild",
+      "rule": "The hawkBit S3 extension (hawkbit-extension-artifact-repository-s3) version 0.5.0 on Maven Central is incompatible with hawkBit 1.0.3. The API was completely rewritten: ArtifactRepository → ArtifactStorage, AbstractDbArtifact → StoredArtifactInfo, DbArtifactHash → ArtifactHashes record. The extension must be rewritten from source against the 1.0.3 APIs. The compiled JAR + AWS SDK v1 JARs are added to BOOT-INF/lib/ in the standard Docker image.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T17:42:34.396Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-artifact-guard",
+      "rule": "Any code that calls hawkBit APIs (uploadArtifact, listArtifacts, etc.) MUST check hawkbitConfig.enabled first and throw a clear validation error (400) when disabled. Without this guard, connection refused errors (500) cascade to clients when hawkBit is unavailable. Tests run with HAWKBIT_ENABLED=false so this guard is essential for test reliability.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-05T17:42:45.950Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-pino-production-bundle",
+      "rule": "Pino with pino-pretty uses thread-stream (worker threads) that cannot resolve from a single bundled JS file. In production Docker images (no node_modules), use synchronous JSON logging: pino({ level }). Do NOT use pino.transport() or pino-pretty in production. For development, pipe through pino-pretty CLI or use conditional transport.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T21:13:56.717Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-compose-env",
+      "rule": "docker compose up reads .env by default, NOT .env.docker. All required variables must be in .env (or use docker compose --env-file .env.docker). Add all hawkBit database (HAWKBIT_DATABASE_URL, HAWKBIT_DB_USER, HAWKBIT_DB_PASS) and S3 variables to .env and .env.example. hawkBit's standard Docker image uses BusyBox wget (not curl) — healthchecks must use wget with Basic Auth in URL format: http://user:pass@localhost:8080/endpoint.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:14:05.731Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-db-migration-per-environment",
+      "rule": "Drizzle migrations must be applied to EACH database independently. Running migrations locally doesn't affect Neon cloud or Docker databases. After schema changes, apply migrations to: (1) local dev DB, (2) test DB, (3) production/cloud DB. When adding a new migration, verify it was applied by checking column names in information_schema.columns.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:48:06.022Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-dns-localhost",
+      "rule": "When services run in Docker containers, HAWKBIT_URL (and any inter-service URLs) must use Docker service names (e.g., http://hawkbit:8080), NOT localhost. localhost inside a container refers to the container itself. Docker Compose creates a DNS network where service names resolve to container IPs. Keep localhost URLs in .env.example for local dev, but use service names in .env.docker and docker-compose.yml defaults.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-05T21:48:35.885Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-array-format",
+      "rule": "hawkBit 1.0.3 Management API requires array body format [data] for ALL bulk POST endpoints: softwaremodules, softwaremoduletypes, distributionsets, distributionsettypes, targets. The response is also an array — extract arr[0] for single-item creates. Sending a plain object causes 400 \"request body is not well formed\". Distribution set types also require maxAssignments >= 1.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T22:57:29.579Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-artifact-formdata",
+      "rule": "hawkBit artifact binary upload (POST /rest/v1/softwaremodules/{id}/artifacts) requires multipart/form-data with the file wrapped in a FormData object. Sending a raw File object results in 415 Unsupported Media Type because the HTTP client serializes it as JSON. Always: const formData = new FormData(); formData.append('file', file); then pass formData as the request body.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T22:57:36.656Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-file-upload-error-messages",
+      "rule": "When t.File() validation fails (user sends JSON instead of multipart), the default error 'Expected kind File' is confusing. Detect this in onError by checking for schema.format === 'binary' or message.includes('Expected kind') and return a clear message: 'File upload requires multipart/form-data with a binary file field'. Keep t.File() in the schema for security — never weaken to t.Any().",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-05T22:57:50.100Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-provisioning",
+      "rule": "hawkBit DDI (Device Direct Integration) API is what embedded devices use. Two provisioning modes: (A) Server generates securityToken → admin flashes to device, (B) Device has factory-key → admin registers serialNumber → API creates hawkBit target with securityToken=deviceKey. Mode B is recommended for production (100k+). The DDI endpoint is GET /{tenant}/controller/v1/{controllerId} with TargetToken auth header. registerDevice() must auto-create hawkBit target for auto-provisioning to work.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-05T23:10:16.514Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-super-admin-env-emails",
+      "rule": "Platform-level super admin should be controlled via env variable (SUPER_ADMIN_EMAILS), not a database role. This prevents: (1) any user from creating a company and becoming owner of the platform, (2) privilege escalation via API. Only emails pre-approved in the env var get super_admin access. checkMembership() should bypass for super admin emails. Member promotion must verify caller has owner/admin role and cannot self-promote.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-05T23:10:27.339Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-rbac-companyrole-macro",
+      "rule": "Use the `companyRole` macro (defined in auth-guard.ts) for company-scoped RBAC instead of manual checkMembership() calls. The macro resolves membership + role in a single lifecycle hook and returns 401/403 automatically. Role hierarchy: owner(4) > admin(3) > operator(2) > viewer(1). Required roles per action: viewer = read (GET), operator = write devices/deployments/categories (POST/PUT), admin = destructive (DELETE companies/artifacts/categories, manage members), owner = delete company. The `companyRole` macro uses `resolve` + `beforeHandle` — resolve derives the role, beforeHandle validates permissions. This avoids double DB queries and keeps route handlers clean (no manual auth checks).",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-09T16:10:12.396Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-platform-routes-no-company-role",
+      "rule": "NEVER set companyRole on routes without :companyId in the path. The withAuth macro checks params.companyId — if missing, it returns 400 \"Company ID is required\". Platform-level routes (factory provisioning, unclaimed listing) should only use `auth: true`.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-09T21:46:20.246Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-two-level-error-guard",
+      "rule": "ALL hawkBit-dependent routes need TWO levels of error protection: (1) Service functions check hawkbitConfig.enabled → return empty data or throw ArtifactValidationError('HAWKBIT_NOT_ENABLED') for 400. (2) Route handlers catch ALL network errors (connection refused, timeout) → return 503 Service Unavailable. Level 1 prevents errors when HAWKBIT_ENABLED=false. Level 2 prevents 500 errors when hawkBit is enabled but unreachable.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-09T23:50:46.512Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-targettoken-auth-required",
+      "rule": "hawkBit 1.0.3 ships with authentication.targettoken.enabled=false by DEFAULT. This means ALL DDI polls return 401 regardless of the correct securityToken. ALWAYS set HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED=true in docker-compose.yml or enable via PUT /rest/v1/system/configs/authentication.targettoken.enabled. Without this, no device can ever authenticate via DDI.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-10T01:16:05.244Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-sync-in-read-endpoints",
+      "rule": "NEVER call hawkBit sync in read endpoints (GET /devices, GET /devices/:id). Sync is a network operation that can fail (connection refused) and cause 500 errors on simple list queries. Instead, make sync opt-in via a dedicated POST /sync endpoint that the frontend calls explicitly (e.g., on dashboard refresh button).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-10T03:19:17.058Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-background-sync-for-external-apis",
+      "rule": "NEVER sync external API data (hawkBit, Mender, etc.) on every HTTP request. Use a background worker that periodically syncs to the local DB. API routes ONLY read from the local DB — zero external API calls on GET. For single-device detail views, use stale-while-revalidate: return cached data immediately, only refresh from external API if data is older than a configurable threshold (e.g. 60s). This scales from 10 to 100k+ devices without performance degradation.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-11T15:43:06.851Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-paginated-external-api-fetch",
+      "rule": "When fetching data from external APIs that may return large datasets, ALWAYS use pagination. Never hardcode limit:1000 — this silently drops data beyond the limit. Implement a paginated fetch loop: while (hasMore) { fetch page; offset += pageSize; hasMore = content.length === pageSize; }. Use conservative page sizes (500) to balance memory and HTTP overhead. At 50k devices with pageSize=500, this requires 100 HTTP calls instead of 1 silently-truncated call.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-11T15:43:20.303Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-update-all-docs-on-architecture-change",
+      "rule": "When a major architectural change is made (background sync worker, new error handlers, new DB columns), update ALL documentation files: (1) README.md — env table, architecture diagram, route descriptions, (2) SKILL.md — architecture overview, module catalog, env vars, checklists, (3) CODE-PATTERNS.md — code examples, (4) SECURITY-DEEP-DIVE.md — security implications, (5) feature-specific docs (device-provisioning.md), (6) .env.example, .env.test, .env.docker. Never update only one file — stale docs are worse than no docs.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-11T16:14:11.017Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-references-existing-artifact",
+      "rule": "NEVER create new Software Modules during deployment creation. The deployment flow is: (1) Upload artifact via POST /artifacts → creates SM + binary, (2) Create deployment via POST /deployments → finds EXISTING SM by name+type → creates Distribution Set referencing it → assigns targets. If artifact not found, return 422 with clear message: \"Upload the artifact first via POST /artifacts.\" This prevents 409 conflicts from trying to recreate SMs that already exist.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-12T14:15:19.702Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-type-requires-sm-type-assignment",
+      "rule": "hawkBit Distribution Set Types MUST have Software Module Types assigned as mandatory before creating Distribution Sets with those SM types. The DS type POST endpoint silently ignores the 'modules' field — you MUST call the separate POST /rest/v1/distributionsettypes/{id}/mandatorymoduletypes endpoint with the raw SM type ID (not a JSON object) after creating the DS type. Without this, creating a DS with a custom SM type returns 400 \"Distribution set type does not contain the given module, i.e. is incompatible.\"",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-12T14:15:29.773Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-superadmin-env-macro",
+      "rule": "Platform-level super admin access must use a `superAdmin` macro in withAuth() that checks SUPER_ADMIN_EMAILS env var (case-insensitive). Apply via { auth: true, superAdmin: true } on endpoints. NEVER hardcode admin checks inside handlers. The macro returns 401 (unauthenticated) or 403 (not super admin). This prevents privilege escalation — no API can grant or revoke super admin status.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-12T20:30:02.426Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-db-isolation",
+      "rule": "Tests MUST use a separate database (configured via .env.test) and clean up ALL data after each test suite using afterAll() + cleanAll(). The cleanAll() helper truncates all tables (CASCADE) and cleans hawkBit entities when enabled. This ensures: (1) idempotent test runs, (2) no data contamination between suites, (3) the test DB stays clean for the next run. Every test file imports { cleanAll } from './test-helpers' and calls afterAll(async () => await cleanAll()).",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-12T21:31:25.280Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-unclaim-vs-deprovision",
+      "rule": "Device removal from company (DELETE /companies/:id/devices/:deviceId) = UNCLAIM (sets companyId=null, status=unclaimed). hawkBit target is PRESERVED. Only DELETE /api/devices/deprovision/:serialNumber (super admin only) permanently removes from hawkBit + local DB. This two-tier pattern prevents accidental hawkBit target deletion. The deleteDevice() service function uses db.update() NOT db.delete().",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T03:57:44.394Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-helpers-cleanall",
+      "rule": "tests/test-helpers.ts provides cleanAll() that truncates ALL tables (CASCADE) + cleans hawkBit entities. Every test file imports it and calls afterAll(async () => await cleanAll()). This ensures idempotent test runs with zero data contamination. cleanHawkbitData() silently catches errors (hawkBit unavailable in test env).",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-13T03:57:55.476Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-uuid-entity-names-external-systems",
+      "rule": "When creating entities in external systems (hawkBit Distribution Sets, Software Modules, etc.), ALWAYS use UUID-based names (ds-{randomUUID()}) as the primary identifier to prevent name/version collisions (409 Conflict). Store the human-readable name in metadata fields (description). The response should return both dsName (UUID) and name (human-readable). This applies to ANY external system where multiple tenants or repeated operations could cause collisions.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:06:47.327Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-enrich-with-related-data",
+      "rule": "When listing entities from external systems (hawkBit Software Modules, etc.), enrich with related data (artifact binaries, file sizes, hashes) by fetching the sub-resources. Use async enrichSoftwareModule() that calls listArtifacts(smId) per module. The response schema must include both the entity and its nested resources (e.g., artifacts[] with size + hashes). Calculate aggregate values (total size) from the nested data. Wrap sub-resource fetches in try/catch — the entity may exist without binaries yet.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:07:07.801Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-client-integration-docs",
+      "rule": "When building APIs consumed by mobile/web clients, create a standalone integration guide (e.g., FLUTTER_DEPLOYMENT_GUIDE.md) that covers: full lifecycle flow (upload → create → monitor → cancel), every endpoint with request/response examples, error handling table (HTTP code → action), polling strategy (interval, stop condition), and status code meanings. This guide serves as the API contract between backend and frontend teams — it should be self-contained (no need to read backend code).",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-13T06:07:18.841Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-action-blocking-ddi",
+      "rule": "hawkBit DDI prioritizes cancelAction over deploymentBase in the poll response. If ANY active action has status=canceling, the device MUST send cancel feedback via POST .../cancelAction/{id}/feedback BEFORE hawkBit will offer new deployments. Firmware that only handles deploymentBase will be stuck forever when previous deployments are cancelled/superseded. The API must also force-close stale actions before assigning new DS via hawkbitTargets.cancelAction(id, actionId, true). This is not optional — it's a fundamental DDI protocol requirement.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T06:22:21.335Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-metadata-vs-deployment-status",
+      "rule": "hawkBit Distribution Set fields `complete`, `valid`, `locked` are STRUCTURAL metadata (DS has all modules, is valid, is immutable). They are NOT deployment-to-device status. The real deployment progress is in the action statistics endpoint: GET /rest/v1/distributionsets/{id}/statistics → {actions: {RETRIEVED: 1, total: 1}}. Always compute deployment status from action statistics, never from DS metadata. Enrichment pattern: enrichDeployment() fetches statistics, computes status, and returns {status, statistics: {summary}, dsMetadata: {complete, valid, locked}}.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T14:13:36.940Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-action-status-mapping",
+      "rule": "hawkBit action status to deployment status mapping: RUNNING → pending (action created, device hasn't polled), SCHEDULED → pending, RETRIEVED → in_progress (device polled and got deploymentBase), DOWNLOAD → in_progress (downloading), DOWNLOADED → in_progress (download done), FINISHED (all) → completed, ERROR → failed, WARNING → failed, CANCELED (all) → canceled, CANCELING → canceled, total=0 → no_targets. Statistics keys are UPPERCASE in hawkBit response — always normalize to lowercase before matching.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T14:13:46.192Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-two-step",
+      "rule": "hawkBit action cancellation requires a TWO-STEP process: Step 1: DELETE /rest/v1/targets/{id}/actions/{actionId} (NO force param) → creates cancel action, status becomes \"canceling\". Step 2: DELETE /rest/v1/targets/{id}/actions/{actionId}?force=true → only works AFTER step 1, force-quits immediately. Sending force=true in step 1 returns 405 \"not canceled yet and cannot be force quit\". The cancelAction() method must handle both steps automatically — catch 405 from step 2 when action is already canceling, then proceed to force-quit.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T15:15:14.136Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ds-delete-no-action-cancel",
+      "rule": "hawkBit DS deletion (DELETE /rest/v1/distributionsets/{id}) does NOT cancel active actions for assigned targets. The DS metadata is removed but orphaned actions continue running — devices still receive deploymentBase via DDI and keep downloading. Before deleting a DS, the API MUST cancel all active actions for all assigned targets using the two-step cancel process. Without this, deployments become \"zombies\" — deleted in the management UI but still actively served to devices.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T15:15:22.152Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-feedback-format",
+      "rule": "hawkBit DDI feedback format requires: (1) `id` must be STRING (\"3\"), not number (3). (2) `details` must be array of STRINGS ([\"msg\"]), not array of objects ([{\"message\":\"msg\"}]). Wrong format returns 400 \"The given request body is not well formed\". This is the most common DDI integration error for embedded devices. Always validate feedback body format against the hawkBit DDI API spec before deploying firmware.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-13T15:15:30.125Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancelaction-priority-over-deploymentbase",
+      "rule": "hawkBit DDI PRIORITIZES cancelAction over deploymentBase in the poll response. If a target has ANY active cancel-type action (even stuck in 'canceling' state), the DDI response will contain ONLY cancelAction and NO deploymentBase — blocking ALL new deployments from being offered. This is the root cause of the most critical DDI incongruence: frontend shows updateStatus=pending but device sees no update. Fix: createDeployment() must use 3-step process: (1) forceCloseActiveActions(ALL actions) before assign, (2) assignTargets, (3) forceCloseCancelActions(only cancel-type) after. Step 3 is the critical fix — it removes auto-created cancel actions without touching the new update action.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-13T21:21:38.601Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-cancel-action-type-change",
+      "rule": "hawkBit changes the action TYPE on the SAME action when cancelled: type changes from \"update\" to \"cancel\", status to \"canceling\". There is NO separate cancel action entity. The two-step process is: (1) DELETE /actions/{id} → type becomes \"cancel\", status \"canceling\"; (2) DELETE /actions/{id}?force=true → action becomes inactive, status \"canceled\". Step 1 FAILS on already-cancel-type actions. When force=true, always proceed to step 2 regardless of step 1 errors. DDI prioritizes cancelAction over deploymentBase — stuck cancel actions block new deployments.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T10:37:18.733Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-verification-step",
+      "rule": "After creating a deployment (DS → assignTargets → forceCloseCancelActions), verify that each target has an active update action. If no active update action exists, the device will NOT see deploymentBase via DDI. Log an error with the target ID and active action list. This verification step catches race conditions and hawkBit edge cases that would otherwise silently fail.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T10:37:25.576Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-pino-object-logging",
+      "rule": "Pino's TypeScript types don't support printf-style format strings (%s, %d). Use object-based logging instead: appLogger.error({ targetId, count, actions }, 'message'). This avoids TS2345 errors with pino's overloaded type signatures. The printf style works at runtime but fails type checking.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-17T10:37:32.673Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-artifact-tar-packaging",
+      "rule": "The Ninbus v3 embedded device requires artifacts in .tar format with specific structure: header-info/featureidentity.json (with {\"type\": \"...\"}) + data/payload.bin (raw firmware). The API MUST package raw firmware files (.frz, .fir, .bin) into this .tar format using tar-stream BEFORE uploading to hawkBit. Plain .tar only (NOT .tar.gz — device decompressor is stub). Directory names and payload filename are EXACT: header-info, data, payload.bin. Valid types: configuration-nfx, firmware-ninbus, firmware-controller.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:28:44.187Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-soft-delete-uuid-names",
+      "rule": "hawkBit enforces UNIQUE(name, version, type) constraint on Software Modules INCLUDING soft-deleted rows. After DELETE, hawkBit sets deleted=true but keeps the row — re-creating with the same name fails with 409. Solution: ALWAYS use UUID-based names (sm-{uuid}) for SM creation. Store user-visible names in SM description metadata. extractDisplayName() parses the description for display. This also allows multiple companies to upload the same filename without conflicts.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:57:47.285Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sm-id-for-deployments",
+      "rule": "Deployments should reference artifacts by numeric hawkBit SM ID, not by artifactName. The deployment's findSoftwareModule() should accept both: if input is numeric → use as SM ID directly (GET /softwaremodules/{id}), else fall back to name-based search. This ensures deployments work reliably even after artifact re-uploads create new SM IDs.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-17T17:57:57.017Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-event-driven-sync",
+      "rule": "SSE (Server-Sent Events) replaces REST polling for real-time UI updates. Pattern: sync engine detects hawkBit changes → emits SSE events per company → Flutter EventSource receives push. SSE carries volatile fields inline (device.status: connectionStatus, hawkbitUpdateStatus, lastPollAt, ipAddress) and signals for structural changes (device.claimed/unclaimed, deployment.created). SSE endpoint reuses auth-guard macro (companyRole: 'viewer'). Elysia returns ReadableStream with text/event-stream. Heartbeat every 30s keeps connections alive through proxies. Max 50 connections per company (evicts oldest). SSE is ADDITIVE — zero REST endpoints change, SSE fails gracefully to REST.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T03:56:38.036Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-stream-fully-read",
+      "rule": "AWS SDK v1's S3ObjectInputStream logs WARN 'Not all bytes were read, aborting HTTP connection' when the stream is closed before fully consumed. This aborts the TCP connection to S3, forcing a new connection on the next request — causing download slowdowns. Fix: read the entire S3 object into memory (readAllBytes() + ByteArrayInputStream) before returning. For firmware artifacts (<50MB), the memory overhead is negligible and eliminates connection abort overhead. Only use direct streaming for files >100MB.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T11:46:21.896Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-elysia-param-name-conflict",
+      "rule": "Elysia does NOT allow different parameter names at the same URL position across routes in the same instance. /targets/:controllerId/status-trail CONFLICTS with /targets/:targetId/actions/:actionId/status because the :controllerId vs :targetId param at position 3 differs. Use the SAME param name (e.g. :targetId) for all routes at the same path position.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-18T14:08:20.716Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-finished-always-success",
+      "rule": "hawkBit action status type='finished' ALWAYS means success. The DDI mapping is: closed+success → finished, closed+failure → error. Never override phase based on message content (like 'rebooting') when type='finished'. The message is informational — the action is complete. Map type='finished' → phase='success' unconditionally.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-19T23:44:39.536Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-assign-body-type-field",
+      "rule": "hawkBit Management API expects field name 'type' (not 'forceType') in assignment bodies for both POST /distributionsets/{id}/assignedTargets and POST /targets/{id}/assignedDS. While the default is 'forced', always use the correct field name. The body format is: [{ \"id\": \"controllerId\", \"type\": \"forced\" }].",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-21T17:41:46.304Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-ddi-diagnostic",
+      "rule": "When a device polls hawkBit DDI but gets no deploymentBase despite a DS being assigned, check: (1) active cancel actions blocking, (2) DS missing artifacts on its Software Module, (3) action not actually created. Add a DDI diagnostic function that queries the Management API to simulate what DDI would return: active update actions, active cancel actions, DS completeness, target updateStatus. Never assume the Management API view matches the DDI view.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-21T17:41:54.419Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-sm-artifact-validation",
+      "rule": "Before creating a deployment, ALWAYS verify the Software Module has at least one artifact (binary file) uploaded. hawkBit will NOT offer deploymentBase via DDI for a Distribution Set whose Software Module has no artifacts. The SM creation succeeds without artifacts — only the artifact upload populates the binary. Check via GET /rest/v1/softwaremodules/{id}/artifacts before allowing deployment creation.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-21T17:42:02.031Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-delete-must-clear-local-state",
+      "rule": "When deleting a hawkBit Distribution Set (deployment), you MUST also clear local device records. hawkBit soft-deletes DSes and may not immediately update target.updateStatus. Without clearing local state, the sync engine re-reads stale 'pending' status from hawkBit and overwrites the local DB, causing the deployment to 'come back' on frontend refresh. Delete flow: (1) collect target IDs from DS, (2) force-close ALL their actions, (3) delete DS, (4) UPDATE devices SET hawkbitUpdateStatus='in_sync' WHERE hawkbitTargetId IN (targets), (5) emit SSE deployment.deleted + device.status events.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T03:29:05.838Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-size-param-required",
+      "rule": "hawkBit artifact upload (POST /rest/v1/softwaremodules/{id}/artifacts) does NOT auto-detect file size from multipart/form-data. You MUST pass `size` as a query parameter explicitly. Without it, hawkBit stores size=0, and DDI deployment details omit the field — embedded devices cannot calculate download progress and show \"?KB\" instead of actual sizes. Always include: query: { filename: file.name, size: file.size }.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T17:49:05.853Z",
+      "reinforcementCount": 2
+    },
+    {
+      "id": "p-sync-status-protection",
+      "rule": "When the sync engine reads external service data (hawkBit targets) and writes to local DB, any operation that clears device status (deployment delete, action cancel) must be protected from sync overwrites. Use a TTL-based in-memory Map (targetId → {status, until}) to enforce the cleared status for a period (e.g., 2 minutes). The sync engine checks this map before writing hawkBit's status to local DB. Without this, the sync engine will overwrite freshly-cleared 'in_sync' status back to 'pending' from stale hawkBit data — causing deleted deployments to \"come back\" in the UI.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T17:49:15.689Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-status-edge-cases",
+      "rule": "computeDeploymentStatus() fallback for total>0 with 0 known status keys MUST be 'pending', NOT 'in_progress'. When hawkBit creates actions but hasn't updated statistics yet, returning 'in_progress' or 'completed' is misleading. 'pending' correctly indicates the action exists but the device hasn't reported yet.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:29.105Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-display-name",
+      "rule": "Deployment status computed from hawkBit statistics is ALWAYS a live API call — there is no local caching. When the statistics fetch fails (hawkBit down, timeout), return 'unknown' status instead of computing from empty data (which would return 'no_targets'). 'unknown' tells the frontend \"we don't know\" rather than \"there are no targets\".",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:40.412Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-ds-display-name-extraction",
+      "rule": "DS names in hawkBit are UUID-based (ds-{uuid}) to avoid UNIQUE constraint conflicts with soft-deleted rows. The user-visible deployment name is stored in the DS description field as \"{name} | artifact: ...\". Always extract and return displayName from the description in enrichDeployment() so the frontend gets the correct name immediately without a second fetch or 2-second delay.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T20:38:48.136Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-engine-file-split",
+      "rule": "When a sync engine file exceeds 250 lines, split by domain: sync-core.ts (types, protection, single-device), sync-fetch.ts (paginated hawkBit queries), sync-helpers.ts (batch DB ops, re-exports), sync-strategies.ts (periodic/hybrid), sync.ts (orchestrator). Keep sync-helpers.ts as barrel re-export for backward compatibility.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-22T21:19:00.997Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-swagger-config-extraction",
+      "rule": "When app.ts exceeds 250 lines, extract swagger/scalar configuration to common/swagger-config.ts. The config object is pure data (no framework imports except types). app.ts imports and passes to swagger() plugin. This typically saves 100+ lines.",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-05-22T21:19:07.635Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-logger-format-strings",
+      "rule": "ALL appLogger.warn/error/info calls in hot-path code (request handlers, sync engine, service layer) MUST use %s/%d/%j format strings, NEVER template literals with interpolation. Template literals force string allocation even when the log level is disabled. Exception: single-execution startup/shutdown logs in index.ts are acceptable.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-05-22T21:19:15.776Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-raw-proxy-schemas",
+      "rule": "When route files proxy raw hawkBit data (targets, actions, diagnostics), define named schemas in schemas.ts (e.g., RawTargetListResponseSchema, RawDiagnosticResponseSchema) instead of inline t.Object({ data: t.Any() }). This maintains the \"no inline response schemas in routes\" rule even for passthrough endpoints. Use t.Any() with description inside the named schema for documentation.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-22T21:19:22.495Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-assertion-precision",
+      "rule": "Tests that accept multiple status codes like [201, 500] are hiding bugs. A 500 Internal Server Error is NEVER an acceptable test outcome — it means the server crashed. If a FK violation or business rule violation is expected, assert for specific error codes (400, 404, 422). If the behavior is uncertain, use a narrower range like [400, 404, 422] and document why.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-05-22T21:39:54.373Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-compose-env-vars",
+      "rule": "Docker Compose does NOT automatically pass ALL .env variables to containers. Only variables explicitly listed in the service's `environment:` section are passed. When adding a new env var to .env and env.ts, it MUST also be added to docker-compose.yml's environment section. Missing this means the container gets an empty/undefined value. Check all env vars: SUPER_ADMIN_EMAILS, HAWKBIT_*, DATABASE_URL, BETTER_AUTH_*, etc.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-22T22:01:33.801Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-superadmin-company-bypass",
+      "rule": "Super admins (via SUPER_ADMIN_EMAILS env) should bypass companyRole membership checks. They get implicit 'owner' role for any company. This is critical for: SSE connections (super admin needs to monitor all companies), company admin operations, and device management across companies. Without this, super admins can't use company-scoped endpoints without being explicitly added as members.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-05-22T22:32:08.900Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-line-buffering",
+      "rule": "SSE parsers MUST buffer partial lines across TCP chunks. TCP chunk boundaries do NOT align with SSE event boundaries. Splitting each chunk by '\\n' independently loses data when a chunk ends mid-line. Use a lineBuffer: concatenate buffer + new text, split by '\\n', keep last element as buffer, process all others. Also: strip '\\r' from lines, and set receiveTimeout=Duration.zero for long-lived SSE connections (Dio default 30s kills the stream).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-26T20:27:15.360Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-phase-names-match-ui",
+      "rule": "API phase values should match what the frontend displays, not internal protocol terminology. 'retrieved' (DDI) → 'pending' (UI), 'finished' (hawkBit) → 'installed' (UI). Phase values are the contract between API and frontend. Document the full mapping in docs/ so both backend and frontend teams share a single source of truth.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-28T14:00:21.144Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-presigned-architecture",
+      "rule": "S3 pre-signed URLs for device downloads follow the pattern: device → API (auth + 302 redirect) → S3 direct. The API never proxies the binary. Key format must match the hawkBit S3 extension: {tenant}/{sha1}. AWS SDK v3 generates pre-signed URLs locally (HMAC-SHA256) with zero HTTP calls to S3. S3_PRESIGNED_ENABLED feature flag gates the entire flow — returns 503 when disabled.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-05-31T10:27:53.937Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-s3-env-division",
+      "rule": "S3_PRESIGNED_EXPIRY_SEC is in seconds (API uses it directly). The hawkBit Java extension uses minutes (presignedExpiryMinutes). In docker-compose.yml, pass S3_PRESIGNED_EXPIRY_SEC to both services — the hawkBit extension must internally divide by 60 OR the docker-compose can map appropriately. Keep the env var in seconds (standard) and convert in each consumer.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-05-31T10:28:04.462Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-token-cache-at-scale",
+      "rule": "When an auth mechanism requires external API calls per request (e.g., validating TargetToken against hawkBit), and the system must scale beyond 1k concurrent requests, use an in-memory cache (Map<key, token>) populated by the sync engine. At 55k devices: 55k API calls per mass download = hawkBit overload. Cache reduces auth latency from ~150ms to ~1ms. Cache MISS falls back to API call + populate. Sync engine refreshes cache every 30s (already fetches all targets). Cache size: 55k entries × ~64 bytes = ~3.5MB (trivial). For timing-attack prevention, use crypto.timingSafeEqual() in production.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-01T19:54:41.330Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-cdn-url-in-artifact-server",
+      "rule": "CDN URL generation for artifact downloads belongs in the artifact server (hawkBit), NOT the API (Ninbus). hawkBit 1.0.3 has a native ArtifactUrlResolver interface — custom implementations intercept DDI deploymentBase URL generation. The device follows URLs from deploymentBase without knowing if it downloads from hawkBit, CloudFront, or R2. When a custom ArtifactUrlResolver bean is registered, it replaces the default PropertyBasedArtifactUrlResolver. Use @ConditionalOnProperty for automatic mode selection (CloudFront RSA when key-pair-id is set, R2 HMAC when only base-url is set).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-01T22:15:29.169Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-credentials-in-repo",
+      "rule": "NEVER commit real credentials to git. This includes .env.test, scripts with hardcoded connection strings, or any file containing real passwords/API keys/database URLs. All sensitive values go in .env (gitignored). Scripts must read from environment variables only. Run `git ls-files | xargs grep -l \"npg_|AKIA|password=\" ` periodically to catch leaks. .env.test with real DB URLs must be in .gitignore.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-02T19:29:20.601Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-push-without-authorization",
+      "rule": "NEVER run `git push` without explicit authorization from the user. Always commit locally and report what's ready, but wait for the user to say \"push\" or \"faz o push\" before pushing to remote. This prevents accidental exposure of incomplete work or credentials.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-02T19:38:20.343Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-tenant-isolation-via-local-table",
+      "rule": "All hawkBit resources (artifacts=Software Modules, deployments=Distribution Sets) MUST have a local DB record with companyId for tenant isolation. The hawkBit API is shared/global — it has no concept of company. Create local tables (artifacts, deployments) with hawkbitSmId/hawkbitDsId + companyId. Use write-through: create in hawkBit + insert local record. All reads filter by companyId (like devices). All mutations verify ownership via requireOwnership(companyId, hawkbitId) before accessing hawkBit. The companyRole macro only verifies membership — it does NOT verify data ownership.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-04T15:24:21.100Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-serial-decimal-hex-conversion",
+      "rule": "Serial numbers use decimal display format (AA.M.PP.SSS.NNNNN, e.g. 26.5.15.001.00777) converted to 16-char HEX controller ID (e.g. 1A50F00100309FFF) via EEPROM nibble packing. The conversion (decimalSerialToHex/hexToDecimalSerial) lives in src/common/utils/serial-number.ts. Reserved FFF nibbles (byte[6] low + byte[7]) validate that a HEX string is a real serial number — non-serial HEX (STM32 UID) falls back to dotted-hex display. The API accepts both decimal and HEX input for backward compatibility. The DB stores serialNumber=HEX (controllerId), serialDisplay=decimal.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-06T22:30:32.361Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-serial-bcd-packing",
+      "rule": "Serial numbers use BCD packing (NOT binary bit-shift packing). Algorithm: AA→binary byte, then M(1 hex char 0-C)+PP(2 digits)+SSS(3 digits)+NNNNNN(5 digits)→nibble stream+FFF reserved = 14 nibbles = 7 bytes. Total: 8 bytes = 16 hex chars. Month is 1 hex char: 0-9=Jan-Sep, A=Oct, B=Nov, C=Dec. Each display digit becomes exactly 1 nibble in the EEPROM. The previous binary packing algorithm (with bit shifts and masks) was INCORRECT — validated against real EEPROM reads from the device.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-07T15:46:20.929Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-push-without-approval",
+      "rule": "NEVER push to remote without explicit human approval. After implementing changes: (1) present plan, (2) wait for approval, (3) implement, (4) present results, (5) wait for explicit \"push\" authorization. Pushing without permission breaks trust and may deploy broken code to production.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-10T16:21:25.055Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-action-plan-before-code",
+      "rule": "ALWAYS present a structured action plan BEFORE writing any code. The plan must include: (1) problem analysis, (2) files to change with specific modifications, (3) estimated line count per file, (4) performance/cost impact, (5) test strategy, (6) risks and mitigations. Wait for human approval of the plan before implementing. Never start coding without an approved plan.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-10T16:21:38.258Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-esm-reexport-is-not-local-binding",
+      "rule": "`export { X } from 'module'` is a RE-EXPORT only — it does NOT create a local binding for X. If you need X both locally AND as an export, you must use a separate `import { X } from 'module'` line. Missing this causes `ReferenceError: X is not defined` at runtime, which often gets caught by generic error handlers and mislogged (e.g., \"hawkBit unavailable\" instead of a missing import error). Always check for duplicate import/re-export when splitting files.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T02:48:57.980Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-progress-needs-action-polling",
+      "rule": "The sync engine reads only target.updateStatus (high-level: pending/in_sync/error) from hawkBit targets. Detailed progress (downloading 25%, installing, etc.) lives in hawkBit ACTION status entries, which require a separate API call (getActionStatus). Any real-time progress UI must poll action statuses for devices with updateStatus='pending' — the target-level status alone is insufficient.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:32:32.713Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-action-no-ds-link",
+      "rule": "hawkBit HawkbitAction type does NOT include distributionSet in _links. To resolve which DS an action belongs to, query the local DB for candidate DS IDs, then call hawkBit getAssignedDS(controllerId) to match. Never rely on action._links['distributionset'] — it doesn't exist in hawkBit 1.0.3.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:44:17.364Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sync-progress-scalability",
+      "rule": "When polling external API per-device (action status, inventory, etc.), ALWAYS apply: (1) hard cap per cycle with round-robin for overflow, (2) deduplication by device ID, (3) skip-unchanged cache using lastModifiedAt or ETag, (4) concurrency limit (10 parallel max). Without these, 1000 devices × 2 requests every 5s = 24,000 req/min which overwhelms hawkBit.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T12:44:27.054Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-re-export-no-local-binding-v2",
+      "rule": "export { X } from 'module' does NOT create a local binding for X. If you need to USE X in the same file AND re-export it, you need BOTH: import { X } from 'module'; export { X }; This applies to ALL re-exports in service files — check every `export { ... } from './other'` and verify the exported symbol is not also called locally. This is the SECOND time this exact bug happened (first: resolveLockStatus in artifacts, now: requireDeploymentOwnership in deployments).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-11T13:45:34.972Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-pgpooler-search-path",
+      "rule": "When hawkBit shares a PostgreSQL database (especially Neon's PgBouncer `-pooler` endpoint in transaction pooling mode) with another app, do NOT rely on a dedicated schema for hawkBit tables. Transaction pooling resets `search_path` between transactions, so `currentSchema` in the JDBC URL does NOT persist — Spring Integration's `JdbcLockRepository` (raw JdbcTemplate, schema-unqualified `SELECT ... FROM SP_LOCK`) fails with \"relation sp_lock does not exist\". Two fixes that WORK: (1) coexist in the `public` schema (hawkBit `sp_*` tables never collide with app tables) with `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` + `SPRING_FLYWAY_BASELINE_VERSION=0` so Flyway creates tables despite existing app tables; (2) `ALTER ROLE <user> IN DATABASE <db> SET search_path TO public` so PostgreSQL reapplies the GUC to every backend (survives PgBouncer reset). A dedicated schema + `currentSchema` URL param does NOT work with PgBouncer transaction pooling.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:14:54.714Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-assignedtargets-historical",
+      "rule": "hawkBit's `GET /rest/v1/distributionsets/{dsId}/assignedTargets` returns ONLY targets whose CURRENT assignment is that DS — not the historical list. When a target is re-assigned to a newer DS, it silently disappears from the old DS's list, making old deployments look empty. NEVER use assignedTargets as the source of truth for a deployment's target list in a history view. The local DB audit column (`deployments.target_ids`, a JSON array of controllerIds captured at deployment time) is the source of truth for historical target lists. To get a target's status for a SPECIFIC historical DS, filter its actions via RSQL `q=distributionSet.id=={dsId}` on `GET /rest/v1/targets/{cid}/actions` — do NOT just take the target's most recent action (it may belong to a different DS). enrichDeployment MUST merge the local DB record (artifactVersion, targetIds, targetCount, displayName) to present correct historical data.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:15:08.613Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-betterauth-background-tasks-swallow",
+      "rule": "Better Auth runs email-sending callbacks (sendResetPassword, sendVerificationEmail) through `ctx.context.runInBackgroundOrAwait()` (create-context.mjs), which wraps the call in try/catch and only LOGS errors — it NEVER propagates them to the HTTP response. This is by design (anti-enumeration: the /request-password-reset endpoint always returns 200 regardless of send outcome). Consequence: you CANNOT make that endpoint return 5xx on Resend failure through the normal flow, no matter what sendEmail throws. Do not waste time wrapping auth.handler in try/catch expecting to catch email failures. Correct approach: (1) make sendEmail log failures loudly with full Resend error details (the log is the ONLY signal), (2) add a separate admin/diagnostic health-check for the email service, (3) verify the Resend domain is verified (resend.dev sandbox ONLY delivers to the account-owner email). A `FRONTEND_URL` env var is required because Better Auth builds the reset link from BETTER_AUTH_URL (which points at the API) — rewrite it to ${FRONTEND_URL}/reset-password?token=... inside sendResetPassword.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T19:15:20.637Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-resend-dashboard-templates",
+      "rule": "For transactional emails (password reset, verification, notifications), use Resend Dashboard Templates referenced by ALIAS (not inline HTML in code). The Resend SDK v6+ CreateEmailOptions supports `template: { id, variables }` where `id` accepts either the template ID (tmpl_xxx) or the alias string. When `template` is set, `html`/`text`/`react` must be OMITTED (mutually exclusive — sending both causes a 422). `subject` is optional when using a template (the dashboard template defines its own subject). Store template aliases in env (e.g. RESEND_TEMPLATE_PASSWORD_RESET=password-reset) so non-developers can edit copy without redeploying; fall back to inline HTML when the env var is unset (logged warning). The template MUST be PUBLISHED in the Resend dashboard before it can be used for sending (draft templates cannot be referenced). Template variables are flat Record<string, string|number> — pass user data like { first_name, reset_password_url }. Extract first_name defensively from user.name (split on whitespace, never throw).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-20T21:06:37.528Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-category-members-group-lifecycle",
+      "rule": "Para gerenciar membros (dispositivos) dentro de um grupo (categoria), implemente endpoints group-centric sob /api/companies/:companyId/categories/:categoryId/devices: GET (list), POST (add — idempotente), PUT (replace all), DELETE /:deviceId (remove single). POST deve ser IDEMPOTENTE (skip já-membros em vez de erro) e CROSS-TENANT SAFE (filtrar deviceIds por companyId antes de inserir — nunca confiar que IDs passados pertencem à empresa). Remover um membro (DELETE /:deviceId) NÃO é operação destrutiva do grupo → operator, não admin. Deletar o grupo inteiro ainda é admin. A FK cascade na tabela device_category_assignments (onDelete: cascade) garante que deletar a categoria remove as atribuições mas PRESERVA os dispositivos na empresa. Testar explicitamente o caso cross-tenant (dispositivo de outra empresa é silenciosamente rejeitado) — é o principal vetor de leak.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-21T01:55:09.543Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-verify-migrations-after-deploy",
+      "rule": "After EVERY deploy that includes a new Drizzle migration, verify the schema was applied by querying information_schema.columns directly against the production DB (via psql or SQL console) — NEVER trust \"container started healthy\" alone. The startup migration runner (src/scripts/migrate.ts) catches errors and lets the server start with an incomplete schema, so a failed migration is SILENT: the app degrades gracefully (queries fail, catch returns empty data, endpoints return 200 with empty lists) while logging level-50 errors. Symptom: GET /deployments returns 200 with [] and logs \"[DEPLOYMENTS] DB query failed: column ... does not exist\". Always check: (1) docker-compose logs api | grep -i migrat for the runner's verdict on each migration tag, (2) SELECT column_name FROM information_schema.columns for new columns, (3) SELECT tablename FROM pg_tables for new tables. The psql client on EC2 may be v15 while RDS is v18 — \\l and \\dt break with \"column d.daticulocale does not exist\"; use SQL queries (SELECT datname FROM pg_database, SELECT tablename FROM pg_tables WHERE schemaname='public') instead of meta-commands. RDS databases: connect to the SPECIFIC database (ninbus_api_db), not the default 'postgres' database which is empty.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-22T21:45:43.742Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-reverse-proxy-forward-headers",
+      "rule": "When putting hawkBit behind a reverse proxy (Nginx/Caddy/Traefik), you MUST set SERVER_FORWARD_HEADERS_STRATEGY=framework on the hawkBit container AND have the proxy send X-Forwarded-Proto/Host/Port + Host headers. Without this, hawkBit's DDI responses generate _links with absolute URLs pointing to the INTERNAL hostname (http://hawkbit:8080) instead of the public domain — devices cannot resolve/follow the links and polling breaks. Also: only route /<tenant>/controller/v1/* (DDI) through the public proxy; block /rest/v1/* (Management API) publicly — the Ninbus API reaches it via the internal Docker network (HAWKBIT_URL=http://hawkbit:8080). The app's rate limiter already reads x-forwarded-for so it is proxy-ready.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-25T15:07:00.453Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nginx-sse-buffering-already-sent",
+      "rule": "When adding a reverse proxy in front of the Ninbus API, do NOT add X-Accel-Buffering: no to SSE endpoints — it is ALREADY sent in src/modules/sse/index.ts (both company-scoped and global). Just set proxy_buffering off + long proxy_read_timeout in the nginx location for the API vhost. Likewise, deviceKey already has minLength validation in schemas.ts; do not add PUBLIC_DOMAIN/PUBLIC_PROTOCOL to env.ts speculatively — only add env vars when there is a real consumer (adding unused config violates the project's own centralization principle). The nginx config must be HTTP-only in the transitional phase so it starts today without certificates; TLS (:443) blocks stay commented until Fase 6.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-26T02:10:40.474Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nginx-docker-dynamic-dns-resolution",
+      "rule": "When nginx proxies to Docker Compose service names (api:8081, hawkbit:8080), do NOT use `upstream {}` blocks — nginx open-source resolves upstream hostnames ONCE at startup via getaddrinfo(), which races the Docker embedded DNS (127.0.0.11) at container start and aborts with \"host not found in upstream\", sending the container into a restart loop even though `getent hosts api` resolves fine from another container. Instead: add `resolver 127.0.0.11 valid=30s ipv6=off;` to the http/server context and use `set $backend \"api:8081\"; proxy_pass http://$backend;`. This resolves at REQUEST time, decouples proxy start from backend readiness, and survives backend restarts. ALSO: do NOT force `USER nginx` in the Dockerfile — the master needs root to bind :80 and create /var/cache/nginx/* (workers already run as nginx by default). AND: the healthcheck must use `http://127.0.0.1/health` not `localhost` — in alpine, localhost resolves to ::1 (IPv6) which nginx doesn't listen on, causing a spurious \"unhealthy\". All three learned empirically against the live stack.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-26T13:19:59.764Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-single-tenant-ownership-via-local-table",
+      "rule": "hawkBit runs as a SINGLE tenant (\"DEFAULT\") and has NO concept of companyId. Therefore ANY global lookup into hawkBit (hawkbitSoftwareModules.get/list by SM ID, hawkbitTargets.get by controllerId, hawkbitDistributionSets.get by DS ID) is cross-tenant BY DESIGN — it returns whatever matches the ID regardless of company. Tenant isolation MUST be enforced via the local Ninbus tables filtered by companyId, NEVER via hawkBit queries. This was the root cause of the findSoftwareModule cross-tenant bug: it called hawkbitSoftwareModules.get(numericId) directly, letting an operator of company A reference company B's artifact by guessing the sequential SM ID (brute-force enumeration returns the whole catalog). Fix: findSoftwareModule(companyId, nameOrId) queries the `artifacts` table with WHERE company_id. Same class of bug applies to routes receiving a raw targetId in the path (action-status, ddi-check): companyRole only checks company MEMBERSHIP, not that the target belongs to that company — those routes MUST call isTargetOwnedByCompany(companyId, targetId) before any hawkBit call, returning 404 (never 403, to avoid leaking target existence). Also: nginx Basic Auth for /docs protects /docs AND /docs/json (the spec exposes all schemas/request examples) in one location block — .htpasswd is gitignored and BCrypt-hashed (nginx:alpine supports $2y$).",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-06-26T19:45:36.139Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-custom-scheme-email-links-not-clickable",
+      "rule": "Custom URL schemes (e.g. \"ninbus://\") in email body links are NOT clickable inside most mobile email clients (Gmail, Outlook, Yahoo strip non-http(s) hrefs as an anti-phishing measure). Always use an https App Link (e.g. \"https://domain.com/path\") for email CTAs: it is clickable everywhere AND opens the app directly when the domain is verified via /.well-known/assetlinks.json (Android) + /.well-known/apple-app-site-association (iOS). Extract deep-link builders into their own module (deep-link.ts) so they can be unit-tested WITHOUT importing auth.ts (which initializes Better Auth + DB connection at module load). Tests mutate env.APP_DEEP_LINK_BASE directly. Keep the fallback-to-original-URL + warn behavior for missing config.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-27T02:57:57.563Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-deployment-version-not-identity-sm-id-unique",
+      "rule": "When resolving a hawkBit Software Module for a deployment, version and artifactType are METADATA, not IDENTITY. The SM ID (hawkbitSmId) is globally unique (uniqueIndex) and the display name scoped by companyId is the identifier. NEVER filter a numeric SM ID lookup by version: createDeployment defaults version to data.version ?? '1.0', which diverges from the stored version → false 422 \"Artifact not found\". Numeric SM ID lookups have NO relax path (the name-relax is name-only), so a version mismatch there was an unrecoverable 422 regression. Fix: for numeric IDs, confirm company-ownership ONLY (no version/type filter — the ID already identifies the exact artifact). For names, keep a relax-to-name-only path (version/type are advisory disambiguation). Cross-tenant stays blocked: a foreign SM ID simply has no local row for that companyId → null.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-27T03:46:12.870Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nextjs-cross-origin-cookie-proxy",
+      "rule": "When a Next.js dashboard runs on a different (sub)domain than the API (e.g. ninbus.frt.com.br/admin vs api.ninbus.frt.com.br), the session cookie (sameSite:'lax') does NOT travel from browser→API cross-site. Solution: a Route Handler at app/api/[...path]/route.ts acts as the SINGLE same-origin proxy. It does server-side fetch to http://api:8081 (compose service name) and repasses the cookie. CRITICAL: the proxy MUST forward the 'origin' header — Better Auth's trustedOrigins check returns 403 without it. The catch-all captures everything AFTER /admin/api/, so the proxy must reconstruct the /api prefix: /admin/api/auth/x → http://api:8081/api/auth/x. Add the dashboard domain to CORS_ORIGIN. The browser NEVER calls the API directly.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-28T18:59:32.622Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-commit-push-without-explicit-request",
+      "rule": "NEVER run git commit, git push, or any version-control write operation unless the user EXPLICITLY asks for it in the current message. Implementing code, testing, and validating is fine, but persisting to git history / publishing to remote requires a direct, current request. Do not assume previous permission carries over — re-confirm each time. When finishing work, leave changes staged or unstaged in the working tree and summarize what is ready to commit, rather than committing automatically.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-28T19:19:50.545Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nextjs-basepath-routing-and-nginx-loop",
+      "rule": "Next.js `basePath` gotchas (caused ERR_CONNECTION_REFUSED-style \"dashboard broken\"): (1) Route files live at the app root (or a route GROUP like `(admin)/`), NEVER under a directory named after the basePath — `src/app/admin/` + `basePath:'/admin'` = routes at `/admin/admin/*`. Use `src/app/(admin)/` (group, no URL impact) to scope a layout without doubling the path. (2) `next/link`, `useRouter().push()`, and `redirect()` from next/navigation AUTO-apply basePath — write paths WITHOUT the prefix (`/overview` → `/admin/overview`). But `fetch()` and `<form action>` do NOT auto-apply it. (3) Server Components/server actions calling `fetch()` need an ABSOLUTE url (no document origin) — a relative path like `/admin/api/...` throws `TypeError: Invalid URL` server-side. Server→API must use the internal absolute URL (e.g. `http://api:8081/api/...`); the Route Handler proxy is for the BROWSER only. (4) nginx + Next.js redirect loop: Next.js `trailingSlash:false` canonicalizes `/admin/`→`/admin` (308); pairing an nginx `/admin`→`/admin/` 301 with that 308 = infinite loop. Don't redirect at nginx — proxy both `/admin` and `/admin/*` straight through with a variable `proxy_pass` (no URI part) to preserve the request URI. (5) Always add `.dockerignore` (node_modules, .next) — without it the build context balloons to ~800MB and builds time out.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-28T20:11:06.234Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-ky-v2-api-and-better-auth-not-swappable",
+      "rule": "ky v2 (2.x) breaking API changes vs v1: `prefixUrl` was RENAMED to `prefix`, and ky 2.x `prefix` normalizes slashes at the join boundary automatically (trims trailing slash of prefix + leading slash of input) — so you no longer strip leading slashes manually. ky 2.x also has a separate `baseUrl` (web-standard URL resolution) distinct from `prefix`. `SearchParamsOption` accepts `Record<string, string|number|boolean|undefined>` (NOT null — drop null from your Query type or it fails typecheck). When adding a modern request lib: (1) Better Auth's React client CANNOT use it — `createAuthClient` hardcodes `customFetchImpl: fetch` and ignores `fetchOptions.customFetch`; force a same-origin URL via the `basePath` option instead (getBaseURL builds `${window.location.origin}${basePath}`). A previous `baseURL: 'http://placeholder'` + customFetch-rewrite hack silently never ran → browser tried to resolve literal host `placeholder` → infinite loading. (2) A TRANSPARENT proxy must use native fetch, not ky — ky auto-parses JSON and throws on non-2xx, the exact opposite of what a relay needs. Use ky for data clients and typed façades; keep fetch for verbatim proxying.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-29T00:10:22.137Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-domain-driven-design-system-over-templates",
+      "rule": "A domain dashboard's visual identity must come from encoding DOMAIN SEMANTICS into the design system — not from a brand color or template tropes. Generic \"AI-looking\" dashboards all share: stat-cards with icon-in-colored-box, rounded-xl everywhere, pill-badges for every status, all text in the body font, emoji in copy, centered floating login card. To escape that for an operational/domain product: (1) render machine IDENTIFIERS (serials, UUIDs, version strings, target IDs, keys) in monospace — the single most distinctive, domain-authentic move; (2) status as SIGNAL GEOMETRY (dot/ring/square/diamond/slash) with semantic tones, not uniform pills; (3) the core domain FLOW as a visualization (OTA deployment = pipeline: assigned→downloading→installed), not a count in a card; (4) density over whitespace for real data (Linear/Vercel density); (5) a command palette (⌘K) for power operators; (6) color is SEMANTIC only (1 action accent + 5 signal tones), no decorative gradients/glassmorphism; (7) zero emoji, terse operational copy. Architecture: layer 0 = untouched shadcn primitives; layer 1 = system/* design-system + layout/* shell (reusable simple components: text/buttons/cards/nav, all containerizable, single barrel export); layer 2 = domain/* composites; pages = ≤40-line composition roots. Container vs presentational split (pages fetch, tables/dialogs receive data via props). Status→color lives in ONE typed source (tokens.ts).",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-06-29T00:31:53.608Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-windows-case-insensitive-shadcn-migration",
+      "rule": "When adding shadcn/ui (lowercase filenames: button.tsx, card.tsx, input.tsx, badge.tsx) to a Next.js project on Windows that ALREADY has hand-rolled capitalized components (Button.tsx, Card.tsx, Input.tsx, Badge.tsx), the OS is case-INSENSITIVE: writing the lowercase file MERGES into the existing capitalized one (disk keeps the first-seen capitalization, content is replaced). This silently breaks two ways: (1) the old pages now import `{ Field, Select, StatusBadge, CardBody }` from the capitalized path but the new shadcn file only exports `Button/buttonVariants` — compile error; (2) even after migrating pages to lowercase imports `@/components/ui/button`, the Docker build (Linux, case-SENSITIVE) FAILS with \"module not found\" because the file on disk is still `Button.tsx`. Fix: (a) migrate ALL consumers atomically in one batch — no incremental build is possible once the merge happens; (b) force case-fix via a two-step rename: `mv Button.tsx button.tmp.tsx && mv button.tmp.tsx button.tsx` (a direct case-only mv is a no-op on Windows); (c) always typecheck with `npx tsc --noEmit` after clearing `.next/` (stale generated types under .next/types reference old paths and produce false errors). General lesson: on Windows dev → Linux/Docker deploy, treat filename casing as significant and verify in the Docker build, not just the local editor.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-29T01:24:26.551Z",
+      "reinforcementCount": 1
+    }
+  ]
 }

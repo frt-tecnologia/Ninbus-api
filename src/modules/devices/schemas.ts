@@ -1,143 +1,137 @@
 import { devices } from '@common/db/schema';
-import { dateTimeString, nullableDateTimeString, ErrorResponseSchema, GenericActionResponseSchema } from '@common/schemas';
+import {
+	ErrorResponseSchema,
+	GenericActionResponseSchema,
+	dateTimeString,
+	nullableDateTimeString,
+} from '@common/schemas';
 import { createSelectSchema } from 'drizzle-typebox';
 import { t } from 'elysia';
 
-export const registerDeviceSchema = t.Object(
+export const provisionDeviceSchema = t.Object(
 	{
-		name: t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' }),
-		serialNumber: t.Optional(t.String({ maxLength: 255, description: 'Device serial number' })),
-		menderDeviceId: t.Optional(
-			t.String({ description: 'Existing Mender device ID (if already registered in Mender)' }),
+		serialNumber: t.String({
+			minLength: 1,
+			maxLength: 255,
+			description:
+				'Device serial number. Accepts display format (26.6.15.001.00031) or HEX format (1A61500100031FFF). ' +
+				'Month field accepts 0-9 and A(B=Nov, C=Dec). Display is converted to 16-char uppercase HEX ' +
+				'using BCD packing (each digit = 1 nibble). Stored as uppercase HEX in the database.'
+		}),
+		deviceKey: t.String({
+			minLength: 8,
+			maxLength: 256,
+			description:
+				'Factory security token (TargetToken). Set as the hawkBit target securityToken so the device ' +
+				'can authenticate via DDI header: Authorization: TargetToken {deviceKey}.',
+		}),
+		name: t.Optional(
+			t.String({
+				maxLength: 255,
+				description: 'Optional display name. Defaults to serial display format (e.g. 26.6.15.001.00031) if not provided.',
+			}),
 		),
 	},
 	{
 		default: {
-			name: 'Dispositivo Principal 01',
-			serialNumber: 'SN-987654321',
+			serialNumber: '26.6.15.001.00031',
+			deviceKey: 'factory-device-key-from-label',
+			name: 'Ninbus-veiculo-06',
+		},
+	},
+);
+
+export const registerDeviceSchema = t.Object(
+	{
+		name: t.Optional(t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' })),
+		serialNumber: t.String({
+			minLength: 1,
+			maxLength: 255,
+			description:
+				'Device serial number. Accepts display (26.6.15.001.00031) or HEX (1A61500100031FFF) format. ' +
+				'Month accepts 0-9 and A/B/C. Used to match with a pre-provisioned device in hawkBit.'
+		}),
+	},
+	{ default: { serialNumber: '26.6.15.001.00031' } },
+);
+
+export const linkDeviceSchema = t.Object(
+	{
+		deviceKey: t.String({
+			minLength: 8,
+			maxLength: 256,
+			description:
+				'Device security token (factory key). Creates the hawkBit target and links this device.',
+		}),
+	},
+	{
+		default: {
+			deviceKey: 'factory-device-key-from-label',
 		},
 	},
 );
 
 export const updateDeviceSchema = t.Object(
 	{
-		name: t.Optional(
-			t.String({ minLength: 1, maxLength: 255, description: 'Updated display name' }),
-		),
-		serialNumber: t.Optional(t.String({ maxLength: 255, description: 'Updated serial number' })),
+		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
+		serialNumber: t.Optional(t.String({ maxLength: 255 })),
 	},
-	{
-		default: {
-			name: 'Dispositivo Principal 01 (Atualizado)',
-			serialNumber: 'SN-987654321-B',
-		},
-	},
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '26.6.15.001.00031' } },
 );
 
 export const assignCategoriesSchema = t.Object(
 	{
-		categoryIds: t.Array(t.String({ format: 'uuid', description: 'Category IDs to assign' }), {
+		categoryIds: t.Array(t.String({ format: 'uuid' }), {
 			minItems: 1,
-			description: 'List of category IDs to assign to this device',
+			description: 'Category IDs to assign',
 		}),
 	},
-	{
-		default: {
-			categoryIds: ['123e4567-e89b-12d3-a456-426614174000'],
-		},
-	},
+	{ default: { categoryIds: ['123e4567-e89b-12d3-a456-426614174000'] } },
 );
-
-export const MenderAuthActionSchema = t.Object(
-	{
-		authId: t.String({ minLength: 1, description: 'Mender auth set ID to approve/reject' }),
-	},
-	{
-		default: {
-			authId: 'auth-id-exemplo',
-		},
-	},
-);
-
-export const createDeploymentSchema = t.Object({
-	name: t.String({ minLength: 1, maxLength: 255, description: 'Deployment name' }),
-	artifactName: t.String({ minLength: 1, description: 'Artifact name to deploy' }),
-	deviceIds: t.Optional(
-		t.Array(t.String({ format: 'uuid' }), {
-			description: 'Specific device IDs (company devices) to deploy to',
-		}),
-	),
-	categoryIds: t.Optional(
-		t.Array(t.String({ format: 'uuid' }), {
-			description: 'Deploy to all devices in these categories',
-		}),
-	),
-	allDevices: t.Optional(
-		t.Boolean({
-			description: 'Deploy to all devices in the company',
-		}),
-	),
-	retries: t.Optional(
-		t.Number({ minimum: 0, maximum: 10, description: 'Number of retries on failure' }),
-	),
-});
 
 export const selectDeviceSchema = createSelectSchema(devices, {
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
 	lastSeenAt: nullableDateTimeString,
+	lastPollAt: nullableDateTimeString,
+	nextExpectedPollAt: nullableDateTimeString,
 });
 
-export const DeviceResponseSchema = t.Object({
+export const LinkDeviceResponseSchema = t.Object({
+	message: t.String(),
 	data: selectDeviceSchema,
 });
 
+export const DeviceResponseSchema = t.Object({ data: selectDeviceSchema });
 export const DeviceListResponseSchema = t.Object({
 	data: t.Array(selectDeviceSchema),
 	total: t.Number(),
 });
-
 export const DeviceCreateResponseSchema = t.Object({
 	message: t.String(),
 	data: selectDeviceSchema,
 });
-
 export const DeviceUpdateResponseSchema = t.Object({
 	message: t.String(),
 	data: selectDeviceSchema,
 });
+export const DeviceDeleteResponseSchema = t.Object({ message: t.String() });
 
-export const DeviceDeleteResponseSchema = t.Object({
-	message: t.String(),
+// hawkBit response schemas
+export const HawkbitAttributesResponseSchema = t.Object({
+	data: t.Record(t.String(), t.String()),
 });
 
-export const MenderInventorySchema = t.Array(
-	t.Object({
-		name: t.String(),
-		value: t.Any(),
-	}),
-);
-
-export const MenderAuthSetSchema = t.Object({
-	id: t.String(),
-	identity_data: t.Any(),
-	pubkey: t.String(),
-	status: t.String(),
-});
-
-export const MenderDeviceResponseSchema = t.Object({
-	data: t.Object({
-		id: t.String(),
-		attributes: t.Optional(t.Array(t.Any())),
-		status: t.String(),
-		created_ts: t.Optional(t.String()),
-		updated_ts: t.Optional(t.String()),
-		auth_sets: t.Optional(t.Array(MenderAuthSetSchema)),
-	}),
-});
-
-export const MenderInventoryResponseSchema = t.Object({
-	data: MenderInventorySchema,
+export const HawkbitActionsResponseSchema = t.Object({
+	data: t.Array(
+		t.Object({
+			id: t.Number(),
+			type: t.String(),
+			active: t.Boolean(),
+			status: t.Optional(t.String()),
+			forceType: t.Optional(t.String()),
+		}),
+	),
 });
 
 export { ErrorResponseSchema, GenericActionResponseSchema };

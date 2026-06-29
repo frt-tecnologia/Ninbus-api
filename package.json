@@ -53,6 +53,11 @@
 		"resend": "^6.7.0",
 		"tar-stream": "^3.1.8"
 	},
+	"imports": {
+		"@common/*": "./src/common/*",
+		"@modules/*": "./src/modules/*",
+		"@/*": "./src/*"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@types/bun": "^1.3.6",

@@ -1,199 +1,279 @@
+import { randomUUID } from 'crypto';
 import { db } from '@common/db';
-import { devices } from '@common/db/schema';
+import { artifacts, deployments } from '@common/db/schema';
 import {
-	type MenderDeployment,
-	type MenderDeploymentDevice,
-	type MenderDeploymentStatistics,
 	type NinbusArtifactType,
-	menderArtifacts,
-	menderDeployments,
-} from '@common/mender/client';
-import { getDeviceIdsByCategories, getMenderDeviceIdsForCompany } from '@modules/devices/service';
-import { DeviceSyncEngine } from '@modules/devices/sync';
-import { and, eq, inArray } from 'drizzle-orm';
+	getOrCreateDistributionSetType,
+	hawkbitDistributionSets,
+	hawkbitSoftwareModules,
+	hawkbitTargets,
+} from '@common/hawkbit/client';
+import { appLogger } from '@common/logger';
+import { eq } from 'drizzle-orm';
 
-/**
- * Resolve target Mender device IDs from deployment parameters.
- * Supports: specific devices, categories, or all company devices.
- */
-async function resolveMenderDeviceIds(
-	companyId: string,
-	options: {
-		deviceIds?: string[];
-		categoryIds?: string[];
-		allDevices?: boolean;
-	},
-): Promise<string[]> {
-	// Ensure devices are synced before resolving IDs
-	await DeviceSyncEngine.syncCompany(companyId);
+import {
+	type LocalDeploymentRecord,
+	computeDeploymentStatus,
+	enrichDeployment,
+	enrichOrphanedDeployment,
+	summarizeStatistics,
+} from './enrichment';
+export { deleteDeployment, requireDeploymentOwnership } from './delete';
+import { requireDeploymentOwnership } from './delete';
+export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
+export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
+import { forceCloseActiveActions, forceCloseCancelActions } from './actions';
+export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
+import { findSoftwareModule, getLocalDeployment, resolveHawkbitTargetIds } from './helpers';
 
-	const menderIds = new Set<string>();
+export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
+export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
 
-	// Specific devices
-	if (options.deviceIds && options.deviceIds.length > 0) {
-		const companyDevices = await db
-			.select({ menderDeviceId: devices.menderDeviceId })
-			.from(devices)
-			.where(
-				and(
-					inArray(devices.id, options.deviceIds),
-					eq(devices.companyId, companyId),
-					eq(devices.status, 'accepted'),
-				),
-			);
-		for (const d of companyDevices) {
-			if (d.menderDeviceId) menderIds.add(d.menderDeviceId);
-		}
+// ---------------------------------------------------------------------------
+// Error classes
+// ---------------------------------------------------------------------------
+
+export class DeploymentNotFoundError extends Error {
+	constructor(message = 'Deployment not found') {
+		super(message);
+		this.name = 'DeploymentNotFoundError';
 	}
-
-	// Devices by categories
-	if (options.categoryIds && options.categoryIds.length > 0) {
-		const ninbusIds = await getDeviceIdsByCategories(companyId, options.categoryIds);
-		if (ninbusIds.length > 0) {
-			const companyDevices = await db
-				.select({ menderDeviceId: devices.menderDeviceId })
-				.from(devices)
-				.where(
-					and(
-						inArray(devices.id, ninbusIds),
-						eq(devices.companyId, companyId),
-						eq(devices.status, 'accepted'),
-					),
-				);
-			for (const d of companyDevices) {
-				if (d.menderDeviceId) menderIds.add(d.menderDeviceId);
-			}
-		}
-	}
-
-	// All company devices
-	if (options.allDevices) {
-		const allMenderIds = await getMenderDeviceIdsForCompany(companyId);
-		for (const id of allMenderIds) {
-			menderIds.add(id);
-		}
-	}
-
-	return [...menderIds];
 }
+
+// ---------------------------------------------------------------------------
+// CRUD — all scoped by companyId
+// ---------------------------------------------------------------------------
 
 export interface CreateDeploymentInput {
 	name: string;
 	artifactName: string;
 	artifactType: NinbusArtifactType;
+	version?: string;
 	deviceIds?: string[];
 	categoryIds?: string[];
 	allDevices?: boolean;
-	retries?: number;
 }
 
-export async function createDeployment(companyId: string, data: CreateDeploymentInput) {
-	const menderDeviceIds = await resolveMenderDeviceIds(companyId, {
+export async function createDeployment(
+	companyId: string,
+	userId: string,
+	data: CreateDeploymentInput,
+) {
+	const targetIds = await resolveHawkbitTargetIds(companyId, {
 		deviceIds: data.deviceIds,
 		categoryIds: data.categoryIds,
 		allDevices: data.allDevices,
 	});
 
-	if (menderDeviceIds.length === 0) {
+	if (targetIds.length === 0) {
 		throw new Error('No eligible devices found for deployment');
 	}
 
-	// Validate artifact exists and matches type before creating deployment
-	const artifactValidation = await validateArtifactForDeployment(
-		data.artifactName,
-		data.artifactType,
-	);
+	const sm = await findSoftwareModule(companyId, data.artifactName, data.version, data.artifactType);
+	if (!sm) {
+		throw new Error(
+			`Artifact "${data.artifactName}" (${data.artifactType}) not found. ` +
+				'Upload the artifact first via POST /artifacts before creating a deployment.',
+		);
+	}
 
-	const deployment = await menderDeployments.create({
-		name: data.name,
-		artifact_name: data.artifactName,
-		devices: menderDeviceIds,
-		retries: data.retries,
+	// Verify SM has at least one artifact (binary file)
+	let smHasArtifacts = true;
+	try {
+		const smFiles = await hawkbitSoftwareModules.listArtifacts(sm.id);
+		if (smFiles.length === 0) smHasArtifacts = false;
+	} catch {
+		smHasArtifacts = false;
+	}
+	if (!smHasArtifacts) {
+		throw new Error(
+			`Software Module "${sm.name}" (#${sm.id}) has no artifacts (binary files). ` +
+				'Upload the artifact file first. DDI will not offer deploymentBase for an incomplete DS.',
+		);
+	}
+
+	const dsType = await getOrCreateDistributionSetType(data.artifactType);
+	const dsUuid = randomUUID();
+	const ds = await hawkbitDistributionSets.create({
+		name: `ds-${dsUuid}`,
+		version: `v-${Date.now()}`,
+		description: `${data.name} | artifact: ${sm.name} (${data.artifactType}) | uuid: ${dsUuid}`,
+		type: dsType.typeKey,
+		modules: [{ id: sm.id }],
 	});
 
-	return {
-		...deployment,
+	appLogger.info(
+		`[DEPLOY] Created DS #${ds.id} (type=${dsType.typeKey}) with SM #${sm.id} (${sm.name}). Assigning to ${targetIds.length} targets...`,
+	);
+
+	// Step 1: Force-close ALL pre-existing active actions.
+	await forceCloseActiveActions(targetIds);
+
+	// Step 2: Assign targets to the new DS.
+	await hawkbitDistributionSets.assignTargets(ds.id, targetIds);
+
+	// Step 3: Force-close auto-created cancel actions.
+	await forceCloseCancelActions(targetIds);
+
+	// Step 4: Verify deployment is properly offered via DDI.
+	const { checkDDiReadiness } = await import('./ddi-diagnostics');
+	let verifiedCount = 0;
+	const failedTargets: string[] = [];
+
+	for (const targetId of targetIds) {
+		try {
+			const targetActions = await hawkbitTargets.getActions(targetId, { limit: 10 });
+			const activeUpdate = targetActions.content.find(
+				(a: { active: boolean; type: string }) => a.active && a.type === 'update',
+			);
+			if (activeUpdate) {
+				verifiedCount++;
+			} else {
+				failedTargets.push(targetId);
+			}
+		} catch {
+			failedTargets.push(targetId);
+		}
+	}
+
+	if (failedTargets.length > 0) {
+		appLogger.warn(
+			'[DEPLOY] %d/%d targets FAILED verification.',
+			failedTargets.length,
+			targetIds.length,
+		);
+		for (const targetId of failedTargets.slice(0, 3)) {
+			try {
+				const diag = await checkDDiReadiness(targetId);
+				appLogger.error({ targetId, ...diag }, '[DEPLOY] DDI Diagnostic');
+			} catch {
+				/* diagnostic failed */
+			}
+		}
+	}
+
+	// Write-through: register in local DB with audit data
+	// Resolve artifact metadata for audit trail
+	let artifactDisplayName = data.artifactName;
+	let artifactOrigFile: string | null = null;
+	try {
+		const [localArtifact] = await db
+			.select({ name: artifacts.name, originalFilename: artifacts.originalFilename })
+			.from(artifacts)
+			.where(eq(artifacts.hawkbitSmId, sm.id));
+		if (localArtifact) {
+			artifactDisplayName = localArtifact.name;
+			artifactOrigFile = localArtifact.originalFilename ?? null;
+		}
+	} catch {
+		/* non-critical */
+	}
+
+	await db.insert(deployments).values({
+		companyId,
+		hawkbitDsId: ds.id,
+		name: data.name,
 		artifactType: data.artifactType,
-		artifactMeta: artifactValidation,
-	};
-}
+		artifactName: artifactDisplayName,
+		artifactVersion: sm.version,
+		artifactOriginalFile: artifactOrigFile,
+		targetCount: targetIds.length,
+		targetIds: JSON.stringify(targetIds),
+		createdBy: userId,
+	});
 
-/**
- * Validates that the artifact exists in Mender and is compatible
- * with the requested deployment type.
- *
- * @throws Error if artifact not found or type mismatch
- */
-export async function validateArtifactForDeployment(
-	artifactName: string,
-	expectedType: NinbusArtifactType,
-) {
-	// Fetch all artifacts and find by name
-	const artifacts = await menderArtifacts.list({ name: artifactName });
-	const artifact = artifacts.find((a) => a.name === artifactName);
+	appLogger.info('[DEPLOY] Registered DS %d for company %s', ds.id, companyId);
 
-	if (!artifact) {
-		throw new Error(
-			`Artifact '${artifactName}' not found in Mender. Upload it first via POST /api/companies/:companyId/artifacts`,
-		);
-	}
-
-	// Validate device type compatibility
-	if (
-		artifact.device_types_compatible.length > 0 &&
-		!artifact.device_types_compatible.includes('ninbus-wifi-v3')
-	) {
-		throw new Error(
-			`Artifact '${artifactName}' is not compatible with ninbus-wifi-v3. ` +
-				`Compatible types: ${artifact.device_types_compatible.join(', ')}`,
-		);
-	}
+	appLogger.info(
+		`[DEPLOY] "${data.name}" (DS #${ds.id}): ${verifiedCount}/${targetIds.length} verified.`,
+	);
 
 	return {
-		artifactId: artifact.id,
-		artifactName: artifact.name,
-		size: artifact.size,
-		expectedType,
-		deviceTypesCompatible: artifact.device_types_compatible,
-		validated: true,
+		dsId: ds.id,
+		name: data.name,
+		version: ds.version,
+		targetsAssigned: targetIds.length,
+		artifactType: data.artifactType,
+		smId: sm.id,
+		smName: sm.name,
+		verified: verifiedCount,
+		failed: failedTargets.length,
 	};
 }
 
-export async function getDeployment(deploymentId: string): Promise<MenderDeployment> {
-	return menderDeployments.get(deploymentId);
+/** Get deployment — verify ownership first. Enriched with local audit data. */
+export async function getDeployment(companyId: string, dsId: number) {
+	await requireDeploymentOwnership(companyId, dsId);
+	const local = await getLocalDeployment(dsId);
+	return enrichDeployment(await hawkbitDistributionSets.get(dsId), local ?? undefined);
 }
 
-export async function getDeploymentStatistics(
-	deploymentId: string,
-): Promise<MenderDeploymentStatistics> {
-	return menderDeployments.getStatistics(deploymentId);
+export async function getDeploymentStatistics(dsId: number) {
+	const raw = await hawkbitDistributionSets.getStatistics(dsId);
+	const statsMap = raw.actions || {};
+	const total = raw.actions?.['total'] || 0;
+	return {
+		raw,
+		summary: summarizeStatistics(statsMap),
+		status: computeDeploymentStatus(statsMap, total, { dsId }),
+	};
 }
 
-export async function abortDeployment(deploymentId: string): Promise<void> {
-	return menderDeployments.abort(deploymentId);
-}
-
-export async function abortDeviceDeployment(deviceId: string): Promise<void> {
-	return menderDeployments.abortDevice(deviceId);
-}
-
-export async function getDeploymentDevices(
-	deploymentId: string,
-	params?: { status?: string; page?: number; perPage?: number },
-): Promise<MenderDeploymentDevice[]> {
-	return menderDeployments.listDevices(deploymentId, params);
-}
-
-export async function getDeviceDeploymentLog(
-	deploymentId: string,
-	deviceId: string,
-): Promise<string> {
-	return menderDeployments.getDeviceLog(deploymentId, deviceId);
-}
-
-export async function getDeviceDeploymentHistory(
-	menderDeviceId: string,
-	params?: { status?: string; page?: number; perPage?: number },
+/** List deployments for a specific company (like getCompanyDevices).
+ *  Uses local DB as source of truth — hawkBit enrichment is optional.
+ *  Orphaned deployments (DS deleted) show audit data from local records.
+ */
+export async function listDeployments(
+	companyId: string,
+	_params?: { offset?: number; limit?: number },
 ) {
-	return menderDeployments.listDeviceHistory(menderDeviceId, params);
+	// 1. Get local deployment records for this company
+	let localDeployments: any[];
+	try {
+		localDeployments = await db
+			.select()
+			.from(deployments)
+			.where(eq(deployments.companyId, companyId));
+	} catch (dbError: any) {
+		appLogger.error('[DEPLOYMENTS] DB query failed: %s', dbError?.message ?? 'unknown');
+		return { data: [], total: 0 };
+	}
+
+	if (localDeployments.length === 0) {
+		return { data: [], total: 0 };
+	}
+
+	// 2. Try to fetch DS data from hawkBit
+	const dsIds = localDeployments.map((d: any) => d.hawkbitDsId);
+
+	let hawkbitDSs: any[] = [];
+	try {
+		hawkbitDSs = await hawkbitDistributionSets.listByIds(dsIds);
+	} catch (hbError: any) {
+		appLogger.warn('[DEPLOYMENTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
+		// hawkBit down — return all from local records as orphaned
+		const enriched = localDeployments.map((local) => enrichOrphanedDeployment(local));
+		return { data: enriched, total: enriched.length };
+	}
+
+	// 3. Enrich: all DSes from hawkBit (incl. soft-deleted) + orphaned from local
+	//    DB. NOT filtering `!ds.deleted` — soft-deleted DSes + local snapshot keep
+	//    history. The old filter made cancelled deployments vanish from the list.
+	const hawkbitMap = new Map(hawkbitDSs.map((ds: any) => [ds.id, ds]));
+	const enriched = await Promise.all(
+		localDeployments.map(async (local) => {
+			const hawkbitDS = hawkbitMap.get(local.hawkbitDsId);
+			return hawkbitDS
+				? enrichDeployment(hawkbitDS, local as LocalDeploymentRecord)
+				: enrichOrphanedDeployment(local as LocalDeploymentRecord);
+		}),
+	);
+	return { data: enriched, total: enriched.length };
+}
+
+export async function getDeploymentTargets(
+	dsId: number,
+	params?: { offset?: number; limit?: number },
+) {
+	return hawkbitDistributionSets.getAssignedTargets(dsId, params);
 }

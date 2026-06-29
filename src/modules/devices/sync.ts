@@ -1,160 +1,215 @@
-import { menderConfig } from '@common/config/mender';
+/**
+ * Sync Engine for hawkBit ↔ Ninbus — orchestrator.
+ *
+ * 3 modes: periodic, on_demand, hybrid.
+ * Delegates to sync-strategies.ts for strategy implementations.
+ * Types, fetch utilities, and batch operations live in split files:
+ *   - sync-core.ts: types, status protection, single-device sync
+ *   - sync-fetch.ts: hawkBit paginated target queries
+ *   - sync-helpers.ts: batch DB ops, on-demand sync, re-exports
+ *   - sync-strategies.ts: periodic/hybrid strategies, SSE helpers
+ */
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
+import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { menderDeviceAuth } from '@common/mender/client';
-import { and, eq } from 'drizzle-orm';
+import { sseEmitter } from '@common/sse';
+import { eq } from 'drizzle-orm';
+import {
+	type SyncState,
+	syncSingleDeviceSwr,
+	syncCompanyOnDemand,
+	syncNewTargets,
+} from './sync-helpers';
+import { fetchAllHawkBitTargets } from './sync-fetch';
+import { syncPeriodic, syncHybrid } from './sync-strategies';
 
-/**
- * Centralized Synchronization Engine for Mender <-> Ninbus.
- *
- * This service handles:
- * 1. Auto-acceptance of pending devices by serial number.
- * 2. Syncing status and connection states (online/offline).
- * 3. Linking local Ninbus devices with Mender IDs.
- */
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+const state: SyncState = {
+	lastFullSyncAt: null,
+	isRunning: false,
+	totalSynced: 0,
+	lastDurationMs: 0,
+	errors: 0,
+	mode: hawkbitConfig.syncMode,
+	lastIncrementalTimestamp: null,
+};
+
+let syncTimer: ReturnType<typeof setInterval> | null = null;
+let fastSyncTimer: ReturnType<typeof setInterval> | null = null;
+let hasPendingDeployments = false;
+
+/** Fast sync interval when deployments are active (seconds). */
+const FAST_SYNC_INTERVAL_SEC = 5;
+
+/** Check if any device has hawkbitUpdateStatus='pending'. */
+async function detectPendingDeployments(): Promise<boolean> {
+	try {
+		const [row] = await db
+			.select({ id: devices.id })
+			.from(devices)
+			.where(eq(devices.hawkbitUpdateStatus, 'pending'))
+			.limit(1);
+		return !!row;
+	} catch {
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export const DeviceSyncEngine = {
-	/**
-	 * Fully synchronizes all devices for a specific company.
-	 * Use this in list/detail routes to ensure data freshness.
-	 */
-	async syncCompany(companyId: string) {
-		if (!menderConfig.enabled) return;
-		appLogger.debug(`[SYNC] Starting full sync for company ${companyId}`);
+	/** Start sync engine based on HAWKBIT_SYNC_MODE. Called at app startup. */
+	startBackgroundSync() {
+		if (!hawkbitConfig.enabled) {
+			appLogger.info('[SYNC] hawkBit disabled — sync not started');
+			return;
+		}
 
-		// 1. Process pending devices (Auto-accept)
-		await this.autoAcceptPending(companyId);
+		const mode = hawkbitConfig.syncMode;
+		const intervalSec = hawkbitConfig.syncIntervalSec;
 
-		// 2. Update status for accepted devices
-		await this.syncAcceptedStatus(companyId);
+		appLogger.info(
+			'[SYNC] Mode: %s%s%s',
+			mode,
+			mode !== 'on_demand' ? `, interval: ${intervalSec}s` : ', no background',
+			mode === 'hybrid' ? `, active window: ${hawkbitConfig.syncActiveWindowSec}s` : '',
+		);
+
+		sseEmitter.startHeartbeat();
+		if (mode === 'on_demand' || intervalSec <= 0) return;
+
+		setTimeout(() => this.runSyncCycle(), 5000);
+		syncTimer = setInterval(() => {
+			this.runSyncCycle().catch((err) => {
+				appLogger.error('[SYNC] Error: %s', err?.message);
+				state.errors++;
+			});
+		}, intervalSec * 1000);
 	},
 
-	/**
-	 * Finds devices in Mender that match local 'pending' registry by Serial Number.
+	stopBackgroundSync() {
+		if (syncTimer) {
+			clearInterval(syncTimer);
+			syncTimer = null;
+		}
+		if (fastSyncTimer) {
+			clearInterval(fastSyncTimer);
+			fastSyncTimer = null;
+		}
+		hasPendingDeployments = false;
+		appLogger.info('[SYNC] Background sync stopped');
+		sseEmitter.stopHeartbeat();
+	},
+
+	getState(): SyncState {
+		return { ...state };
+	},
+
+	/** Main sync cycle — dispatches to periodic or hybrid strategy. */
+	async runSyncCycle() {
+		if (state.isRunning) return;
+		state.isRunning = true;
+		const startTime = Date.now();
+
+		try {
+			switch (hawkbitConfig.syncMode) {
+				case 'periodic': state.totalSynced = await syncPeriodic(); break;
+				case 'hybrid': state.totalSynced = await syncHybrid(); break;
+			}
+			state.lastFullSyncAt = new Date();
+			state.lastDurationMs = Date.now() - startTime;
+
+			// After each cycle, check if we need to switch to fast sync
+			await this.adjustSyncSpeed();
+		} catch (error: any) {
+			state.errors++;
+			appLogger.error('[SYNC] Cycle failed: %s', error?.message);
+		} finally {
+			state.isRunning = false;
+		}
+	},
+
+	/** Detect active deployments and switch between normal/fast sync.
+	 *  When fast sync activates, normal sync timer is PAUSED to avoid contention.
+	 *  When fast sync deactivates, normal sync timer is RESUMED.
 	 */
-	async autoAcceptPending(companyId: string) {
-		const localPending = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.companyId, companyId), eq(devices.status, 'pending')));
+	async adjustSyncSpeed() {
+		const newPending = await detectPendingDeployments();
+		const mode = hawkbitConfig.syncMode;
+		const intervalSec = hawkbitConfig.syncIntervalSec;
 
-		if (localPending.length === 0) return;
-
-		const menderPending = await menderDeviceAuth.listDevices({ status: 'pending' });
-		if (menderPending.length === 0) return;
-
-		for (const local of localPending) {
-			if (!local.serialNumber) continue;
-
-			const match = menderPending.find((m) => m.identity_data?.['serial'] === local.serialNumber);
-			if (match) {
-				const pendingAuth = match.auth_sets?.find((a) => a.status === 'pending');
-				if (pendingAuth) {
-					try {
-						await menderDeviceAuth.setAuthStatus(match.id, pendingAuth.id, 'accepted');
-						await db
-							.update(devices)
-							.set({
-								menderDeviceId: match.id,
-								status: 'accepted',
-								updatedAt: new Date(),
-							})
-							.where(eq(devices.id, local.id));
-
-						appLogger.info(`[SYNC] Auto-accepted ${local.name} (${local.serialNumber})`);
-					} catch (err) {
-						appLogger.error({ msg: `[SYNC] Failed to accept ${local.name}`, error: err });
-					}
+		if (newPending && !hasPendingDeployments) {
+			// Deployments started — pause normal sync, activate fast sync
+			hasPendingDeployments = true;
+			if (mode !== 'on_demand' && intervalSec > 0) {
+				// Pause normal timer to avoid contention
+				if (syncTimer) {
+					clearInterval(syncTimer);
+					syncTimer = null;
 				}
+				appLogger.info('[SYNC] Active deployment detected — fast sync enabled (%ds), normal sync paused', FAST_SYNC_INTERVAL_SEC);
+				fastSyncTimer = setInterval(() => {
+					this.runSyncCycle().catch((err) => {
+						appLogger.debug('[SYNC] Fast cycle error: %s', err?.message);
+					});
+				}, FAST_SYNC_INTERVAL_SEC * 1000);
+			}
+		} else if (!newPending && hasPendingDeployments) {
+			// All deployments finished — deactivate fast sync, resume normal
+			hasPendingDeployments = false;
+			if (fastSyncTimer) {
+				clearInterval(fastSyncTimer);
+				fastSyncTimer = null;
+			}
+			// Resume normal timer
+			if (mode !== 'on_demand' && intervalSec > 0 && !syncTimer) {
+				syncTimer = setInterval(() => {
+					this.runSyncCycle().catch((err) => {
+						appLogger.error('[SYNC] Error: %s', err?.message);
+						state.errors++;
+					});
+				}, intervalSec * 1000);
+				appLogger.info('[SYNC] All deployments complete — fast sync disabled, normal sync resumed (%ds)', intervalSec);
 			}
 		}
 	},
 
-	/**
-	 * Updates connection status and 'last seen' for all accepted devices.
-	 * Uses Mender Device Auth list for efficient batch updates.
-	 */
-	async syncAcceptedStatus(companyId: string) {
-		const localAccepted = await db
-			.select()
-			.from(devices)
-			.where(and(eq(devices.companyId, companyId), eq(devices.status, 'accepted')));
-
-		if (localAccepted.length === 0) return;
-
-		// 1. Get all accepted devices from Mender to get 'updated_ts' (last check-in)
-		const menderAccepted = await menderDeviceAuth.listDevices({ status: 'accepted' });
-
-		for (const local of localAccepted) {
-			if (!local.menderDeviceId) continue;
-
-			const mMatch = menderAccepted.find((m) => m.id === local.menderDeviceId);
-			if (!mMatch) continue;
-
-			try {
-				// Determine best 'last seen' date
-				// Priority: updated_ts from DevAuth (last check-in)
-				const lastSeen = mMatch.updated_ts ? new Date(mMatch.updated_ts) : local.lastSeenAt;
-
-				await db
-					.update(devices)
-					.set({
-						lastSeenAt: lastSeen,
-						updatedAt: new Date(),
-					})
-					.where(eq(devices.id, local.id));
-			} catch (_err) {
-				appLogger.debug(`[SYNC] Failed to update local state for ${local.name}`);
-			}
-		}
+	/** Discover auto-provisioned targets. Public API for admin endpoint. */
+	async discoverAutoProvisioned(): Promise<number> {
+		if (!hawkbitConfig.enabled) return 0;
+		const targetMap = await fetchAllHawkBitTargets();
+		await syncNewTargets(targetMap);
+		const localDevices = await db.select({ hawkbitTargetId: devices.hawkbitTargetId }).from(devices);
+		return localDevices.length;
 	},
 
-	/**
-	 * Approves/Accepts a device in Mender and updates local status.
-	 */
-	async acceptDevice(deviceId: string, menderDeviceId: string, authId: string) {
-		try {
-			await menderDeviceAuth.setAuthStatus(menderDeviceId, authId, 'accepted');
-			await db
-				.update(devices)
-				.set({ status: 'accepted', updatedAt: new Date() })
-				.where(eq(devices.id, deviceId));
-			appLogger.info(`[SYNC] Device ${deviceId} accepted in Mender.`);
-		} catch (err) {
-			appLogger.error({ msg: `[SYNC] Failed to accept device ${deviceId}`, error: err });
-			throw err;
-		}
+	/** Legacy — kept for backward compatibility. */
+	async syncCompany(_companyId: string) { /* no-op */ },
+
+	/** Single-device stale-while-revalidate (used by all modes). */
+	async syncSingleDevice(targetId: string) {
+		return syncSingleDeviceSwr(targetId, { enabled: hawkbitConfig.enabled, syncStaleSec: hawkbitConfig.syncStaleSec });
 	},
 
-	/**
-	 * Rejects a device in Mender and updates local status.
-	 */
-	async rejectDevice(deviceId: string, menderDeviceId: string, authId: string) {
-		try {
-			await menderDeviceAuth.setAuthStatus(menderDeviceId, authId, 'rejected');
-			await db
-				.update(devices)
-				.set({ status: 'rejected', updatedAt: new Date() })
-				.where(eq(devices.id, deviceId));
-			appLogger.info(`[SYNC] Device ${deviceId} rejected in Mender.`);
-		} catch (_err) {
-			appLogger.error({ msg: `[SYNC] Failed to reject device ${deviceId}`, error: _err });
-			throw _err;
-		}
+	/** Company-scoped on-demand sync (fire-and-forget on GET /devices). */
+	async syncCompanyDevices(companyId: string): Promise<number> {
+		return syncCompanyOnDemand(companyId);
 	},
 
-	/**
-	 * Decommissions a device in Mender.
-	 * This is the "hard reset" for a device, allowing it to be reused.
-	 */
-	async decommissionDevice(menderDeviceId: string) {
+	/** Delete a target from hawkBit. */
+	async deleteTarget(targetId: string) {
 		try {
-			await menderDeviceAuth.decommission(menderDeviceId);
-			// Local update is usually handled by the caller (deletion or status update)
-			appLogger.info(`[SYNC] Device ${menderDeviceId} decommissioned from Mender.`);
-		} catch (_err) {
-			// If device already gone from Mender, ignore error
-			appLogger.debug(`[SYNC] Decommission failed or already gone for ${menderDeviceId}`);
+			await hawkbitTargets.delete(targetId);
+			appLogger.info('[SYNC] Target %s deleted from hawkBit', targetId);
+		} catch {
+			appLogger.debug('[SYNC] Delete failed for %s', targetId);
 		}
 	},
 };

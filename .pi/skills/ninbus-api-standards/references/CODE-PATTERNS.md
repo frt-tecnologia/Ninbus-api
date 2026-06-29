@@ -1,350 +1,195 @@
-# Code Patterns Reference — Ninbus API
+# Code Patterns — Ninbus API
 
-Este documento cataloga os padrões de código usados no projeto com exemplos concretos.
+Padrões de código usados no projeto com exemplos concretos.
 
 ---
 
-## 1. Padrão: Module (Feature-based)
-
-Cada módulo segue a tríade: **routes** → **schemas** → **service**
+## 1. Module Pattern
 
 ```
 src/modules/<feature>/
-├── index.ts     # Rotas (Elysia controller) — NUNCA lógica de negócio
-├── schemas.ts   # TypeBox validation schemas (quando houver)
-└── service.ts   # Lógica de negócio (queries Drizzle + chamadas Mender)
+├── index.ts       # Rotas (Elysia) — nunca lógica de negócio
+├── schemas.ts     # TypeBox validation (body, params, response)
+├── service.ts     # Lógica (Drizzle queries + hawkBit calls)
+└── *.ts           # Sub-rotas se > 250 linhas total
 ```
 
-**Regras**:
-- `index.ts` é o único arquivo que importa de `schemas.ts` e `service.ts`
-- `service.ts` nunca importa de Elysia
-- `schemas.ts` nunca importa de `service.ts`
-- Módulos com rotas extras (>200 linhas) splitam em `manage-routes.ts`, `member-routes.ts`, `mender-routes.ts`, etc.
-
-**Módulos atuais**: auth (2 files), companies (4 files), categories (3 files), devices (6 files), deployments (4 files), artifacts (4 files), health (1 file), posts (3 files)
+- Arquivos < 250 linhas
+- `service.ts` nunca importa Elysia
+- `schemas.ts` nunca importa `service.ts`
 
 ---
 
-## 2. Padrão: Factory App
+## 2. Auth Guard
 
 ```typescript
-// src/app.ts
-export const createApp = () => {
-  const app = new Elysia()
-    .use(requestLogger)
-    .use(globalRateLimit)
-    .use(cors({ origin: env.CORS_ORIGIN, credentials: true }))
-    .use(swagger({ ... }))
-    .onError(({ code, error, set }) => { ... })
-    .use(healthModule)
-    .use(postsModule)
-    .use(companiesModule)
-    .use(categoriesModule)
-    .use(devicesModule)
-    .use(deploymentsModule)
-    .use(artifactsModule);
+// Company routes
+export const mod = withAuth(new Elysia({ prefix: '/api/companies/:cid/...' }))
+  .get('/', handler, { companyRole: 'viewer' })
+  .post('/', handler, { companyRole: 'operator' })
 
-  if (env.ENABLE_AUTH) {
-    app.use(authRateLimit);
-    app.use(authModule);
-  }
-
-  return app;
-};
-```
-
-**Por quê?** Permite criar instâncias isoladas para testes sem side effects.
-
----
-
-## 3. Padrão: Auth Guard Macro
-
-```typescript
-// Uso — injeta user/session em todas as rotas do módulo
-export const postsModule = withAuth(new Elysia({ prefix: '/api/posts' }))
-  .get('/', handler, { /* pública — sem auth */ })
-  .post('/', handler, { auth: true, body: ... })  // protegida
-  .put('/:id', handler, { auth: true, ... });      // protegida
-```
-
-**Como funciona**:
-1. `withAuth()` chama `derive()` para injetar `user` e `session` em toda request
-2. A macro `auth: true` registra `beforeHandle` que retorna 401 se `user` for null
-3. Ownership checks são feitos manualmente no handler com `isOwner()`
-
----
-
-## 4. Padrão: Company-scoped Routes
-
-Todas as rotas de devices, categories, deployments e artifacts usam:
-
-```typescript
-// src/modules/devices/index.ts
-export const devicesModule = withAuth(
-  new Elysia({ prefix: '/api/companies/:companyId/devices' }),
-)
-  .get('/', async ({ params, user, set }: any) => {
-    const memberCheck = await isCompanyMember(params.companyId, user.id);
-    if (!memberCheck) {
-      set.status = 403;
-      return { error: 'Forbidden', message: 'Not a member of this company' };
-    }
-    // ... lógica
-  }, { auth: true, ... });
-```
-
-**Padrão**: Todo handler de rota company-scoped DEVE:
-1. Verificar `isCompanyMember(params.companyId, user.id)`
-2. Retornar 403 se não for membro
-3. Usar `params.companyId` para filtrar dados
-
----
-
-## 5. Padrão: Drizzle Schema → TypeBox Schema
-
-```typescript
-// 1. Definir tabela Drizzle com pgEnum
-export const deviceStatusEnum = pgEnum('device_status', [
-  'pending', 'accepted', 'rejected', 'preauthorized', 'decommissioned',
-]);
-export const devices = pgTable('devices', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  menderDeviceId: text('mender_device_id'),
-  name: text('name').notNull(),
-  status: deviceStatusEnum('status').notNull().default('pending'),
-  // ...
-});
-
-// 2. Gerar schemas TypeBox
-export const createPostSchema = createInsertSchema(posts, {
-  title: t.String({ minLength: 1, maxLength: 255 }),
-});
-
-// 3. Usar nas rotas
-body: t.Omit(createPostSchema, ['id', 'authorId', 'createdAt', 'updatedAt'])
-```
-
-### N:N Table com Composite PK
-
-```typescript
-// src/common/db/schema/devices.ts
-export const deviceCategoryAssignments = pgTable(
-  'device_category_assignments',
-  {
-    deviceId: uuid('device_id').notNull().references(() => devices.id, { onDelete: 'cascade' }),
-    categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
-    assignedAt: timestamp('assigned_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    pk: primaryKey({ columns: [table.deviceId, table.categoryId] }),
-  }),
-);
+// Platform routes (sem companyId) — nunca companyRole!
+export const mod = withAuth(new Elysia({ prefix: '/api/devices' }))
+  .post('/provision', handler, { auth: true })
 ```
 
 ---
 
-## 6. Padrão: Error Response Format
+## 3. hawkBit Error Guard (Two-Level)
 
 ```typescript
-// 400 — Validação
-{ error: 'Validation error', message: '<detalhes>' }
-{ error: 'Bad Request', message: 'Device is not linked to Mender' }
-{ error: 'Bad Request', message: 'Must specify deviceIds, categoryIds, or allDevices' }
+// Service — config check
+if (!hawkbitConfig.enabled) throw new ValidationError('hawkBit disabled');
 
-// 401 — Não autenticado
-{ error: 'Unauthorized', message: 'Please login first' }
-
-// 403 — Proibido
-{ error: 'Forbidden', message: 'You are not a member of this company' }
-{ error: 'Forbidden', message: 'Not a member of this company' }
-
-// 404 — Não encontrado
-{ error: 'Not Found', message: 'Post not found' }
-{ error: 'Not Found', message: 'Device not found or not linked to Mender' }
-
-// 422 — Unprocessable
-{ error: 'Unprocessable Entity', message: 'No eligible devices found for deployment' }
-{ error: 'Unprocessable Entity', message: "Artifact 'x' not found in Mender..." }
-{ error: 'Unprocessable Entity', message: "Artifact 'x' is not compatible with ninbus-wifi-v3..." }
-
-// 429 — Rate limit
-{ error: 'Too Many Requests', message: 'Rate limit exceeded. Please try again later.' }
-
-// 500 — Erro interno
-{ error: 'Internal server error', message: '<msg apenas em dev>' }
+// Route — network error catch
+catch (error) {
+  if (error instanceof HawkbitApiError) { set.status = 502; return ...; }
+  set.status = 503; return { error: 'Service Unavailable' };
+}
 ```
 
 ---
 
-## 7. Padrão: Success Response Format
+## 4. Response Format
 
 ```typescript
-// Listagem (200)
+// List (200)
 { data: [...], total: number }
 
-// Busca por ID (200) — pode incluir Mender enrichment
-{ data: { ... }, mender: { menderStatus, connectionStatus, lastSeen } | null }
+// Create (201)
+{ message: 'Created', data: { id, ... } }
 
-// Criação (201)
-{ message: '<Recurso> created successfully', data: { ... } }
+// Delete (200)
+{ message: 'Deleted' }
 
-// Atualização (200)
-{ message: '<Recurso> updated successfully', data: { ... } }
-
-// Deleção (200)
-{ message: '<Recurso> deleted successfully' }
-
-// Deployment criado (201) — inclui artifactMeta
-{ message: 'Deployment created successfully', data: { id, artifactType, artifactMeta } }
-
-// Artifact types (200)
-{ data: [{ type, label, description, target, requiresReboot, riskLevel }, ...] }
-
-// Artifacts listados (200) — enriquecidos com Ninbus type
-{ data: [{ ..., ninbusType: 'firmware-ninbus' | null, ninbusMeta: { ... } | null }] }
-
-// Health check (200)
-{ status: 'ok' | 'degraded', timestamp, uptime, database, responseTime }
+// Error (4xx/5xx)
+{ error: 'Not Found', message: 'details' }
 ```
 
 ---
 
-## 8. Padrão: Ninbus Artifact Types
+## 5. hawkBit Client
 
-Constantes canônicas para tipos de artefato OTA:
-
-```typescript
-// src/common/mender/client.ts — canonical source of truth
-export const NINBUS_ARTIFACT_TYPES = {
-  NINBUS_FIRMWARE: 'firmware-ninbus',
-  CONTROLLER_FIRMWARE: 'firmware-controller',
-  NFX_CONFIGURATION: 'configuration-nfx',
-} as const;
-export const NINBUS_DEVICE_TYPE = 'ninbus-wifi-v3';
+```
+src/common/hawkbit/
+├── client.ts              # Barrel + utilities (<100 linhas)
+├── http.ts                # hawkbitRequest() + HawkbitApiError
+├── targets.ts             # CRUD, actions, DS assignment
+├── distribution-sets.ts   # CRUD, stats
+├── software-modules.ts    # CRUD, artifact upload
+├── constants.ts           # Artifact types
+└── types.ts               # DTOs
 ```
 
+- HTTP Basic Auth
+- Bulk POST: array body `[data]`
+- Upload: `FormData.append('file', file)`
+
+---
+
+## 6. Environment
+
 ```typescript
-// src/modules/deployments/schemas.ts — para uso no schema
-export const ARTIFACT_TYPE_NINBUS_FIRMWARE = 'firmware-ninbus';
-export const ARTIFACT_TYPE_CONTROLLER_FIRMWARE = 'firmware-controller';
-export const ARTIFACT_TYPE_NFX_CONFIGURATION = 'configuration-nfx';
+// env.ts — FONTE ÚNICA
+const EnvSchema = Type.Object({ DATABASE_URL: Type.String(), ... });
+
+// hawkbit.ts — thin accessor (ZERO process.env reads)
+export const hawkbitConfig = { get enabled() { return env.HAWKBIT_ENABLED; } };
 ```
 
-### Validação no schema:
+Nunca `process.env` fora de `env.ts`.
+
+---
+
+## 7. Serial Number
 
 ```typescript
-artifactType: t.Union([
-  t.Literal('firmware-ninbus', { description: 'Firmware Ninbus → NAND → Bootloader → Reboot' }),
-  t.Literal('firmware-controller', { description: 'Firmware Controlador → CAN → LightDot' }),
-  t.Literal('configuration-nfx', { description: 'Configuração NFX → NAND NFX → CAN → LightDot' }),
-]),
+normalizeSerial("25.5F.FF.FFF.FFFFF.F")
+// → { hex: "255FFFFFFFFFFFF", display: "25.5F.FF.FF.FF.FF.FF.F" }
 ```
 
-### Pre-flight validation no service:
+hex → hawkBit controllerId + DB · display → frontend
+
+---
+
+## 8. Better Auth Plugin Config
 
 ```typescript
-export async function validateArtifactForDeployment(artifactName, expectedType) {
-  const artifacts = await menderArtifacts.list({ name: artifactName });
-  const artifact = artifacts.find(a => a.name === artifactName);
-  if (!artifact) throw new Error('not found');
-  if (!artifact.device_types_compatible.includes('ninbus-wifi-v3')) throw new Error('not compatible');
-  return { artifactId, artifactName, size, expectedType, validated: true };
-}
+// CORRETO — array
+plugins: [bearer()]
+
+// ERRADO — objeto (causa TypeError: .reduce is not a function)
+plugins: { bearer: bearer() }
 ```
 
-### Enriquecimento de artifacts listados:
+Better Auth 1.4.x espera plugins como array. Objeto causa crash na inicialização.
+
+---
+
+## 9. Auth in Route Bodies
+
+Better Auth lê `request.json()` internamente — Elysia body schemas causam "Body already used".
 
 ```typescript
-const enriched = artifacts.map((artifact) => ({
-  ...artifact,
-  ninbusType: isNinbusArtifactType(artifact.type) ? artifact.type : null,
-  ninbusMeta: artifactType ? NINBUS_ARTIFACT_TYPE_META[artifactType] : null,
-}));
+// CORRETO — document body in description string
+.post('/sign-in/email', handler, {
+  body: SignInBodySchema,  // for Swagger docs only
+  detail: {
+    description: 'Request Body: {"email": "...", "password": "..."}',
+  },
+})
+
+// HANDLER — recria Request para Better Auth
+({ body, request }) => auth.handler(
+  new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify(body),
+  })
+)
 ```
 
 ---
 
-## 9. Padrão: Company-scoped Mender Operations
+## 10. Tenant Isolation (Write-Through Pattern)
 
-Todas as operações Mender são scoped por empresa:
-
-```typescript
-// 1. Verificar membership
-const memberCheck = await isCompanyMember(companyId, userId);
-if (!memberCheck) return 403;
-
-// 2. Resolver Ninbus device IDs → Mender device IDs
-const menderDeviceIds = await resolveMenderDeviceIds(companyId, { deviceIds, categoryIds, allDevices });
-
-// 3. Chamar Mender Gateway
-const deployment = await menderDeployments.create({ devices: menderDeviceIds, ... });
-```
-
-### Device ID Resolution Flow:
-
-```
-Ninbus deviceIds[] ──→ DB query (companyId + status=accepted) ──→ extract menderDeviceId[]
-Category IDs[] ──────→ DB query (N:N) ──→ Ninbus deviceIds[] ──→ same flow above
-allDevices ──────────→ DB query (companyId + status=accepted) ──→ same flow above
-```
-
----
-
-## 10. Padrão: Mender Error Handling
+hawkBit é global — não tem conceito de empresa. O isolamento é garantido pelo banco local.
 
 ```typescript
-// Erros do Mender são encapsulados
-export class MenderApiError extends Error {
-  status: number;    // HTTP status do Mender
-  body: unknown;     // Body do erro
-  endpoint: string;  // Path do endpoint
-}
+// Schema — tabela local com companyId + hawkBit ID
+export const artifacts = pgTable('artifacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  hawkbitSmId: integer('hawkbit_sm_id').notNull(),  // UNIQUE index
+  name: text('name').notNull(),
+  // ...
+}, (table) => [uniqueIndex('idx_artifacts_hawkbit_sm_id').on(table.hawkbitSmId)]);
 
-// No handler, erros são mapeados:
-try {
-  const deployment = await service.createDeployment(...);
-} catch (error: any) {
-  if (error.message?.includes('not found'))      → 422
-  if (error.message?.includes('not compatible'))  → 422
-  if (error.message?.includes('No eligible'))     → 422
-  throw error;  // outros erros → 500 via onError global
-}
-```
-
----
-
-## 11. Padrão: Rate Limiter Factory
-
-```typescript
-const cache = new LRUCache<string, number[]>({ max: N, ttl: windowMs });
-
-export const rateLimiter = createRateLimiter({
-  max: requestsPerWindow,
-  windowMs: windowInMs,
-  cache,
-  skip: (req) => boolean,  // opcional
-});
-```
-
----
-
-## 12. Padrão: Environment Validation
-
-```typescript
-const EnvSchema = Type.Object({
-  VAR_NAME: Type.String({ description: '...', pattern: '...' }),
-  MENDER_PAT: Type.Optional(Type.String({ description: 'Mender PAT' })),
-  MENDER_GATEWAY_URL: Type.Optional(Type.String({ pattern: '^https?://.+', default: '...' })),
-});
-
-export function validateEnv(): Env {
-  const rawEnv = { /* parsing de process.env */ };
-  if (!Value.Check(EnvSchema, rawEnv)) {
-    throw new Error(`Environment validation failed:\n${formatErrors(errors)}`);
-  }
-  return Value.Decode(EnvSchema, rawEnv);
+// Service — ownership check antes de qualquer operação
+async function requireOwnership(companyId: string, hawkbitSmId: number) {
+  const [local] = await db.select({ companyId: artifacts.companyId })
+    .from(artifacts).where(eq(artifacts.hawkbitSmId, hawkbitSmId));
+  if (!local || local.companyId !== companyId)
+    throw new ArtifactNotFoundError('Artifact not found in this company');
 }
 
-export const env = validateEnv(); // Fail-fast no import
+// Service — write-through: hawkBit + banco local
+export async function uploadArtifact(companyId, userId, file, ...) {
+  const sm = await hawkbitSoftwareModules.create({...});  // hawkBit
+  await db.insert(artifacts).values({ companyId, hawkbitSmId: sm.id, ... });  // local
+}
+
+// Service — list filtrado
+export async function listArtifacts(companyId) {
+  const local = await db.select().from(artifacts).where(eq(artifacts.companyId, companyId));
+  if (local.length === 0) return { data: [], total: 0 };
+  const hawkbitData = await hawkbitSoftwareModules.listByIds(local.map(a => a.hawkbitSmId));
+  return { data: enrich(hawkbitData), total: hawkbitData.length };
+}
+
+// Route — passa companyId + userId
+.get('/', ({ params }) => service.listArtifacts(params.companyId), { companyRole: 'viewer' })
+.post('/', ({ params, user }) => service.uploadArtifact(params.companyId, user.id, ...), { companyRole: 'operator' })
 ```
+
+Mesmo padrão para devices (já existia) e deployments (adicionado junto com artifacts).

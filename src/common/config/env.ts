@@ -65,38 +65,137 @@ const EnvSchema = Type.Object({
 	// ── Email (Resend) ─────────────────────────────────────────
 	RESEND_API_KEY: Type.Optional(Type.String({ description: 'Resend API key' })),
 	EMAIL_FROM: Type.String({ description: 'Email sender address' }),
-
-	// ── Mender Gateway Integration ─────────────────────────────
-	MENDER_ENABLED: Type.Boolean({ default: false, description: 'Enable Mender integration' }),
-	MENDER_GATEWAY_URL: Type.Optional(
+	FRONTEND_URL: Type.Optional(
 		Type.String({
-			description: 'Mender Traefik gateway base URL',
+			description: 'Frontend app base URL (for email links: password reset, email verification)',
 			pattern: '^https?://.+',
 		}),
 	),
-	MENDER_PAT: Type.Optional(Type.String({ description: 'Mender Personal Access Token' })),
-	MENDER_TIMEOUT_MS: Type.Optional(
-		Type.Number({ default: 30000, description: 'Request timeout in ms' }),
-	),
-	MENDER_HOST_OVERRIDE: Type.Optional(
+	APP_DEEP_LINK_BASE: Type.Optional(
 		Type.String({
-			description: 'Override HTTP Host header sent to Mender Traefik (for host.docker.internal)',
+			description:
+				'Base for app deep links in emails (password reset, email verification). ' +
+				'Accepts a custom scheme like "ninbus://" (fallback when no verified web domain yet) ' +
+				'or an https App Link like "https://ninbus.frt.com.br". ' +
+				'Takes precedence over FRONTEND_URL for email links.',
+			pattern: '^[a-z][a-z0-9+.-]*://',
 		}),
 	),
-	MENDER_SKIP_TLS: Type.Boolean({
-		default: false,
-		description: 'Skip TLS certificate verification for Mender gateway',
-	}),
-	MENDER_TENANT_TOKEN: Type.Optional(
-		Type.String({ description: 'Mender tenant token (for multi-tenant setups)' }),
+	// Resend Dashboard template aliases (or tmpl_ IDs). Templates render subject +
+	// body server-side at Resend; the API passes only the variables. Template
+	// must be PUBLISHED in the Resend dashboard before it can be used for sending.
+	RESEND_TEMPLATE_PASSWORD_RESET: Type.Optional(
+		Type.String({ description: 'Resend template alias/ID for password reset emails. Template variables: first_name, reset_password_url' }),
 	),
+	RESEND_TEMPLATE_EMAIL_VERIFICATION: Type.Optional(
+		Type.String({ description: 'Resend template alias/ID for email verification emails. Template variables: first_name, verify_email_url' }),
+	),
+
+	// ── hawkBit Update Server Integration ──────────────────────
+	HAWKBIT_ENABLED: Type.Boolean({ default: false, description: 'Enable hawkBit integration' }),
+	HAWKBIT_URL: Type.Optional(
+		Type.String({
+			description: 'hawkBit Management API base URL',
+			pattern: '^https?://.+',
+		}),
+	),
+	HAWKBIT_USERNAME: Type.Optional(
+		Type.String({ description: 'hawkBit admin username (Basic Auth)' }),
+	),
+	HAWKBIT_PASSWORD: Type.Optional(
+		Type.String({ description: 'hawkBit admin password (Basic Auth)' }),
+	),
+	HAWKBIT_TIMEOUT_MS: Type.Optional(
+		Type.Number({ default: 30000, description: 'Request timeout in ms' }),
+	),
+	HAWKBIT_SKIP_TLS: Type.Boolean({
+		default: false,
+		description: 'Skip TLS certificate verification for hawkBit',
+	}),
+
+	// ── hawkBit DDI Auto-Provisioning ──────────────────────────
+	HAWKBIT_AUTOPROVISIONING: Type.Boolean({
+		default: false,
+		description:
+			'When true, unknown devices can auto-provision on first DDI poll. ' +
+			'SET TO FALSE IN PRODUCTION — only pre-registered devices (via POST /api/devices/provision) should connect.',
+	}),
+
+	// ── hawkBit Background Sync ────────────────────────────────
+	HAWKBIT_SYNC_MODE: Type.Union(
+		[Type.Literal('periodic'), Type.Literal('on_demand'), Type.Literal('hybrid')],
+		{
+			default: 'hybrid',
+			description:
+				'Sync strategy for hawkBit → local DB. ' +
+				'"periodic": background sync of ALL targets every N seconds (good for <1k devices). ' +
+				'"on_demand": zero background sync — each API request fetches from hawkBit with stale-while-revalidate cache. ' +
+				'"hybrid" (recommended): background sync ONLY for companies with active user sessions + on-demand for single device detail. Scales to 50k+ devices.',
+		},
+	),
+	HAWKBIT_SYNC_INTERVAL_SEC: Type.Optional(
+		Type.Number({
+			default: 30,
+			minimum: 5,
+			description:
+				'Background sync interval in seconds (used by periodic and hybrid modes). ' +
+				'Set to 0 to disable background sync entirely (forces on_demand behavior).',
+		}),
+	),
+	HAWKBIT_SYNC_STALE_SEC: Type.Optional(
+		Type.Number({
+			default: 60,
+			minimum: 5,
+			description:
+				'Stale threshold in seconds for on-demand single-device sync. ' +
+				'If local data is older than this, triggers a hawkBit API call to refresh.',
+		}),
+	),
+	HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: Type.Optional(
+		Type.Number({
+			default: 300,
+			minimum: 30,
+			description:
+				'Window in seconds to consider a company "active" (has user sessions within this time). ' +
+				'Only active companies are synced in hybrid mode. Default 300s (5 min).',
+		}),
+	),
+
+	// ── SSE (Server-Sent Events) ──────────────────────────────
+	SSE_ENABLED: Type.Boolean({
+		default: true,
+		description: 'Enable SSE endpoint for real-time event push to Flutter clients.',
+	}),
+	SSE_HEARTBEAT_SEC: Type.Optional(
+		Type.Number({
+			default: 30,
+			minimum: 10,
+			description: 'Heartbeat interval in seconds for SSE connections. Keeps connections alive through proxies.',
+		}),
+	),
+	SSE_MAX_CONNECTIONS_PER_COMPANY: Type.Optional(
+		Type.Number({
+			default: 50,
+			minimum: 1,
+			description: 'Maximum concurrent SSE connections per company. Oldest evicted when exceeded.',
+		}),
+	),
+
+	// ── Platform Super Admin ───────────────────────────────────
+	SUPER_ADMIN_EMAILS: Type.Array(Type.String(), {
+		default: [],
+		description:
+			'Comma-separated list of emails with platform-level super admin access. ' +
+			'Super admins can manage ALL companies, devices, users, and provisioning. ' +
+			'This is NOT a database role — controlled solely via environment variable to prevent privilege escalation.',
+	}),
 
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
 	RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
-	RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 100 })),
+	RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 150 })),
 	AUTH_RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
-	AUTH_RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 10 })),
+	AUTH_RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 20 })),
 });
 
 export type Env = Static<typeof EnvSchema>;
@@ -105,13 +204,16 @@ export type Env = Static<typeof EnvSchema>;
 // Validation
 // ---------------------------------------------------------------------------
 
-function parseCors(raw: string | undefined): string[] {
+function parseStringArray(raw: string | undefined): string[] {
 	if (!raw) return [];
 	return raw
 		.split(',')
-		.map((o) => o.trim())
+		.map((s) => s.trim())
 		.filter(Boolean);
 }
+
+/** @deprecated Use parseStringArray instead */
+const parseCors = parseStringArray;
 
 export function validateEnv(): Env {
 	const rawEnv = {
@@ -127,15 +229,37 @@ export function validateEnv(): Env {
 		CORS_ORIGIN: parseCors(process.env['CORS_ORIGIN']),
 		RESEND_API_KEY: process.env['RESEND_API_KEY'],
 		EMAIL_FROM: process.env['EMAIL_FROM'] || 'noreply@example.com',
-		MENDER_ENABLED: process.env['MENDER_ENABLED'] === 'true',
-		MENDER_GATEWAY_URL: process.env['MENDER_GATEWAY_URL'],
-		MENDER_PAT: process.env['MENDER_PAT'],
-		MENDER_TIMEOUT_MS: process.env['MENDER_TIMEOUT_MS']
-			? Number(process.env['MENDER_TIMEOUT_MS'])
+		FRONTEND_URL: process.env['FRONTEND_URL'],
+		APP_DEEP_LINK_BASE: process.env['APP_DEEP_LINK_BASE'],
+		RESEND_TEMPLATE_PASSWORD_RESET: process.env['RESEND_TEMPLATE_PASSWORD_RESET'],
+		RESEND_TEMPLATE_EMAIL_VERIFICATION: process.env['RESEND_TEMPLATE_EMAIL_VERIFICATION'],
+		HAWKBIT_ENABLED: process.env['HAWKBIT_ENABLED'] === 'true',
+		HAWKBIT_URL: process.env['HAWKBIT_URL'],
+		HAWKBIT_USERNAME: process.env['HAWKBIT_USERNAME'],
+		HAWKBIT_PASSWORD: process.env['HAWKBIT_PASSWORD'],
+		HAWKBIT_TIMEOUT_MS: process.env['HAWKBIT_TIMEOUT_MS']
+			? Number(process.env['HAWKBIT_TIMEOUT_MS'])
 			: undefined,
-		MENDER_HOST_OVERRIDE: process.env['MENDER_HOST_OVERRIDE'],
-		MENDER_SKIP_TLS: process.env['MENDER_SKIP_TLS'] === 'true',
-		MENDER_TENANT_TOKEN: process.env['MENDER_TENANT_TOKEN'],
+		HAWKBIT_SKIP_TLS: process.env['HAWKBIT_SKIP_TLS'] === 'true',
+		HAWKBIT_AUTOPROVISIONING: process.env['HAWKBIT_AUTOPROVISIONING'] === 'true',
+		HAWKBIT_SYNC_MODE: (process.env['HAWKBIT_SYNC_MODE'] as 'periodic' | 'on_demand' | 'hybrid') || 'hybrid',
+		HAWKBIT_SYNC_INTERVAL_SEC: process.env['HAWKBIT_SYNC_INTERVAL_SEC']
+			? Number(process.env['HAWKBIT_SYNC_INTERVAL_SEC'])
+			: undefined,
+		HAWKBIT_SYNC_STALE_SEC: process.env['HAWKBIT_SYNC_STALE_SEC']
+			? Number(process.env['HAWKBIT_SYNC_STALE_SEC'])
+			: undefined,
+		HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC']
+			? Number(process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC'])
+			: undefined,
+		SUPER_ADMIN_EMAILS: parseStringArray(process.env['SUPER_ADMIN_EMAILS']),
+		SSE_ENABLED: process.env['SSE_ENABLED'] !== 'false',
+		SSE_HEARTBEAT_SEC: process.env['SSE_HEARTBEAT_SEC']
+			? Number(process.env['SSE_HEARTBEAT_SEC'])
+			: undefined,
+		SSE_MAX_CONNECTIONS_PER_COMPANY: process.env['SSE_MAX_CONNECTIONS_PER_COMPANY']
+			? Number(process.env['SSE_MAX_CONNECTIONS_PER_COMPANY'])
+			: undefined,
 		ENABLE_RATE_LIMITER: process.env['ENABLE_RATE_LIMITER'] !== 'false',
 		RATE_LIMIT_WINDOW_MS: process.env['RATE_LIMIT_WINDOW_MS']
 			? Number(process.env['RATE_LIMIT_WINDOW_MS'])

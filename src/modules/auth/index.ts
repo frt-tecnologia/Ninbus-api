@@ -1,4 +1,5 @@
 import { auth } from '@common/config/auth';
+import { EmailSendError } from '@common/config/email';
 import {
 	AuthResponseSchema,
 	ErrorResponseSchema,
@@ -167,14 +168,21 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
 	// Request Password Reset
 	.post(
 		'/request-password-reset',
-		({ body, request }) =>
-			auth.handler(
-				new Request(request.url, {
-					method: 'POST',
-					headers: request.headers,
-					body: JSON.stringify(body),
-				}),
-			) as unknown as Static<typeof StatusResponseSchema>,
+		async ({ body, request, set }) => {
+			try {
+				return await auth.handler(new Request(request.url, {
+					method: 'POST', headers: request.headers, body: JSON.stringify(body),
+				})) as unknown as Static<typeof StatusResponseSchema>;
+			} catch (error) {
+				// sendResetPassword throws EmailSendError when Resend fails or is misconfigured.
+				// We must NOT silently return 200 (would lie "email sent" when it wasn't).
+				if (error instanceof EmailSendError) {
+					set.status = 502;
+					return { error: 'Bad Gateway', message: 'Could not send password reset email — the email service is unavailable. Please try again later.' } as unknown as Static<typeof StatusResponseSchema>;
+				}
+				throw error;
+			}
+		},
 		{
 			body: RequestPasswordResetBodySchema,
 			detail: {
@@ -195,6 +203,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
 			response: {
 				200: StatusResponseSchema,
 				400: ErrorResponseSchema,
+				502: ErrorResponseSchema,
 			},
 		},
 	)

@@ -1,5 +1,68 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Ninbus API — Docker Compose (Production)
+#
+# Architecture:
+#
+#   Internet → [Ninbus API :8081] → [hawkBit :8080]
+#                    │                      │
+#                    │                      ├── Neon PostgreSQL (cloud)
+#                    │                      └── AWS S3 / Cloudflare R2 (artifact storage)
+#                    │
+#                    └── Neon PostgreSQL (cloud)
+#
+# Swap guide (just change env vars in .env):
+#   Storage: AWS S3 → Cloudflare R2
+#     → change S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION=auto
+#   DB hawkBit: Neon → local PG
+#     → change HAWKBIT_DATABASE_URL, HAWKBIT_DB_USER, HAWKBIT_DB_PASS
+#   DB Ninbus:  Neon → local PG
+#     → change DATABASE_URL
+#
+# Usage:
+#   docker compose up -d                    # all services
+#   docker compose up -d api hawkbit        # without S3 pre-signed URLs
+#   docker compose logs -f api              # follow logs
+#   docker compose build hawkbit            # rebuild custom hawkBit image
+# ═══════════════════════════════════════════════════════════════════════
+
 services:
-  app:
+  # ── Reverse Proxy (nginx) ───────────────────────────────────────────
+  # The ONLY public entry point. Routes by Host header (name-based virtual
+  # hosting) to the API / dashboard / hawkBit-DDI backends. See
+  # docker/nginx/conf.d/ninbus.conf and docs/nginx-reverse-proxy-plan.md.
+  #
+  # Transitional (Fases 1–5): HTTP only, no TLS yet. The api/hawkbit ports
+  # below stay published for a safe rollback until the device cutover and
+  # lockdown (Fases 5–6) are validated.
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: ninbus-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"       # api (HTTP) + hb (DDI) + ninbus (503) vhosts
+      - "8080:8080"   # hb vhost — Opção C: existing firmware keeps working
+      # ── Fase 6 (TLS): publish 443 after issuing the wildcard cert ──
+      # - "443:443"
+    volumes:
+      # Vhosts live on the host so edits apply with a restart, no rebuild.
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Basic Auth credential for /docs (generated on the host, gitignored).
+      # Generate with:  htpasswd -cb docker/nginx/.htpasswd ninbus-docs '<PASSWORD>'
+      # Then start/restart nginx. File is optional — if absent, /docs returns
+      # 503-ish auth failure (never open).
+      - ./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+      # Let's Encrypt webroot + cert store (used from Fase 6 onward).
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - dashboard
+      - hawkbit
+
+  # ── Ninbus API ───────────────────────────────────────────────────────
+  api:
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,34 +71,213 @@ services:
     ports:
       - "${PORT:-8081}:${PORT:-8081}"
     environment:
-      # Aplicação
       NODE_ENV: ${NODE_ENV:-production}
       HOST: ${HOST:-0.0.0.0}
       PORT: ${PORT:-8081}
-      
-      # Banco de Dados
+
+      # Database (Neon cloud — swap to local PG via env)
       DATABASE_URL: ${DATABASE_URL}
-      
-      # Autenticação
+
+      # Authentication
       ENABLE_AUTH: ${ENABLE_AUTH:-true}
       REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:8081}
-      
-      # Email (Resend)
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      EMAIL_FROM: ${EMAIL_FROM}
-      
-      # Configurações Gerais
+
+      # Email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@ninbus.com}
+      # Frontend base URL — email links (password reset, verification) point here
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      # Base for app deep links in emails (takes precedence over FRONTEND_URL).
+      # MUST be an https App Link so email links are clickable on mobile.
+      # Custom schemes (ninbus://) are NOT clickable in Gmail/Outlook/Yahoo.
+      # Requires /.well-known/{assetlinks.json,apple-app-site-association}.
+      APP_DEEP_LINK_BASE: ${APP_DEEP_LINK_BASE:-https://ninbus.frt.com.br}
+      # Resend Dashboard template aliases (must be PUBLISHED at resend.com).
+      # Unset → falls back to inline HTML.
+      RESEND_TEMPLATE_PASSWORD_RESET: ${RESEND_TEMPLATE_PASSWORD_RESET:-}
+      RESEND_TEMPLATE_EMAIL_VERIFICATION: ${RESEND_TEMPLATE_EMAIL_VERIFICATION:-}
+
+      # General
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:5173}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_RATE_LIMITER: ${ENABLE_RATE_LIMITER:-true}
-      
-      # Mender Gateway
-      MENDER_ENABLED: ${MENDER_ENABLED:-false}
-      MENDER_GATEWAY_URL: ${MENDER_GATEWAY_URL}
-      MENDER_PAT: ${MENDER_PAT}
-      MENDER_TIMEOUT_MS: ${MENDER_TIMEOUT_MS:-30000}
-      MENDER_HOST_OVERRIDE: ${MENDER_HOST_OVERRIDE}
-      MENDER_SKIP_TLS: ${MENDER_SKIP_TLS:-false}
-      MENDER_TENANT_TOKEN: ${MENDER_TENANT_TOKEN}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-150}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-60000}
+
+      # Platform admin (comma-separated emails)
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
+
+      # hawkBit connection
+      HAWKBIT_ENABLED: ${HAWKBIT_ENABLED:-true}
+      HAWKBIT_URL: ${HAWKBIT_URL:-http://hawkbit:8080}
+      HAWKBIT_USERNAME: ${HAWKBIT_USERNAME:-admin}
+      HAWKBIT_PASSWORD: ${HAWKBIT_PASSWORD:-admin}
+      HAWKBIT_TIMEOUT_MS: ${HAWKBIT_TIMEOUT_MS:-30000}
+      HAWKBIT_SKIP_TLS: ${HAWKBIT_SKIP_TLS:-false}
+      HAWKBIT_SYNC_MODE: ${HAWKBIT_SYNC_MODE:-hybrid}
+      HAWKBIT_SYNC_INTERVAL_SEC: ${HAWKBIT_SYNC_INTERVAL_SEC:-30}
+      HAWKBIT_SYNC_STALE_SEC: ${HAWKBIT_SYNC_STALE_SEC:-60}
+      HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: ${HAWKBIT_SYNC_ACTIVE_WINDOW_SEC:-300}
+      HAWKBIT_AUTOPROVISIONING: ${HAWKBIT_AUTOPROVISIONING:-false}
+
+      # SSE (Server-Sent Events)
+      SSE_ENABLED: ${SSE_ENABLED:-true}
+      SSE_HEARTBEAT_SEC: ${SSE_HEARTBEAT_SEC:-30}
+      SSE_MAX_CONNECTIONS_PER_COMPANY: ${SSE_MAX_CONNECTIONS_PER_COMPANY:-50}
+
+
+    depends_on:
+      hawkbit:
+        condition: service_healthy
+    # ── Resource limits & security ──
+    mem_limit: ${API_MEM_LIMIT:-256m}
+    cpus: ${API_CPUS:-0.5}
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+
+  # ── Eclipse hawkBit Update Server (custom build with S3) ────────────
+  # Built from: docker/hawkbit/Dockerfile
+  # Source: docker/hawkbit/s3-extension/
+  #
+  # Artifact storage: AWS S3 / Cloudflare R2 (private bucket).
+  # CDN download (CloudFront or R2) configured via HAWKBIT_CDN_* vars.
+  # When S3 is disabled, uses local filesystem (Docker volume).
+  hawkbit:
+    build:
+      context: .
+      dockerfile: docker/hawkbit/Dockerfile
+    container_name: hawkbit
+    restart: unless-stopped
+    # Public port REMOVED: the DDI (:8080) is now served by the nginx vhost
+    # `hb.ninbus.frt.com.br` (see nginx service), which proxies ONLY
+    # /<tenant>/controller/v1/* to this container on the internal Docker
+    # network. The Management API (/rest/v1/*) and admin UI are therefore
+    # never public. The API reaches hawkBit via http://hawkbit:8080 (internal).
+    # ports:
+    #   - "${HAWKBIT_PORT:-8080}:8080"
+    environment:
+      # ── Database: Neon PostgreSQL ──
+      PROFILES: postgresql
+      # currentSchema guarantees 'public' is in search_path for every physical
+      # connection (PgBouncer pool may carry stale search_path from other clients).
+      # sp_* tables live in 'public' alongside Ninbus tables (names don't collide).
+      SPRING_DATASOURCE_URL: ${HAWKBIT_DATABASE_URL}&currentSchema=public
+      SPRING_DATASOURCE_USERNAME: ${HAWKBIT_DB_USER:-neondb_owner}
+      SPRING_DATASOURCE_PASSWORD: ${HAWKBIT_DB_PASS}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_JPA_DATABASE: POSTGRESQL
+
+      # ── Flyway: force full migration in the shared 'public' schema. ──
+      # hawkBit tables (sp_*, target_*, ...) coexist with Ninbus tables in
+      # 'public' — names do NOT collide. baselineVersion=0 ensures the V1.x
+      # migration runs even though the schema is non-empty (Ninbus tables present).
+      # NOTE: a dedicated schema won't work with the Neon pooler (PgBouncer
+      # transaction pooling resets search_path between transactions, breaking
+      # Spring Integration's schema-unqualified SP_LOCK lookups).
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "0"
+
+      # ── hawkBit Admin ──
+      HAWKBIT_SECURITY_USER_ADMIN_PASSWORD: ${HAWKBIT_ADMIN_PASSWORD:-{noop}admin}
+      HAWKBIT_SECURITY_USER_ADMIN_ROLES: TENANT_ADMIN
+
+      # ── DDI Security & Auto-Provisioning ──
+      # TargetToken auth: allows devices to authenticate via Authorization: TargetToken <token>
+      # Without this, ALL DDI polls return 401 regardless of the securityToken value.
+      HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED: ${HAWKBIT_DDI_TARGET_TOKEN_AUTH:-true}
+
+      # ── Reverse-proxy (forward headers) ──
+      # Makes hawkBit build absolute DDI _links from X-Forwarded-Proto/Host/Port
+      # instead of the internal `hawkbit:8080` hostname. Required now that the
+      # DDI is reached through nginx (hb.ninbus.frt.com.br); without it, devices
+      # cannot follow the configData/deploymentBase links.
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+
+      # Auto-provisioning: auto-creates target on first DDI poll.
+      # WARNING: When true, ANY device with any token can auto-provision.
+      # Set to false in production — only pre-registered devices should connect.
+      # When false, devices MUST be provisioned via POST /api/devices/provision first.
+      HAWKBIT_SERVER_DDI_AUTOPROVISIONING_ENABLED: ${HAWKBIT_AUTOPROVISIONING:-false}
+
+      # ── S3 Artifact Storage ──
+      # Set HAWKBIT_S3_ENABLED=true to activate (overrides filesystem storage)
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ENABLED: ${HAWKBIT_S3_ENABLED:-false}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ENDPOINT: ${S3_ENDPOINT:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_BUCKET_NAME: ${S3_BUCKET:-ninbus-artifacts}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_REGION: ${S3_REGION:-}
+      # ── CDN Download (CloudFront or R2) ──
+      # When set, DDI artifact download URLs point to CDN instead of hawkBit.
+      # Mode A (CloudFront RSA): set HAWKBIT_CDN_KEY_PAIR_ID + HAWKBIT_CDN_PRIVATE_KEY_PATH
+      # Mode B (R2 HMAC):        set only HAWKBIT_CDN_BASE_URL (no key-pair-id)
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_BASE_URL: ${HAWKBIT_CDN_BASE_URL:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_KEY_PAIR_ID: ${HAWKBIT_CDN_KEY_PAIR_ID:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_PRIVATE_KEY_PATH: ${HAWKBIT_CDN_PRIVATE_KEY_PATH:-}
+      ORG_ECLIPSE_HAWKBIT_ARTIFACT_S3_CDN_EXPIRY_SEC: ${HAWKBIT_CDN_EXPIRY_SEC:-3600}
+
+      # ── Java memory ──
+      X_MS: ${HAWKBIT_XMS:-512m}
+      X_MX: ${HAWKBIT_XMX:-768m}
+      GC: G1
+    volumes:
+      # CloudFront private key (mount PEM file for Mode A)
+      - ./private_key.pem:/run/secrets/cf-private-key.pem:ro
+      # Artifact binary storage (fallback when S3 is disabled)
+      - hawkbit-artifacts:/app/artifactrepo
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://${HAWKBIT_USERNAME:-admin}:${HAWKBIT_PASSWORD:-admin}@localhost:8080/rest/v1/system/configs"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    # ── Resource limits & security ──
+    mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
+    cpus: ${HAWKBIT_CPUS:-1.0}
+    pids_limit: 200
+    security_opt:
+      - no-new-privileges:true
+
+  # ── Admin Dashboard (Next.js) ──────────────────────────────────────
+  # In PRODUCTION this is served at ninbus.frt.com.br/admin via the nginx
+  # reverse-proxy (port 3001 stays internal there). For LOCAL DEV we publish
+  # 3001 on the host so the dashboard is reachable at http://localhost:3001/admin
+  # WITHOUT needing the nginx vhost + a hosts-file entry (which browsers with
+  # DNS-over-HTTPS ignore). The dashboard talks to the API via the compose
+  # service name (http://api:8081) through its Route Handler proxy.
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      dockerfile: Dockerfile
+    container_name: ninbus-dashboard
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      # Internal API URL (compose service name — never the public domain).
+      # The Route Handler proxy forwards all /api/* calls here.
+      API_INTERNAL_URL: http://api:8081
+      NEXT_PUBLIC_BASE_PATH: /admin
+    ports:
+      # Local dev only. In production, comment this out (nginx is the ingress)
+      # or use docker-compose.prod.yml without it.
+      - "3001:3001"
+    depends_on:
+      - api
+    networks:
+      - default
+    mem_limit: ${DASHBOARD_MEM_LIMIT:-512m}
+    cpus: ${DASHBOARD_CPUS:-0.5}
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  hawkbit-artifacts:
+    driver: local

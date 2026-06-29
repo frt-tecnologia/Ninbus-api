@@ -13,7 +13,10 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install
+# --legacy-peer-deps: better-auth@1.6.22 declares peerOptional svelte but
+# the dashboard has no svelte. npm v7+ still throws ERESOLVE on absent
+# peerOptional deps — legacy mode skips peer resolution entirely.
+RUN npm install --legacy-peer-deps
 
 # ── Stage 2: build ──────────────────────────────────────────────────
 FROM node:22-alpine AS builder

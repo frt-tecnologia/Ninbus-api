@@ -2,12 +2,12 @@
 
 import { Suspense, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import { Eye, EyeOff } from 'lucide-react';
 import { signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Brand } from '@/components/layout/brand';
+import { BRAND_LOGOS } from '@/lib/brand-logos';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,8 +73,9 @@ function LoginForm() {
 			<div className="relative z-10 w-full max-w-sm">
 				{/* Centered logo + headline (matches the mobile auth header) */}
 				<div className="mb-8 flex flex-col items-center gap-4">
-					<Image
-						src="/ninbus-logo.png"
+					{/* eslint-disable-next-line @next/next/no-img-element */}
+					<img
+						src={BRAND_LOGOS.ninbus}
 						alt="Ninbus"
 						width={80}
 						height={80}

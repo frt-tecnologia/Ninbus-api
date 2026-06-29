@@ -1,5 +1,5 @@
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { BRAND_LOGOS } from '@/lib/brand-logos';
 
 /**
  * <Brand> — the "Logo Ninbus | FRT" lockup.
@@ -8,8 +8,9 @@ import { cn } from '@/lib/utils';
  * side. This ties the dashboard to the FRT Tecnologia parent identity, the
  * same association used in Ninbus emails and marketing.
  *
- * Logos are self-hosted in /public (downloaded once; no runtime dependency on
- * CloudFront/Wix availability). `next/image` optimizes + caches them.
+ * Logos are served from the FRT CloudFront CDN (BRAND_LOGOS). Absolute URLs
+ * are NOT affected by the '/console' basePath, so plain <img> is used (tiny
+ * brand assets don't need next/image optimization).
  *
  * Variants:
  *   - default: compact rail/header lockup (logos + wordmark sized for ~h-8).
@@ -25,12 +26,12 @@ export function Brand({
 	if (variant === 'stacked') {
 		return (
 			<div className={cn('flex flex-col items-center gap-5', className)}>
-				<Image
-					src="/ninbus-logo.png"
+				{/* eslint-disable-next-line @next/next/no-img-element */}
+				<img
+					src={BRAND_LOGOS.ninbus}
 					alt="Ninbus"
 					width={84}
 					height={84}
-					priority
 					className="h-20 w-20 object-contain"
 				/>
 				<BrandLockup />
@@ -40,8 +41,9 @@ export function Brand({
 
 	return (
 		<div className={cn('flex items-center gap-2.5', className)}>
-			<Image
-				src="/ninbus-logo.png"
+			{/* eslint-disable-next-line @next/next/no-img-element */}
+			<img
+				src={BRAND_LOGOS.ninbus}
 				alt="Ninbus"
 				width={28}
 				height={28}
@@ -62,8 +64,9 @@ function BrandLockup({ className }: { className?: string }) {
 			<span aria-hidden className="text-muted-foreground/40">
 				|
 			</span>
-			<Image
-				src="/frt-logo.png"
+			{/* eslint-disable-next-line @next/next/no-img-element */}
+			<img
+				src={BRAND_LOGOS.frt}
 				alt="FRT Tecnologia"
 				width={22}
 				height={22}

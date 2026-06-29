@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Poppins, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/theme-provider';
+import { BRAND_LOGOS } from '@/lib/brand-logos';
 import './globals.css';
 
 /**
@@ -35,8 +36,8 @@ export const metadata: Metadata = {
 	title: 'Ninbus',
 	description: 'Console de operações OTA — provisioning, deployments e telemetria da frota.',
 	icons: {
-		icon: '/ninbus-logo.png',
-		apple: '/ninbus-logo.png',
+		icon: BRAND_LOGOS.ninbus,
+		apple: BRAND_LOGOS.ninbus,
 	},
 };
 

@@ -13,5 +13,5 @@
  */
 export const BRAND_LOGOS = {
 	ninbus: 'https://da19p053f3dc1.cloudfront.net/IMAGES/ninbus-logo.png',
-	frt: 'https://da19p053f3dc1.cloudfront.net/IMAGES/logo-frt.jfif',
+	frt: 'https://da19p053f3dc1.cloudfront.net/IMAGES/only-logo-frt.png',
 } as const;

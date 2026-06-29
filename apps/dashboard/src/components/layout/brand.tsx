@@ -64,6 +64,9 @@ function BrandLockup({ className }: { className?: string }) {
 			<span aria-hidden className="text-muted-foreground/40">
 				|
 			</span>
+			<span className="text-sm font-semibold tracking-tight text-foreground">
+				FRT
+			</span>
 			{/* eslint-disable-next-line @next/next/no-img-element */}
 			<img
 				src={BRAND_LOGOS.frt}

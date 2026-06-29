@@ -887,6 +887,14 @@
       "category": "style",
       "learnedAt": "2026-06-29T00:31:53.608Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-windows-case-insensitive-shadcn-migration",
+      "rule": "When adding shadcn/ui (lowercase filenames: button.tsx, card.tsx, input.tsx, badge.tsx) to a Next.js project on Windows that ALREADY has hand-rolled capitalized components (Button.tsx, Card.tsx, Input.tsx, Badge.tsx), the OS is case-INSENSITIVE: writing the lowercase file MERGES into the existing capitalized one (disk keeps the first-seen capitalization, content is replaced). This silently breaks two ways: (1) the old pages now import `{ Field, Select, StatusBadge, CardBody }` from the capitalized path but the new shadcn file only exports `Button/buttonVariants` — compile error; (2) even after migrating pages to lowercase imports `@/components/ui/button`, the Docker build (Linux, case-SENSITIVE) FAILS with \"module not found\" because the file on disk is still `Button.tsx`. Fix: (a) migrate ALL consumers atomically in one batch — no incremental build is possible once the merge happens; (b) force case-fix via a two-step rename: `mv Button.tsx button.tmp.tsx && mv button.tmp.tsx button.tsx` (a direct case-only mv is a no-op on Windows); (c) always typecheck with `npx tsc --noEmit` after clearing `.next/` (stale generated types under .next/types reference old paths and produce false errors). General lesson: on Windows dev → Linux/Docker deploy, treat filename casing as significant and verify in the Docker build, not just the local editor.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-29T01:24:26.551Z",
+      "reinforcementCount": 1
     }
   ]
 }

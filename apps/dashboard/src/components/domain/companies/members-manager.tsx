@@ -147,8 +147,8 @@ function MembersBody({ companyId }: { companyId: string }) {
 						{(members.data?.data ?? []).map((m) => (
 							<li key={m.userId} className="flex items-center gap-2 px-3 py-2">
 								<div className="min-w-0 flex-1">
-									<div className="truncate text-sm">{m.user?.name ?? '—'}</div>
-									<Id value={m.user?.email ?? m.userId} className="text-xs text-muted-foreground" />
+									<div className="truncate text-sm font-medium">{m.name || m.email}</div>
+									<Id value={m.email} className="text-xs text-muted-foreground" />
 								</div>
 								<Select
 									value={(m.role as CompanyRole) ?? 'viewer'}

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -87,10 +88,18 @@
 	* {
 		@apply border-border;
 	}
+	/* Scale up the base type ladder slightly for better legibility — the
+	 * original density was tuned too tight (12-13px primary content). 16.5px
+	 * base scales every rem-based size proportionally without rewriting each
+	 * component. */
+	html {
+		font-size: 16.5px;
+	}
 	body {
 		@apply bg-background text-foreground antialiased;
 		font-feature-settings: 'cv11', 'ss01';
 		font-variation-settings: 'opsz' 32;
+		font-family: 'Poppins', sans-serif;
 	}
 	/* Subtle top-of-page grid texture for the "console" feel. Cheap, pure CSS. */
 	body::before {
@@ -117,7 +126,7 @@
  */
 @layer components {
 	.sig {
-		@apply inline-block h-1.5 w-1.5 shrink-0;
+		@apply inline-block h-2 w-2 shrink-0;
 	}
 	.sig-dot {
 		border-radius: 9999px;

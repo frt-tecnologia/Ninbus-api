@@ -131,7 +131,7 @@ function LoginForm() {
 								required
 								value={email}
 								onChange={(e) => setEmail(e.target.value)}
-								placeholder="admin@ninbus.com.br"
+								placeholder="Email"
 							/>
 						</Field>
 						<Field label="Senha" htmlFor="password" required>
@@ -142,7 +142,7 @@ function LoginForm() {
 								required
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
-								placeholder="••••••••"
+								placeholder="Senha"
 							/>
 						</Field>
 

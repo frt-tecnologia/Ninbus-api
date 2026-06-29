@@ -12,25 +12,32 @@ import {
 	FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ROUTES } from '@/lib/routes';
 
 /**
- * Primary navigation. Routes are written WITHOUT the basePath prefix —
- * next/link auto-applies basePath '/admin' — and usePathname() returns the
- * basePath-stripped path, so matching works both ways.
+ * Primary navigation. Routes come from the typed route map (lib/routes.ts) so
+ * navigation is refactor-safe. Links use next/link, which:
+ *   • auto-applies basePath '/admin' (paths here are prefix-stripped),
+ *   • performs instant CLIENT-SIDE navigation (no full page reload),
+ *   • PREFETCHES the route on hover/focus → the next page's JS+data is ready
+ *     before the click lands. This is the App Router's native performant
+ *     navigation; no external router is needed.
+ * usePathname() returns the basePath-stripped path, so matching works directly.
  */
-const NAV: Array<{
-	href: string;
+type NavItem = {
+	key: keyof typeof ROUTES;
 	label: string;
 	icon: React.ComponentType<{ className?: string }>;
 	exact?: boolean;
-	badge?: string;
-}> = [
-	{ href: '/overview', label: 'Visão geral', icon: LayoutDashboard, exact: true },
-	{ href: '/devices', label: 'Dispositivos', icon: HardDrive, badge: 'frota' },
-	{ href: '/companies', label: 'Empresas', icon: Building2 },
-	{ href: '/users', label: 'Usuários', icon: Users },
-	{ href: '/deployments', label: 'Deployments', icon: Package },
-	{ href: '/designations', label: 'Designações', icon: FileText },
+};
+
+const NAV: NavItem[] = [
+	{ key: 'overview', label: 'Visão geral', icon: LayoutDashboard, exact: true },
+	{ key: 'devices', label: 'Dispositivos', icon: HardDrive },
+	{ key: 'companies', label: 'Empresas', icon: Building2 },
+	{ key: 'users', label: 'Usuários', icon: Users },
+	{ key: 'deployments', label: 'Deployments', icon: Package },
+	{ key: 'designations', label: 'Designações', icon: FileText },
 ];
 
 export function SidebarNav({
@@ -44,24 +51,28 @@ export function SidebarNav({
 	return (
 		<nav className={cn('flex flex-col gap-0.5', className)} aria-label="Navegação">
 			{NAV.map((item) => {
+				const href = ROUTES[item.key];
 				const active = item.exact
-					? pathname === item.href
-					: pathname.startsWith(item.href);
+					? pathname === href
+					: pathname.startsWith(href);
 				const Icon = item.icon;
 				return (
 					<Link
-						key={item.href}
-						href={item.href}
+						key={item.key}
+						href={href}
 						onClick={onNavigate}
+						// Prefetch the route eagerly — these are the primary nav targets,
+						// so keeping them warm makes transitions feel instant.
+						prefetch
 						aria-current={active ? 'page' : undefined}
 						className={cn(
-							'group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+							'group flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors',
 							active
 								? 'bg-secondary text-secondary-foreground'
 								: 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
 						)}
 					>
-						<Icon className="h-4 w-4 shrink-0" />
+						<Icon className="h-[1.05rem] w-[1.05rem] shrink-0" />
 						<span className="flex-1">{item.label}</span>
 						{active && (
 							<span className="h-1 w-1 rounded-full bg-primary" aria-hidden />

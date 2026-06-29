@@ -19,6 +19,8 @@ import {
 	CommandList,
 	CommandShortcut,
 } from '@/components/ui/command';
+import { ROUTES, type RouteKey } from '@/lib/routes';
+import type { LucideIcon } from 'lucide-react';
 
 /**
  * ⌘K command palette — the power-operator entry point. Jumps to any page by
@@ -33,9 +35,9 @@ export function CommandPalette({
 	onOpenChange: (v: boolean) => void;
 }) {
 	const router = useRouter();
-	const go = (path: string) => {
+	const go = (key: RouteKey) => {
 		onOpenChange(false);
-		router.push(path);
+		router.push(ROUTES[key]);
 	};
 
 	return (
@@ -48,37 +50,37 @@ export function CommandPalette({
 						icon={LayoutDashboard}
 						label="Visão geral"
 						shortcut="G O"
-						onSelect={() => go('/overview')}
+						onSelect={() => go('overview')}
 					/>
 					<Item
 						icon={HardDrive}
 						label="Dispositivos"
 						shortcut="G D"
-						onSelect={() => go('/devices')}
+						onSelect={() => go('devices')}
 					/>
 					<Item
 						icon={Building2}
 						label="Empresas"
 						shortcut="G C"
-						onSelect={() => go('/companies')}
+						onSelect={() => go('companies')}
 					/>
 					<Item
 						icon={Users}
 						label="Usuários"
 						shortcut="G U"
-						onSelect={() => go('/users')}
+						onSelect={() => go('users')}
 					/>
 					<Item
 						icon={Package}
 						label="Deployments"
 						shortcut="G P"
-						onSelect={() => go('/deployments')}
+						onSelect={() => go('deployments')}
 					/>
 					<Item
 						icon={FileText}
 						label="Designações"
 						shortcut="G N"
-						onSelect={() => go('/designations')}
+						onSelect={() => go('designations')}
 					/>
 				</CommandGroup>
 			</CommandList>
@@ -92,7 +94,7 @@ function Item({
 	shortcut,
 	onSelect,
 }: {
-	icon: React.ComponentType<{ className?: string }>;
+	icon: LucideIcon;
 	label: string;
 	shortcut?: string;
 	onSelect: () => void;

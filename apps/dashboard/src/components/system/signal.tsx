@@ -21,7 +21,7 @@ type SignalProps = {
 	token: SignalToken;
 	/** Show only the glyph (no label) — dense tables. Defaults to false. */
 	glyphOnly?: boolean;
-	/** Size of the glyph. */
+	/** Size of the glyph + label. */
 	size?: 'sm' | 'md';
 	className?: string;
 };
@@ -43,12 +43,14 @@ export function Signal({ token, glyphOnly, size = 'md', className }: SignalProps
 					'sig',
 					shapeClass,
 					token.live && 'sig-live',
-					size === 'sm' && 'scale-90',
+					size === 'sm' && 'scale-95',
 				)}
 				aria-hidden
 			/>
 			{!glyphOnly && (
-				<span className="text-xs font-medium">{token.label}</span>
+				<span className={cn('font-medium', size === 'sm' ? 'text-sm' : 'text-sm')}>
+					{token.label}
+				</span>
 			)}
 		</span>
 	);

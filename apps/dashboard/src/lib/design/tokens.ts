@@ -50,8 +50,11 @@ export const DEVICE_SIGNAL: Record<string, SignalToken> = {
 };
 
 export const CONNECTION_SIGNAL: Record<string, SignalToken> = {
+	// hawkBit pollStatus values
 	online: { tone: 'ok', shape: 'dot', label: 'Online', live: true },
+	connected: { tone: 'ok', shape: 'dot', label: 'Conectado', live: true },
 	offline: { tone: 'idle', shape: 'dot', label: 'Offline' },
+	disconnected: { tone: 'idle', shape: 'dot', label: 'Desconectado' },
 	unknown: { tone: 'idle', shape: 'ring', label: 'Desconhecido' },
 };
 

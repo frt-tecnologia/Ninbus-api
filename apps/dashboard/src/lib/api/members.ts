@@ -30,11 +30,10 @@ export interface Member {
 	userId: string;
 	companyId: string;
 	role: CompanyRole | string;
-	user?: {
-		id: string;
-		name: string;
-		email: string;
-	};
+	createdAt: string;
+	/** Joined from the user table — always present in list responses. */
+	name: string;
+	email: string;
 }
 
 export const memberService = {

@@ -4,20 +4,16 @@ import { cn } from '@/lib/utils';
 /**
  * <Id> — render a MACHINE IDENTIFIER in monospace.
  *
- * This is the single most distinctive, domain-authentic typographic choice in
- * the dashboard: serials, hawkBit target IDs, versions, UUIDs and keys read as
- * CODE, not prose. A frosted, slightly-muted surface + tabular figures + a
- * faint leading slash convey "this is a system value".
+ * The single most distinctive, domain-authentic typographic choice: serials,
+ * hawkBit target IDs, versions, UUIDs and keys read as CODE, not prose. A
+ * faint muted prefix conveys "this is a system value".
  *
- * Optional `copy` makes it click-to-copy (delegates to <Copyable>).
+ * `copy` adds a click-to-copy glyph.
  */
 type IdProps = {
 	value: React.ReactNode;
-	/** Render the value truncated with a copy affordance. */
 	copy?: boolean;
-	/** Shorten very long UUIDs by default (keep first 8 chars). */
 	truncate?: boolean;
-	/** Prefix shown muted before the value, e.g. "SM-" */
 	prefix?: string;
 	className?: string;
 } & Omit<React.HTMLAttributes<HTMLSpanElement>, 'value'>;
@@ -38,21 +34,18 @@ export function Id({
 	return (
 		<span
 			className={cn(
-				'inline-flex items-baseline gap-1 font-mono text-[0.8125rem] tabular-nums tracking-tight',
+				'inline-flex items-baseline gap-1 font-mono text-sm tabular-nums tracking-tight',
 				className,
 			)}
 			{...rest}
 		>
-			{prefix && (
-				<span className="text-muted-foreground/60">{prefix}</span>
-			)}
+			{prefix && <span className="text-muted-foreground/60">{prefix}</span>}
 			<span className="text-foreground/90">{display}</span>
 			{copy && text && <CopyGlyph value={text} />}
 		</span>
 	);
 }
 
-/** Lightweight inline copy glyph (avoids pulling a clipboard lib). */
 function CopyGlyph({ value }: { value: string }) {
 	const [done, setDone] = React.useState(false);
 	return (
@@ -65,7 +58,7 @@ function CopyGlyph({ value }: { value: string }) {
 				setDone(true);
 				window.setTimeout(() => setDone(false), 1200);
 			}}
-			className="ml-0.5 text-[0.65rem] text-muted-foreground/50 transition-colors hover:text-foreground"
+			className="ml-0.5 text-xs text-muted-foreground/50 transition-colors hover:text-foreground"
 		>
 			{done ? '✓' : '⧉'}
 		</button>

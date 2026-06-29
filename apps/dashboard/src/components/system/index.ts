@@ -10,6 +10,7 @@ export { Pipeline } from './pipeline';
 export { Kpi } from './kpi';
 export { Section, SectionHeader } from './section';
 export { Field } from './field';
+export { BarMeter } from './bar-meter';
 export { Toolbar } from './toolbar';
 export { Empty, ErrorState, TableLoading } from './state';
 export { Time, Relative } from './time';

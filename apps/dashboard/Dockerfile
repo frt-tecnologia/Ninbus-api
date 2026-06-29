@@ -13,7 +13,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+RUN npm install
 
 # ── Stage 2: build ──────────────────────────────────────────────────
 FROM node:22-alpine AS builder

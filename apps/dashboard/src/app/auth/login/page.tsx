@@ -2,10 +2,11 @@
 
 import { Suspense, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Eye, EyeOff } from 'lucide-react';
 import { signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/system';
+import { Brand } from '@/components/layout/brand';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,23 +21,10 @@ export default function LoginPage() {
 /** Static shell (no hooks) — safe as a Suspense fallback. */
 function LoginShell() {
 	return (
-		<div className="relative z-10 grid min-h-screen lg:grid-cols-2">
-			<aside className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-card/40 p-10 lg:flex">
-				<div className="flex items-center gap-2.5">
-					<div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-mono text-base font-bold text-primary-foreground">
-						N
-					</div>
-					<div className="leading-tight">
-						<div className="text-sm font-semibold tracking-tight">Ninbus</div>
-						<div className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
-							Fleet Control
-						</div>
-					</div>
-				</div>
-			</aside>
-			<div className="flex items-center justify-center px-4 py-12">
-				<div className="w-full max-w-sm">
-					<div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
+		<div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+			<div className="w-full max-w-sm">
+				<div className="mb-8 flex flex-col items-center gap-5">
+					<div className="h-20 w-20 animate-pulse rounded-2xl bg-muted" />
 				</div>
 			</div>
 		</div>
@@ -50,11 +38,10 @@ function LoginForm() {
 
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
+	const [showPassword, setShowPassword] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(
-		forbidden
-			? 'Esta conta não tem permissão de super administrador.'
-			: null,
+		forbidden ? 'Sua conta não tem permissão de acesso.' : null,
 	);
 
 	async function submit(e: FormEvent) {
@@ -64,7 +51,7 @@ function LoginForm() {
 		const result = await signIn.email({ email, password });
 		if (result.error) {
 			setLoading(false);
-			setError('Credenciais inválidas. Verifique email e senha.');
+			setError('E-mail ou senha incorretos.');
 			return;
 		}
 		router.refresh();
@@ -72,90 +59,107 @@ function LoginForm() {
 	}
 
 	return (
-		<div className="relative z-10 grid min-h-screen lg:grid-cols-2">
-			{/* Brand / console panel (desktop) */}
-			<aside className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-card/40 p-10 lg:flex">
-				<div className="flex items-center gap-2.5">
-					<div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-mono text-base font-bold text-primary-foreground">
-						N
-					</div>
-					<div className="leading-tight">
-						<div className="text-sm font-semibold tracking-tight">Ninbus</div>
-						<div className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
-							Fleet Control
-						</div>
+		<div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+			{/* Soft radial gradient — primary glow top-right (mirrors the mobile app). */}
+			<div
+				aria-hidden
+				className="pointer-events-none absolute inset-0 z-0"
+				style={{
+					background: `radial-gradient(60% 50% at 80% 20%, hsl(var(--primary) / 0.10), transparent 70%)`,
+				}}
+			/>
+
+			<div className="relative z-10 w-full max-w-sm">
+				{/* Centered logo + headline (matches the mobile auth header) */}
+				<div className="mb-8 flex flex-col items-center gap-4">
+					<img
+						src="/ninbus-logo.png"
+						alt="Ninbus"
+						width={80}
+						height={80}
+						className="h-20 w-20 object-contain"
+					/>
+					<div className="text-center">
+						<h1 className="text-2xl font-bold leading-tight tracking-tight">
+							Bem-vindo de volta
+						</h1>
+						<p className="mt-1 text-sm text-muted-foreground">
+							Entre para continuar no Ninbus
+						</p>
 					</div>
 				</div>
-				<div>
-					<h1 className="max-w-sm text-2xl font-semibold leading-tight tracking-tight">
-						Console de operações OTA para frotas IoT.
-					</h1>
-					<p className="mt-3 max-w-sm text-sm text-muted-foreground">
-						Provisioning, deployments e telemetria de dispositivos em tempo real —
-						uma única superfície de controle.
-					</p>
-				</div>
-				<div className="font-mono text-[0.65rem] uppercase tracking-widest text-muted-foreground/60">
-					Rev. {new Date().getFullYear()} · acesso restrito
-				</div>
-			</aside>
 
-			{/* Form panel */}
-			<div className="flex items-center justify-center px-4 py-12">
-				<div className="w-full max-w-sm">
-					<div className="mb-8 flex flex-col lg:hidden">
-						<div className="flex items-center gap-2.5">
-							<div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-mono text-base font-bold text-primary-foreground">
-								N
-							</div>
-							<div className="leading-tight">
-								<div className="text-sm font-semibold tracking-tight">Ninbus</div>
-								<div className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
-									Fleet Control
-								</div>
-							</div>
-						</div>
+				<form onSubmit={submit} className="flex flex-col gap-4">
+					<div className="flex flex-col gap-2">
+						<label
+							htmlFor="email"
+							className="text-sm font-semibold text-foreground"
+						>
+							E-mail
+						</label>
+						<Input
+							id="email"
+							type="email"
+							autoComplete="email"
+							required
+							value={email}
+							onChange={(e) => setEmail(e.target.value)}
+							placeholder="Digite seu e-mail"
+							className="h-12 rounded-[14px] border-transparent bg-muted/60"
+						/>
 					</div>
 
-					<h2 className="text-lg font-semibold tracking-tight">Acesso</h2>
-					<p className="mt-1 text-sm text-muted-foreground">
-						Restrito a contas autorizadas em <span className="font-mono text-xs">SUPER_ADMIN_EMAILS</span>.
-					</p>
-
-					<form onSubmit={submit} className="mt-6 flex flex-col gap-4">
-						<Field label="Email" htmlFor="email" required>
-							<Input
-								id="email"
-								type="email"
-								autoComplete="email"
-								required
-								value={email}
-								onChange={(e) => setEmail(e.target.value)}
-								placeholder="Email"
-							/>
-						</Field>
-						<Field label="Senha" htmlFor="password" required>
+					<div className="flex flex-col gap-2">
+						<label
+							htmlFor="password"
+							className="text-sm font-semibold text-foreground"
+						>
+							Senha
+						</label>
+						<div className="relative">
 							<Input
 								id="password"
-								type="password"
+								type={showPassword ? 'text' : 'password'}
 								autoComplete="current-password"
 								required
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
-								placeholder="Senha"
+								placeholder="Digite sua senha"
+								className="h-12 rounded-[14px] border-transparent bg-muted/60 pr-11"
 							/>
-						</Field>
+							<button
+								type="button"
+								onClick={() => setShowPassword((v) => !v)}
+								className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+								aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+							>
+								{showPassword ? (
+									<EyeOff className="h-5 w-5" />
+								) : (
+									<Eye className="h-5 w-5" />
+								)}
+							</button>
+						</div>
+					</div>
 
-						{error && (
-							<div className="rounded-md border border-signal-fault/30 bg-signal-fault/10 px-3 py-2 text-sm text-signal-fault">
-								{error}
-							</div>
-						)}
+					{error && (
+						<div className="rounded-[14px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+							{error}
+						</div>
+					)}
 
-						<Button type="submit" disabled={loading} className="mt-2 w-full">
-							{loading ? 'Entrando…' : 'Entrar'}
-						</Button>
-					</form>
+					<Button
+						type="submit"
+						disabled={loading}
+						className="mt-2 h-[52px] rounded-[14px] text-base font-bold"
+					>
+						{loading ? 'Entrando…' : 'Entrar'}
+					</Button>
+				</form>
+
+				{/* Brand lockup — "Logo Ninbus | FRT logo" always visible. */}
+				<div className="mt-10 flex justify-center">
+					<Brand />
 				</div>
 			</div>
 		</div>

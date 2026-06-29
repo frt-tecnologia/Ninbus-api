@@ -14,6 +14,7 @@ import { SidebarNav } from './sidebar-nav';
 import { UserMenu } from './user-menu';
 import { ThemeToggle } from './theme-toggle';
 import { CommandPalette } from './command-palette';
+import { Brand } from './brand';
 
 /**
  * <AppShell> — the application frame. Responsive by design:
@@ -49,16 +50,8 @@ export function AppShell({
 
 	const NavBody = (
 		<>
-			<div className="flex h-14 items-center gap-2 px-3">
-				<div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary font-mono text-sm font-bold text-primary-foreground">
-					N
-				</div>
-				<div className="leading-tight">
-					<div className="text-sm font-semibold tracking-tight">Ninbus</div>
-					<div className="text-[0.65rem] uppercase tracking-widest text-muted-foreground">
-						Fleet Control
-					</div>
-				</div>
+			<div className="flex h-14 items-center px-3">
+				<Brand />
 			</div>
 			<div className="mt-2 px-2">
 				<SidebarNav onNavigate={() => setNavOpen(false)} />

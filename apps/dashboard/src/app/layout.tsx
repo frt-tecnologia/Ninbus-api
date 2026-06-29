@@ -32,8 +32,12 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-	title: 'Ninbus · Fleet Control',
+	title: 'Ninbus',
 	description: 'Console de operações OTA — provisioning, deployments e telemetria da frota.',
+	icons: {
+		icon: '/ninbus-logo.png',
+		apple: '/ninbus-logo.png',
+	},
 };
 
 export default function RootLayout({

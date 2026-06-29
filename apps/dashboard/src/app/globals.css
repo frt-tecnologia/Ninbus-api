@@ -4,25 +4,27 @@
 @tailwind utilities;
 
 /*
- * Design tokens — "Fleet Control Surface".
+ * Design tokens — Ninbus dashboard, aligned with the mobile app theme.
  *
- * Dark-first: `:root, .dark` carry the dark (NOC) palette; `.light` overrides
- * for the light theme. next-themes (attribute="class", defaultTheme="dark")
- * toggles by adding/removing `.dark` on <html>.
+ * Brand identity = the Ninbus neon yellow-green (#E6F806) from the mobile
+ * splash screen. It is the SINGLE action accent (`--primary`). On dark it
+ * pops as a high-energy CTA color; the foreground on it is near-black
+ * (#1A1A1A) so text stays legible (mirrors onBrandYellow in the app).
  *
- * Color is SEMANTIC: one action accent (`--primary`, indigo) + five SIGNAL
- * tones (`--signal-*`) used ONLY to convey domain state (online/offline,
- * downloading/installed/failed, …). The identity comes from typography
- * (mono identifiers), signal geometry and density — not a brand hue.
+ * Five SIGNAL tones (`--signal-*`) convey ONLY domain state
+ * (online/offline, downloading/installed/failed). They are NOT brand colors.
+ *
+ * Dark-first: `:root, .dark` carry the dark palette; `.light` overrides.
+ * next-themes (attribute="class", defaultTheme="dark") toggles `.dark`.
  */
 
 @layer base {
 	:root,
 	.dark {
-		/* ── Surfaces (dark / NOC) ─────────────────────────────────── */
+		/* ── Surfaces (dark) ──────────────────────────────────────── */
 		--background: 240 10% 4%; /* #0a0a0d */
 		--foreground: 0 0% 96%;
-		--card: 240 9% 6%; /* one notch above bg */
+		--card: 240 9% 6%;
 		--card-foreground: 0 0% 96%;
 		--popover: 240 10% 5%;
 		--popover-foreground: 0 0% 96%;
@@ -34,15 +36,16 @@
 		--accent-foreground: 0 0% 96%;
 		--border: 240 6% 17%;
 		--input: 240 6% 17%;
-		--ring: 243 75% 63%;
+		/* ring matches the brand neon yellow */
+		--ring: 65 96% 50%;
 
-		/* ── Action accent (indigo — the only "brand" hue) ─────────── */
-		--primary: 243 75% 59%; /* indigo-600 #4f46e5 */
-		--primary-foreground: 0 0% 100%;
+		/* ── Brand action accent — Ninbus neon yellow-green (#E6F806) ── */
+		--primary: 65 96% 50%;
+		--primary-foreground: 0 0% 10%; /* #1A1A1A — legible on yellow */
 		--destructive: 0 72% 51%;
 		--destructive-foreground: 0 0% 100%;
 
-		/* ── SIGNAL tones (state only) — bright for dark bg ────────── */
+		/* ── SIGNAL tones (state only) ─────────────────────────────── */
 		--signal-ok: 142 65% 49%; /* green  */
 		--signal-busy: 38 92% 55%; /* amber  */
 		--signal-fault: 0 72% 58%; /* red    */
@@ -53,8 +56,8 @@
 	}
 
 	.light {
-		/* ── Surfaces (light / paper) ──────────────────────────────── */
-		--background: 30 12% 98%; /* warm paper, not pure white */
+		/* ── Surfaces (light / paper) ──────────────────────────── */
+		--background: 30 12% 98%;
 		--foreground: 240 10% 8%;
 		--card: 0 0% 100%;
 		--card-foreground: 240 10% 8%;
@@ -68,9 +71,11 @@
 		--accent-foreground: 240 10% 8%;
 		--border: 240 6% 88%;
 		--input: 240 6% 88%;
-		--ring: 243 75% 59%;
+		/* light ring = FRT blue */
+		--ring: 207 100% 25%;
 
-		--primary: 243 75% 53%; /* indigo-700, deeper on paper */
+		/* ── Brand accent — FRT blue (#004881) on paper ──────────── */
+		--primary: 207 100% 25%;
 		--primary-foreground: 0 0% 100%;
 		--destructive: 0 72% 48%;
 		--destructive-foreground: 0 0% 100%;

@@ -2,16 +2,13 @@
  * Typed route map — the SINGLE source of truth for dashboard paths.
  *
  * Why this exists: with Next.js App Router, navigation helpers (`next/link`,
- * `useRouter().push`, `redirect`) auto-apply basePath '/admin'. Writing
- * `'/overview'` instead of `'/admin/overview'` is correct but error-prone —
- * a typo routes to a 404. This map gives every route a named constant so
- * navigation is typed and refactor-safe. React Router is NOT used here: this
- * is a Next.js App Router app, where file-based routing + next/link already
- * provide professional, performant client-side navigation with automatic
- * prefetch and per-route code-splitting. React Router would conflict with
- * the server-component router and break SSR.
- *
- * Paths are basePath-stripped (no '/admin' prefix) — Next applies it.
+ * `useRouter().push`, `redirect`) all resolve against the app root. Writing
+ * `'/overview'` is correct but error-prone — a typo routes to a 404. This map
+ * gives every route a named constant so navigation is typed and refactor-safe.
+ * React Router is NOT used here: this is a Next.js App Router app, where
+ * file-based routing + next/link already provide professional, performant
+ * client-side navigation with automatic prefetch and per-route code-splitting.
+ * React Router would conflict with the server-component router and break SSR.
  */
 export const ROUTES = {
 	overview: '/overview',

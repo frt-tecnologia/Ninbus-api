@@ -53,11 +53,11 @@ export const dynamic = 'force-dynamic';
 async function handler(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
 	const { path: pathSegments } = await context.params;
 	// This Route Handler lives at app/api/[...path], so pathSegments captures
-	// everything AFTER /admin/api/. The Ninbus API mounts real endpoints under
+	// everything AFTER /api/. The Ninbus API mounts real endpoints under
 	// /api/* (auth, admin, companies, ...), EXCEPT the health check which is at
 	// the root /health. We rebuild the API path with the /api prefix so that
-	// /admin/api/auth/x → http://api:8081/api/auth/x. The health probe is the
-	// only root endpoint and is called as /admin/api/health here for
+	// /api/auth/x → http://api:8081/api/auth/x. The health probe is the
+	// only root endpoint and is called as /api/health here for
 	// consistency; the API has /health, so we special-case it.
 	const joined = pathSegments.join('/');
 	const apiPath = joined === 'health' ? 'health' : `api/${joined}`;

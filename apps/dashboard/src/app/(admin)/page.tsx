@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation';
 
 /**
- * Root /admin redirect → overview.
- *
- * Navigation helpers (redirect/router.push/<Link>) auto-apply basePath
- * '/admin', so we write routes WITHOUT it: '/overview' → '/admin/overview'.
+ * Root redirect → overview. The dashboard is served at root (no basePath),
+ * so visitors land here first and are sent to the overview (or to login via
+ * the middleware/layout guard if not authenticated).
  */
 export default function AdminRoot() {
 	redirect('/overview');

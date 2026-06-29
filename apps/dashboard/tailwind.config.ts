@@ -4,11 +4,10 @@ import type { Config } from 'tailwindcss';
  * Tailwind theme — "Fleet Control Surface".
  *
  * Dark-first operational UI. Tokens come from CSS variables (globals.css) so a
- * single theme swap (next-themes `.dark`/`.light`) restyles everything. Color is
- * SEMANTIC: one action accent (`primary`, indigo) + five SIGNAL tones used only
- * for state. There is deliberately NO `brand-*` scale — the identity is the
- * typography (identifiers in mono), the signal geometry and the density, not a
- * decorative brand color everywhere.
+ * single theme swap (next-themes `.dark`/`.light`) restyles everything. The
+ * brand action accent (`primary`) is the Ninbus neon yellow-green on dark and
+ * FRT blue on light — matching the mobile app. Five SIGNAL tones are used only
+ * for state.
  */
 const config: Config = {
 	darkMode: ['class'],

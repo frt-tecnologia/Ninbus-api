@@ -6,6 +6,7 @@ import { http } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/system';
+import { Brand } from '@/components/layout/brand';
 
 /**
  * Web password-reset fallback. Email links point to /reset-password?token=...
@@ -28,15 +29,7 @@ function ResetShell({ children, done }: { children?: React.ReactNode; done?: boo
 		<div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-12">
 			<div className="w-full max-w-sm">
 				<div className="mb-8 flex items-center gap-2.5">
-					<div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-mono text-base font-bold text-primary-foreground">
-						N
-					</div>
-					<div className="leading-tight">
-						<div className="text-sm font-semibold tracking-tight">Ninbus</div>
-						<div className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
-							Fleet Control
-						</div>
-					</div>
+					<Brand />
 				</div>
 				<h1 className="text-lg font-semibold tracking-tight">
 					{done ? 'Senha alterada' : 'Redefinir senha'}

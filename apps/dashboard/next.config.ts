@@ -1,17 +1,16 @@
 import type { NextConfig } from 'next';
 
 /**
- * Next.js configuration for the Ninbus Admin Dashboard.
+ * Next.js configuration for the Ninbus Dashboard.
  *
- * basePath: '/admin' — the dashboard is served at ninbus.frt.com.br/admin via
- * the nginx reverse-proxy (location /admin/ → dashboard:3001). All internal
- * links/assets are auto-prefixed, so we write routes as if at root.
+ * The dashboard is served at the ROOT of ninbus.frt.com.br — NO '/admin'
+ * basePath. The dashboard URL must NEVER reveal an internal path like
+ * '/admin' to the visitor (it's the entire site, not a sub-section).
  *
  * output: 'standalone' — produces a self-contained .next/standalone dir for the
  * Docker production image (~120MB, no node_modules needed at runtime).
  */
 const nextConfig: NextConfig = {
-	basePath: '/admin',
 	output: 'standalone',
 	reactStrictMode: true,
 	// The dashboard never talks to the API directly from the browser (cross-origin

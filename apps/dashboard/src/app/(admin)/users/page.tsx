@@ -13,7 +13,7 @@ export default function UsersPage() {
 		<>
 			<PageHeader
 				title="Usuários"
-				description="Contas da plataforma. Promoção a super admin é controlada por SUPER_ADMIN_EMAILS."
+				description="Contas da plataforma e designações pendentes."
 			/>
 			<UserTable
 				users={users.data?.data ?? []}

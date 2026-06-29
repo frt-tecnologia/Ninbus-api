@@ -7,13 +7,12 @@ import { NextResponse, type NextRequest } from 'next/server';
  * admin layout). This middleware does a fast cookie presence check so unauthenticated
  * visitors get redirected to /auth/login before the layout even runs.
  *
- * Path logic (all relative to the app root; basePath is handled by Next):
- *  - /admin/* (except /admin/auth/* and /admin/api/*) → require cookie.
+ * Path logic:
+ *  - /* (except /auth/* and /api/*) → require cookie.
  *  - everything else → passthrough.
  */
 export function middleware(req: NextRequest) {
 	const { pathname } = req.nextUrl;
-	// basePath '/admin' is already stripped from nextUrl.pathname.
 	const isAdminArea = pathname.startsWith('/') && !pathname.startsWith('/auth/') && !pathname.startsWith('/api/');
 	if (!isAdminArea) return NextResponse.next();
 

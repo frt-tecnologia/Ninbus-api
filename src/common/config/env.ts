@@ -43,6 +43,18 @@ const EnvSchema = Type.Object({
 			pattern: '^https?://.+',
 		}),
 	),
+	AUTH_COOKIE_SECURE: Type.Boolean({
+		default: false,
+		description:
+			'Set session cookies with the __Secure- prefix + Secure flag. ' +
+			'ONLY enable when the public-facing connection is HTTPS end-to-end ' +
+			'(dashboard behind TLS). Over plain HTTP the browser DROPS Secure cookies, ' +
+			'which silently breaks login (POST returns 200 + set-cookie but the cookie ' +
+			'is never stored → the app stays on the login screen). Default false so the ' +
+			'dashboard works over HTTP during the HTTP-only phase; flip to true once ' +
+			'TLS (HTTPS) is live. NOTE: not tied to NODE_ENV — containers run ' +
+			'NODE_ENV=production even over HTTP.',
+	}),
 
 	// ── Logging ────────────────────────────────────────────────
 	LOG_LEVEL: Type.Union(
@@ -225,6 +237,7 @@ export function validateEnv(): Env {
 		REQUIRE_EMAIL_VERIFICATION: process.env['REQUIRE_EMAIL_VERIFICATION'] === 'true',
 		BETTER_AUTH_SECRET: process.env['BETTER_AUTH_SECRET'],
 		BETTER_AUTH_URL: process.env['BETTER_AUTH_URL'],
+		AUTH_COOKIE_SECURE: process.env['AUTH_COOKIE_SECURE'] === 'true',
 		LOG_LEVEL: process.env['LOG_LEVEL'] || 'info',
 		CORS_ORIGIN: parseCors(process.env['CORS_ORIGIN']),
 		RESEND_API_KEY: process.env['RESEND_API_KEY'],

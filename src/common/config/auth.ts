@@ -135,13 +135,18 @@ export const auth = betterAuth({
 	secret: env.BETTER_AUTH_SECRET!,
 	baseURL: env.BETTER_AUTH_URL,
 	advanced: {
-		// Secure cookie defaults (adjust if deploying behind a reverse proxy)
+		// Session cookies. The __Secure- prefix + Secure flag are tied to
+		// AUTH_COOKIE_SECURE (NOT NODE_ENV): containers run NODE_ENV=production
+		// even over plain HTTP, so tying this to NODE_ENV would force Secure
+		// cookies and the browser would DROP them over HTTP → login silently fails
+		// (POST 200 + set-cookie, but the cookie is never stored). Enable
+		// AUTH_COOKIE_SECURE=true only once the dashboard is served over HTTPS.
 		cookiePrefix: 'auth',
-		useSecureCookies: env.NODE_ENV === 'production',
+		useSecureCookies: env.AUTH_COOKIE_SECURE,
 		defaultCookieAttributes: {
 			sameSite: 'lax',
 			httpOnly: true,
-			secure: env.NODE_ENV === 'production',
+			secure: env.AUTH_COOKIE_SECURE,
 			path: '/',
 		},
 	},

@@ -1,3 +1,4 @@
+import ky from 'ky';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -9,14 +10,30 @@ import { redirect } from 'next/navigation';
  *  2. Check if the authenticated user is a super admin (redirect to a 403 page
  *     if not — only SUPER_ADMIN_EMAILS may access the dashboard).
  *
+ * Server components call the API DIRECTLY over the compose network
+ * (http://api:8081) — they do NOT go through the Route Handler proxy (that
+ * proxy exists for the BROWSER, which is cross-origin to the API). A
+ * server-side fetch() needs an ABSOLUTE url (there is no document origin),
+ * so we use API_INTERNAL_URL rather than a same-origin path.
+ *
  * isSuperAdmin is NOT derivable from the session alone (it depends on the env
- * var SUPER_ADMIN_EMAILS, which lives on the API). So we call the API's
- * /admin/users (super admin only → 403 if the caller is not a super admin) OR
- * a dedicated /me endpoint. Here we probe /admin/companies: 200 = super admin,
- * 403 = not super admin, 401 = not authenticated.
+ * var SUPER_ADMIN_EMAILS, which lives on the API). We probe /api/admin/companies:
+ * 200 = super admin, 403 = not super admin, 401 = not authenticated.
  */
 
-const PROXY_BASE = `${process.env.NEXT_PUBLIC_BASE_PATH ?? '/admin'}/api`;
+const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://api:8081';
+
+/**
+ * Server-side `ky` instance that talks to the API DIRECTLY over the compose
+ * network (not through the browser Route Handler proxy, which is for the
+ * browser). `throwHttpErrors: false` lets us inspect `res.ok` to distinguish
+ * 401/403 from 200 instead of catching thrown errors.
+ */
+const serverApi = ky.create({
+	prefix: API_INTERNAL_URL,
+	throwHttpErrors: false,
+	timeout: 10_000,
+});
 
 interface SessionUser {
 	id: string;
@@ -30,7 +47,7 @@ interface SessionPayload {
 }
 
 async function fetchSession(cookieHeader: string): Promise<SessionUser | null> {
-	const res = await fetch(`${PROXY_BASE}/auth/get-session`, {
+	const res = await serverApi('api/auth/get-session', {
 		headers: { cookie: cookieHeader },
 		cache: 'no-store',
 	});
@@ -40,8 +57,9 @@ async function fetchSession(cookieHeader: string): Promise<SessionUser | null> {
 }
 
 async function isPlatformAdmin(cookieHeader: string): Promise<boolean> {
-	// Probe an admin endpoint. 200 = super admin, 401/403 = not.
-	const res = await fetch(`${PROXY_BASE}/admin/companies`, {
+	// Probe an admin-only endpoint. 200 = super admin, 401/403 = not.
+	// The API mounts platform routes under /api/admin/*.
+	const res = await serverApi('api/admin/companies', {
 		headers: { cookie: cookieHeader },
 		cache: 'no-store',
 	});

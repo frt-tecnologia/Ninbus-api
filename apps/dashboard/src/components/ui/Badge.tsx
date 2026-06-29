@@ -1,47 +1,31 @@
-import { type ReactNode } from 'react';
-import { cn, type StatusMeta } from '@/lib/utils';
+import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/utils';
 
-/**
- * Badge — colored pill for status display.
- * Centralizes the variant→class mapping so every status renders consistently.
- */
-const VARIANTS: Record<StatusMeta['variant'], string> = {
-	success: 'bg-green-100 text-green-800 border-green-200',
-	warning: 'bg-amber-100 text-amber-800 border-amber-200',
-	danger: 'bg-red-100 text-red-800 border-red-200',
-	info: 'bg-blue-100 text-blue-800 border-blue-200',
-	neutral: 'bg-gray-100 text-gray-700 border-gray-200',
-};
+const badgeVariants = cva(
+	'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none',
+	{
+		variants: {
+			variant: {
+				default: 'border-transparent bg-primary text-primary-foreground',
+				secondary: 'border-transparent bg-secondary text-secondary-foreground',
+				outline: 'text-foreground',
+				destructive:
+					'border-transparent bg-destructive text-destructive-foreground',
+			},
+		},
+		defaultVariants: { variant: 'default' },
+	},
+);
 
-export function Badge({
-	children,
-	variant = 'neutral',
-	className,
-}: {
-	children: ReactNode;
-	variant?: StatusMeta['variant'];
-	className?: string;
-}) {
+export interface BadgeProps
+	extends React.HTMLAttributes<HTMLDivElement>,
+		VariantProps<typeof badgeVariants> {}
+
+function Badge({ className, variant, ...props }: BadgeProps) {
 	return (
-		<span
-			className={cn(
-				'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium',
-				VARIANTS[variant],
-				className,
-			)}
-		>
-			{children}
-		</span>
+		<div className={cn(badgeVariants({ variant }), className)} {...props} />
 	);
 }
 
-/** Convenience: build a Badge directly from a StatusMeta (label+variant). */
-export function StatusBadge({
-	meta,
-	label,
-}: {
-	meta: StatusMeta;
-	label?: string;
-}) {
-	return <Badge variant={meta.variant}>{label ?? meta.label}</Badge>;
-}
+export { Badge, badgeVariants };

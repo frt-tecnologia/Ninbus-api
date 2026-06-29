@@ -19,6 +19,12 @@ import { type NextRequest, NextResponse } from 'next/server';
  *
  * Communication is INTERNAL to the Docker compose network via the `api` service
  * name (DNS resolution), never over the public internet.
+ *
+ * NOTE: this handler intentionally uses the native `fetch` instead of `ky`.
+ * A proxy must relay the upstream response VERBATIM — status code, set-cookie
+ * header and raw body all passed through unchanged. `ky` would auto-parse the
+ * body as JSON and THROW on non-2xx (the exact opposite of what a transparent
+ * proxy needs). `ky` lives in the data/auth clients; the proxy stays fetch.
  */
 
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://api:8081';

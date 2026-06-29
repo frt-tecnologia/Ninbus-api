@@ -1,57 +1,21 @@
-import {
-	type InputHTMLAttributes,
-	type SelectHTMLAttributes,
-	type ReactNode,
-	forwardRef,
-} from 'react';
+import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-const base =
-	'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 ' +
-	'placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 ' +
-	'focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-gray-50';
-
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-	function Input({ className, ...rest }, ref) {
-		return <input ref={ref} className={cn(base, className)} {...rest} />;
+const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>(
+	({ className, type, ...props }, ref) => {
+		return (
+			<input
+				type={type}
+				className={cn(
+					'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+					className,
+				)}
+				ref={ref}
+				{...props}
+			/>
+		);
 	},
 );
+Input.displayName = 'Input';
 
-export const Select = forwardRef<
-	HTMLSelectElement,
-	SelectHTMLAttributes<HTMLSelectElement>
->(function Select({ className, children, ...rest }, ref) {
-	return (
-		<select ref={ref} className={cn(base, className)} {...rest}>
-			{children}
-		</select>
-	);
-});
-
-export function Field({
-	label,
-	htmlFor,
-	error,
-	hint,
-	children,
-}: {
-	label: string;
-	htmlFor?: string;
-	error?: string;
-	hint?: string;
-	children: ReactNode;
-}) {
-	return (
-		<div className="space-y-1">
-			<label
-				htmlFor={htmlFor}
-				className="block text-sm font-medium text-gray-700"
-			>
-				{label}
-			</label>
-			{children}
-			{hint && !error && <p className="text-xs text-gray-500">{hint}</p>}
-			{error && <p className="text-xs text-red-600">{error}</p>}
-		</div>
-	);
-}
+export { Input };

@@ -847,6 +847,46 @@
       "category": "architecture",
       "learnedAt": "2026-06-27T03:46:12.870Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-nextjs-cross-origin-cookie-proxy",
+      "rule": "When a Next.js dashboard runs on a different (sub)domain than the API (e.g. ninbus.frt.com.br/admin vs api.ninbus.frt.com.br), the session cookie (sameSite:'lax') does NOT travel from browser→API cross-site. Solution: a Route Handler at app/api/[...path]/route.ts acts as the SINGLE same-origin proxy. It does server-side fetch to http://api:8081 (compose service name) and repasses the cookie. CRITICAL: the proxy MUST forward the 'origin' header — Better Auth's trustedOrigins check returns 403 without it. The catch-all captures everything AFTER /admin/api/, so the proxy must reconstruct the /api prefix: /admin/api/auth/x → http://api:8081/api/auth/x. Add the dashboard domain to CORS_ORIGIN. The browser NEVER calls the API directly.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-28T18:59:32.622Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-commit-push-without-explicit-request",
+      "rule": "NEVER run git commit, git push, or any version-control write operation unless the user EXPLICITLY asks for it in the current message. Implementing code, testing, and validating is fine, but persisting to git history / publishing to remote requires a direct, current request. Do not assume previous permission carries over — re-confirm each time. When finishing work, leave changes staged or unstaged in the working tree and summarize what is ready to commit, rather than committing automatically.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-28T19:19:50.545Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nextjs-basepath-routing-and-nginx-loop",
+      "rule": "Next.js `basePath` gotchas (caused ERR_CONNECTION_REFUSED-style \"dashboard broken\"): (1) Route files live at the app root (or a route GROUP like `(admin)/`), NEVER under a directory named after the basePath — `src/app/admin/` + `basePath:'/admin'` = routes at `/admin/admin/*`. Use `src/app/(admin)/` (group, no URL impact) to scope a layout without doubling the path. (2) `next/link`, `useRouter().push()`, and `redirect()` from next/navigation AUTO-apply basePath — write paths WITHOUT the prefix (`/overview` → `/admin/overview`). But `fetch()` and `<form action>` do NOT auto-apply it. (3) Server Components/server actions calling `fetch()` need an ABSOLUTE url (no document origin) — a relative path like `/admin/api/...` throws `TypeError: Invalid URL` server-side. Server→API must use the internal absolute URL (e.g. `http://api:8081/api/...`); the Route Handler proxy is for the BROWSER only. (4) nginx + Next.js redirect loop: Next.js `trailingSlash:false` canonicalizes `/admin/`→`/admin` (308); pairing an nginx `/admin`→`/admin/` 301 with that 308 = infinite loop. Don't redirect at nginx — proxy both `/admin` and `/admin/*` straight through with a variable `proxy_pass` (no URI part) to preserve the request URI. (5) Always add `.dockerignore` (node_modules, .next) — without it the build context balloons to ~800MB and builds time out.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-28T20:11:06.234Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-ky-v2-api-and-better-auth-not-swappable",
+      "rule": "ky v2 (2.x) breaking API changes vs v1: `prefixUrl` was RENAMED to `prefix`, and ky 2.x `prefix` normalizes slashes at the join boundary automatically (trims trailing slash of prefix + leading slash of input) — so you no longer strip leading slashes manually. ky 2.x also has a separate `baseUrl` (web-standard URL resolution) distinct from `prefix`. `SearchParamsOption` accepts `Record<string, string|number|boolean|undefined>` (NOT null — drop null from your Query type or it fails typecheck). When adding a modern request lib: (1) Better Auth's React client CANNOT use it — `createAuthClient` hardcodes `customFetchImpl: fetch` and ignores `fetchOptions.customFetch`; force a same-origin URL via the `basePath` option instead (getBaseURL builds `${window.location.origin}${basePath}`). A previous `baseURL: 'http://placeholder'` + customFetch-rewrite hack silently never ran → browser tried to resolve literal host `placeholder` → infinite loading. (2) A TRANSPARENT proxy must use native fetch, not ky — ky auto-parses JSON and throws on non-2xx, the exact opposite of what a relay needs. Use ky for data clients and typed façades; keep fetch for verbatim proxying.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-06-29T00:10:22.137Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-domain-driven-design-system-over-templates",
+      "rule": "A domain dashboard's visual identity must come from encoding DOMAIN SEMANTICS into the design system — not from a brand color or template tropes. Generic \"AI-looking\" dashboards all share: stat-cards with icon-in-colored-box, rounded-xl everywhere, pill-badges for every status, all text in the body font, emoji in copy, centered floating login card. To escape that for an operational/domain product: (1) render machine IDENTIFIERS (serials, UUIDs, version strings, target IDs, keys) in monospace — the single most distinctive, domain-authentic move; (2) status as SIGNAL GEOMETRY (dot/ring/square/diamond/slash) with semantic tones, not uniform pills; (3) the core domain FLOW as a visualization (OTA deployment = pipeline: assigned→downloading→installed), not a count in a card; (4) density over whitespace for real data (Linear/Vercel density); (5) a command palette (⌘K) for power operators; (6) color is SEMANTIC only (1 action accent + 5 signal tones), no decorative gradients/glassmorphism; (7) zero emoji, terse operational copy. Architecture: layer 0 = untouched shadcn primitives; layer 1 = system/* design-system + layout/* shell (reusable simple components: text/buttons/cards/nav, all containerizable, single barrel export); layer 2 = domain/* composites; pages = ≤40-line composition roots. Container vs presentational split (pages fetch, tables/dialogs receive data via props). Status→color lives in ONE typed source (tokens.ts).",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-06-29T00:31:53.608Z",
+      "reinforcementCount": 1
     }
   ]
 }

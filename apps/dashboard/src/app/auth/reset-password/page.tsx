@@ -3,19 +3,15 @@
 import { Suspense, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { http } from '@/lib/api';
-import { Button } from '@/components/ui/Button';
-import { Field, Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Field } from '@/components/system';
 
 /**
- * Web password-reset fallback.
- *
- * Email links point to ninbus.frt.com.br/reset-password?token=... (root). When
- * the app is installed, the App Link opens the mobile app instead. When the app
- * is NOT installed (or App Link not yet verified), the browser lands here and
- * the user can reset their password on the web.
- *
- * The token comes from the email; the new password is POSTed to the API
- * /api/auth/reset-password through the proxy.
+ * Web password-reset fallback. Email links point to /reset-password?token=...
+ * (nginx redirects root → /admin/auth/reset-password). When the mobile app is
+ * installed the App Link intercepts; otherwise the browser lands here and the
+ * new password is POSTed to the API /api/auth/reset-password via the proxy.
  */
 export const dynamic = 'force-dynamic';
 
@@ -29,17 +25,23 @@ export default function ResetPasswordPage() {
 
 function ResetShell({ children, done }: { children?: React.ReactNode; done?: boolean }) {
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+		<div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-12">
 			<div className="w-full max-w-sm">
-				<div className="mb-6 flex flex-col items-center">
-					<div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-xl font-bold text-white">
+				<div className="mb-8 flex items-center gap-2.5">
+					<div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-mono text-base font-bold text-primary-foreground">
 						N
 					</div>
-					<h1 className="text-xl font-bold text-gray-900">
-						{done ? 'Senha alterada' : 'Redefinir senha'}
-					</h1>
+					<div className="leading-tight">
+						<div className="text-sm font-semibold tracking-tight">Ninbus</div>
+						<div className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
+							Fleet Control
+						</div>
+					</div>
 				</div>
-				{children}
+				<h1 className="text-lg font-semibold tracking-tight">
+					{done ? 'Senha alterada' : 'Redefinir senha'}
+				</h1>
+				<div className="mt-6">{children}</div>
 			</div>
 		</div>
 	);
@@ -60,7 +62,7 @@ function ResetForm() {
 		setError(null);
 
 		if (!token) {
-			setError('Token inválido ou ausente. Solicite um novo link de redefinição.');
+			setError('Token inválido ou ausente. Solicite um novo link.');
 			return;
 		}
 		if (password.length < 8) {
@@ -80,7 +82,7 @@ function ResetForm() {
 			setError(
 				err instanceof Error
 					? err.message
-					: 'Não foi possível redefinir a senha. O link pode ter expirado.',
+					: 'Não foi possível redefinir. O link pode ter expirado.',
 			);
 		} finally {
 			setLoading(false);
@@ -90,10 +92,8 @@ function ResetForm() {
 	if (done) {
 		return (
 			<ResetShell done>
-				<div className="rounded-xl border border-green-200 bg-green-50 p-6 text-center">
-					<p className="text-sm text-green-800">
-						Sua senha foi alterada com sucesso. Você já pode entrar no aplicativo.
-					</p>
+				<div className="rounded-md border border-signal-ok/30 bg-signal-ok/10 px-4 py-3 text-sm text-signal-ok">
+					Senha alterada. Você já pode entrar no aplicativo.
 				</div>
 			</ResetShell>
 		);
@@ -101,11 +101,8 @@ function ResetForm() {
 
 	return (
 		<ResetShell>
-			<form
-				onSubmit={handleSubmit}
-				className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
-			>
-				<Field label="Nova senha" htmlFor="password">
+			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+				<Field label="Nova senha" htmlFor="password" required>
 					<Input
 						id="password"
 						type="password"
@@ -116,7 +113,7 @@ function ResetForm() {
 						placeholder="Mínimo 8 caracteres"
 					/>
 				</Field>
-				<Field label="Confirmar senha" htmlFor="confirm">
+				<Field label="Confirmar senha" htmlFor="confirm" required>
 					<Input
 						id="confirm"
 						type="password"
@@ -128,12 +125,12 @@ function ResetForm() {
 					/>
 				</Field>
 				{error && (
-					<div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+					<div className="rounded-md border border-signal-fault/30 bg-signal-fault/10 px-3 py-2 text-sm text-signal-fault">
 						{error}
 					</div>
 				)}
-				<Button type="submit" loading={loading} className="w-full">
-					Alterar senha
+				<Button type="submit" disabled={loading} className="mt-1 w-full">
+					{loading ? 'Alterando…' : 'Alterar senha'}
 				</Button>
 			</form>
 		</ResetShell>

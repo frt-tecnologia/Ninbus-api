@@ -41,10 +41,9 @@ services:
     container_name: ninbus-nginx
     restart: unless-stopped
     ports:
-      - "80:80"       # api (HTTP) + hb (DDI) + ninbus (503) vhosts
+      - "80:80"       # ACME + 80→443 redirect (api/ninbus) + hb DDI (HTTP)
+      - "443:443"     # api + dashboard over HTTPS (TLS)
       - "8080:8080"   # hb vhost — Opção C: existing firmware keeps working
-      # ── Fase 6 (TLS): publish 443 after issuing the wildcard cert ──
-      # - "443:443"
     volumes:
       # Vhosts live on the host so edits apply with a restart, no rebuild.
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro

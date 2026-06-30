@@ -1,0 +1,2 @@
+# Keeps this directory in git. Real certificates live here on the EC2 host
+# (issued by certbot via webroot HTTP-01) and are gitignored — never commit *.pem.

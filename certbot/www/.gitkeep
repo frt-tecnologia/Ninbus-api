@@ -1,0 +1,2 @@
+# Keeps this directory in git. The ACME challenge files written here by
+# certbot are gitignored (ephemeral, regenerated on each renew).

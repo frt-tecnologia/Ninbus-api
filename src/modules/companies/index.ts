@@ -9,6 +9,7 @@ import {
 	ErrorResponseSchema,
 	UpdateCompanyBodySchema,
 } from '@modules/companies/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { resolvePendingMembers } from './designation';
 import * as service from './service';
@@ -66,6 +67,16 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 				ownerEmail: body.ownerEmail,
 				createdBy: user.id,
 			});
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: company.id,
+				action: 'company.created',
+				entityType: 'company',
+				entityId: company.id,
+				entityLabel: company.name,
+				metadata: { ownerEmail: body.ownerEmail },
+			});
 			set.status = 201;
 			return { message: 'Company created successfully', data: company };
 		},
@@ -122,12 +133,22 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 	// PUT /:companyId — Update company (admin+)
 	.put(
 		'/:companyId',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			const company = await service.updateCompany(params.companyId, body);
 			if (!company) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Company not found' };
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'company.updated',
+				entityType: 'company',
+				entityId: params.companyId,
+				entityLabel: company.name,
+				metadata: { changes: body },
+			});
 			return { message: 'Company updated successfully', data: company };
 		},
 		{
@@ -151,8 +172,18 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 	// DELETE /:companyId — Delete company (owner only)
 	.delete(
 		'/:companyId',
-		async ({ params }) => {
+		async ({ params, user }) => {
+			const company = await service.getCompanyById(params.companyId);
 			await service.deleteCompany(params.companyId);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'company.deleted',
+				entityType: 'company',
+				entityId: params.companyId,
+				entityLabel: company?.name ?? null,
+			});
 			return { message: 'Company deleted successfully' };
 		},
 		{

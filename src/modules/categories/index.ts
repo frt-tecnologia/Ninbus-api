@@ -9,6 +9,7 @@ import {
 	createCategorySchema,
 	updateCategorySchema,
 } from '@modules/categories/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import * as service from './service';
 
@@ -47,12 +48,26 @@ export const categoriesModule = withAuth(
 	// POST / — Create category
 	.post(
 		'/',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			const category = await service.createCategory({
 				companyId: params.companyId,
 				name: body.name,
 				type: body.type,
 				description: body.description,
+			});
+			if (!category) {
+				set.status = 500;
+				return { error: 'Internal Error', message: 'Failed to create category' };
+			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'category.created',
+				entityType: 'category',
+				entityId: category.id,
+				entityLabel: category.name,
+				metadata: { type: body.type },
 			});
 			set.status = 201;
 			return { message: 'Category created successfully', data: category };
@@ -105,12 +120,22 @@ export const categoriesModule = withAuth(
 	// PUT /:categoryId — Update category
 	.put(
 		'/:categoryId',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			const category = await service.updateCategory(params.categoryId, params.companyId, body);
 			if (!category) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Category not found' };
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'category.updated',
+				entityType: 'category',
+				entityId: params.categoryId,
+				entityLabel: category.name,
+				metadata: { changes: body },
+			});
 			return { message: 'Category updated successfully', data: category };
 		},
 		{
@@ -137,8 +162,19 @@ export const categoriesModule = withAuth(
 	// DELETE /:categoryId — Delete category
 	.delete(
 		'/:categoryId',
-		async ({ params }) => {
+		async ({ params, user }) => {
+			const category = await service.getCategoryById(params.categoryId, params.companyId);
 			await service.deleteCategory(params.categoryId, params.companyId);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'category.deleted',
+				entityType: 'category',
+				entityId: params.categoryId,
+				entityLabel: category?.name ?? null,
+				metadata: { type: category?.type ?? null },
+			});
 			return { message: 'Category deleted successfully' };
 		},
 		{

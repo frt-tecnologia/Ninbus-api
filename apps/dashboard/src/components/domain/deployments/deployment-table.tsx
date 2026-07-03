@@ -48,6 +48,17 @@ export function DeploymentTable({
 			render: (d) => <Signal token={deploymentSignal(d.status)} size="sm" />,
 		},
 		{
+			key: 'creator',
+			header: 'Criado por',
+			sortValue: (d) => d.creatorEmail ?? '',
+			render: (d) =>
+				d.creatorEmail ? (
+					<span className="truncate text-xs text-muted-foreground">{d.creatorEmail}</span>
+				) : (
+					<span className="text-muted-foreground">—</span>
+				),
+		},
+		{
 			key: 'progress',
 			header: 'Progresso',
 			render: (d) => <ProgressSegments d={d} />,

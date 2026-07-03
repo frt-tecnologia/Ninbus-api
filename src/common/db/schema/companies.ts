@@ -15,6 +15,8 @@ export const companies = pgTable('companies', {
 	name: text('name').notNull(),
 	status: companyStatusEnum('status').notNull().default('active'),
 	hawkbitTenantId: text('hawkbit_tenant_id'),
+	/** Audit: who created this company (super admin). Nullable for pre-existing rows. */
+	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').notNull().defaultNow(),
 	updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

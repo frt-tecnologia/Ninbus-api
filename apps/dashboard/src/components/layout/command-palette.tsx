@@ -1,15 +1,7 @@
 'use client';
-
-import * as React from 'react';
+import { Building2, FileText, HardDrive, LayoutDashboard, Package, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import {
-	LayoutDashboard,
-	HardDrive,
-	Building2,
-	Users,
-	Package,
-	FileText,
-} from 'lucide-react';
+void FileText;
 import {
 	CommandDialog,
 	CommandEmpty,
@@ -58,29 +50,13 @@ export function CommandPalette({
 						shortcut="G D"
 						onSelect={() => go('devices')}
 					/>
-					<Item
-						icon={Building2}
-						label="Empresas"
-						shortcut="G C"
-						onSelect={() => go('companies')}
-					/>
-					<Item
-						icon={Users}
-						label="Usuários"
-						shortcut="G U"
-						onSelect={() => go('users')}
-					/>
+					<Item icon={Building2} label="Empresas" shortcut="G C" onSelect={() => go('companies')} />
+					<Item icon={Users} label="Usuários" shortcut="G U" onSelect={() => go('users')} />
 					<Item
 						icon={Package}
 						label="Deployments"
 						shortcut="G P"
 						onSelect={() => go('deployments')}
-					/>
-					<Item
-						icon={FileText}
-						label="Designações"
-						shortcut="G N"
-						onSelect={() => go('designations')}
 					/>
 				</CommandGroup>
 			</CommandList>

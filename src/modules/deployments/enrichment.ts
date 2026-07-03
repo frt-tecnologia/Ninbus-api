@@ -48,6 +48,9 @@ export interface EnrichedDeployment {
 	/** hawkBit controllerIds assigned at deployment time — source of truth for
 	 *  historical target lists (hawkBit assignedTargets only reflects CURRENT assignment). */
 	targetIds?: string[];
+	/** Who created the deployment (super-admin observability). */
+	createdBy?: string | null;
+	creatorEmail?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +67,8 @@ export interface LocalDeploymentRecord {
 	artifactOriginalFile: string | null;
 	targetCount: number | null;
 	targetIds: string | null;
+	createdBy: string | null;
+	creatorEmail?: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -186,6 +191,8 @@ export function enrichOrphanedDeployment(local: LocalDeploymentRecord): Enriched
 		artifactOriginalFile: local.artifactOriginalFile ?? undefined,
 		targetCount: targetCount || undefined,
 		targetIds: parseTargetIds(local.targetIds),
+		createdBy: local.createdBy ?? null,
+		creatorEmail: local.creatorEmail ?? null,
 		createdAt: local.createdAt.getTime(),
 		lastModifiedAt: local.updatedAt.getTime(),
 	};
@@ -240,5 +247,7 @@ export async function enrichDeployment(
 		artifactOriginalFile: local?.artifactOriginalFile ?? undefined,
 		targetCount: local?.targetCount ?? undefined,
 		targetIds: parseTargetIds(local?.targetIds),
+		createdBy: local?.createdBy ?? null,
+		creatorEmail: local?.creatorEmail ?? null,
 	};
 }

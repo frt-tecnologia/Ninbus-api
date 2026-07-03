@@ -2,7 +2,7 @@
  * Deployment helpers — target resolution and software module lookup.
  */
 import { db } from '@common/db';
-import { artifacts, deployments, devices } from '@common/db/schema';
+import { artifacts, deployments, devices, user } from '@common/db/schema';
 import { appLogger } from '@common/logger';
 import type { LocalDeploymentRecord } from '@modules/deployments/enrichment';
 import { getDeviceIdsByCategories, getHawkbitTargetIdsForCompany } from '@modules/devices/service';
@@ -13,8 +13,23 @@ import { and, eq, inArray } from 'drizzle-orm';
 export async function getLocalDeployment(dsId: number): Promise<LocalDeploymentRecord | null> {
 	try {
 		const [row] = await db
-			.select()
+			.select({
+				id: deployments.id,
+				name: deployments.name,
+				hawkbitDsId: deployments.hawkbitDsId,
+				artifactType: deployments.artifactType,
+				artifactName: deployments.artifactName,
+				artifactVersion: deployments.artifactVersion,
+				artifactOriginalFile: deployments.artifactOriginalFile,
+				targetCount: deployments.targetCount,
+				targetIds: deployments.targetIds,
+				createdBy: deployments.createdBy,
+				creatorEmail: user.email,
+				createdAt: deployments.createdAt,
+				updatedAt: deployments.updatedAt,
+			})
 			.from(deployments)
+			.leftJoin(user, eq(deployments.createdBy, user.id))
 			.where(eq(deployments.hawkbitDsId, dsId))
 			.limit(1);
 		return (row as LocalDeploymentRecord) ?? null;

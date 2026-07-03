@@ -37,7 +37,10 @@ export async function createCompany(data: {
 	ownerEmail: string;
 	createdBy: string;
 }) {
-	const [company] = await db.insert(companies).values({ name: data.name }).returning();
+	const [company] = await db
+		.insert(companies)
+		.values({ name: data.name, createdBy: data.createdBy })
+		.returning();
 	if (!company) throw new Error('Failed to create company');
 
 	// Designate the owner by email (grants immediately if user exists, else pending).

@@ -6,22 +6,27 @@
  * - POST /sync          → super admin only
  * - GET /search         → super admin only
  * - DELETE /deprovision → super admin only
- */import { hawkbitConfig } from '@common/config/hawkbit';
+ */ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
-import { withAuth } from '@common/middleware/auth-guard';
-import { DeviceCreateResponseSchema, DeviceListResponseSchema, ErrorResponseSchema, GenericActionResponseSchema, provisionDeviceSchema } from '@modules/devices/schemas';
-import { Elysia, t } from 'elysia';
-import { or, sql, eq } from 'drizzle-orm';
-import { provisionDevice, listUnclaimedDevices } from './provisioning';
-import { DeviceSyncEngine } from './sync';
-import { normalizeSerial } from '@common/utils/serial-number';
-import { appLogger } from '@common/logger';
 import { hawkbitTargets } from '@common/hawkbit/client';
+import { appLogger } from '@common/logger';
+import { withAuth } from '@common/middleware/auth-guard';
+import { normalizeSerial } from '@common/utils/serial-number';
+import {
+	DeviceCreateResponseSchema,
+	DeviceListResponseSchema,
+	ErrorResponseSchema,
+	GenericActionResponseSchema,
+	provisionDeviceSchema,
+} from '@modules/devices/schemas';
+import { logActivity } from '@modules/observability/activity-service';
+import { eq, or, sql } from 'drizzle-orm';
+import { Elysia, t } from 'elysia';
+import { listUnclaimedDevices, provisionDevice } from './provisioning';
+import { DeviceSyncEngine } from './sync';
 
-export const provisioningRoutes = withAuth(
-	new Elysia({ prefix: '/api/devices' }),
-)
+export const provisioningRoutes = withAuth(new Elysia({ prefix: '/api/devices' }))
 	// POST /api/devices/provision — Pre-register device (super admin only)
 	.post(
 		'/provision',
@@ -39,6 +44,16 @@ export const provisioningRoutes = withAuth(
 			}
 
 			set.status = 201;
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: result.device?.companyId ?? null,
+				action: 'device.provisioned',
+				entityType: 'device',
+				entityId: result.device?.id ?? body.serialNumber,
+				entityLabel: result.device?.serialDisplay ?? body.serialNumber,
+				metadata: { serialNumber: body.serialNumber, name: body.name },
+			});
 			return { message: 'Device provisioned successfully', data: result.device };
 		},
 		{
@@ -49,7 +64,8 @@ export const provisioningRoutes = withAuth(
 				tags: ['Provisioning'],
 				summary: 'Pre-register device in hawkBit (super admin only)',
 				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
-				description: 'Creates hawkBit target + local device as "unclaimed". Serial formats: display (26.6.15.001.00031) or HEX (1A61500100031FFF). Month accepts 0-9 and A/B/C. Display is converted to HEX via BCD packing. Super admin only.',
+				description:
+					'Creates hawkBit target + local device as "unclaimed". Serial formats: display (26.6.15.001.00031) or HEX (1A61500100031FFF). Month accepts 0-9 and A/B/C. Display is converted to HEX via BCD packing. Super admin only.',
 			},
 			response: {
 				201: DeviceCreateResponseSchema,
@@ -103,7 +119,7 @@ export const provisioningRoutes = withAuth(
 					message: `Sync complete. ${discovered} new device(s) discovered from hawkBit.`,
 					data: { discovered },
 				};
-			} catch (error: any) {
+			} catch (_error: any) {
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is not available' };
 			}
@@ -162,7 +178,8 @@ export const provisioningRoutes = withAuth(
 				serialNumber: t.String({
 					minLength: 1,
 					maxLength: 255,
-					description: 'Serial number to search for (display like 26.6.15.001.00031 or HEX like 1A61500100031FFF)',
+					description:
+						'Serial number to search for (display like 26.6.15.001.00031 or HEX like 1A61500100031FFF)',
 				}),
 			}),
 			detail: {
@@ -170,8 +187,8 @@ export const provisioningRoutes = withAuth(
 				security: [{ cookieAuth: [] }, { bearerAuth: [] }],
 				summary: 'Search devices by serialNumber (super admin only)',
 				description:
-				'Search ALL devices (all companies + unclaimed) by serial number. ' +
-				'Supports display (26.6.15.001.00031) and HEX (1A61500100031FFF) formats. Super admin only. Returns up to 50 results.',
+					'Search ALL devices (all companies + unclaimed) by serial number. ' +
+					'Supports display (26.6.15.001.00031) and HEX (1A61500100031FFF) formats. Super admin only. Returns up to 50 results.',
 			},
 			response: {
 				200: DeviceListResponseSchema,
@@ -184,7 +201,7 @@ export const provisioningRoutes = withAuth(
 	// DELETE /api/devices/deprovision/:serialNumber — Remove from hawkBit (super admin only)
 	.delete(
 		'/deprovision/:serialNumber',
-		async ({ params, set }) => {
+		async ({ params, user, set }) => {
 			if (!hawkbitConfig.enabled) {
 				set.status = 400;
 				return { error: 'Bad Request', message: 'hawkBit integration is disabled' };
@@ -213,8 +230,18 @@ export const provisioningRoutes = withAuth(
 
 			appLogger.info(
 				`[DEPROVISION] Device ${serialHex} removed from hawkBit and local DB. ` +
-				`${deleted ? 'Local record deleted.' : 'No local record found.'}`,
+					`${deleted ? 'Local record deleted.' : 'No local record found.'}`,
 			);
+
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: deleted?.companyId ?? null,
+				action: 'device.deprovisioned',
+				entityType: 'device',
+				entityId: deleted?.id ?? serialHex,
+				entityLabel: deleted?.serialDisplay ?? serialHex,
+			});
 
 			return {
 				message: `Device ${serialHex} deprovisioned successfully`,
@@ -228,7 +255,8 @@ export const provisioningRoutes = withAuth(
 				serialNumber: t.String({
 					minLength: 1,
 					maxLength: 255,
-					description: 'Device serial number — display (26.6.15.001.00031) or HEX (1A61500100031FFF)',
+					description:
+						'Device serial number — display (26.6.15.001.00031) or HEX (1A61500100031FFF)',
 				}),
 			}),
 			detail: {

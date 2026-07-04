@@ -127,6 +127,26 @@ export interface EnrichedDeployment {
 	targetIds?: string[];
 }
 
+// ── Target status (per-device deployment outcome) ────────────────────
+
+export interface TargetActionStatus {
+	id: number;
+	type: string;
+	active: boolean;
+	status: string;
+	phase: DeploymentPhase | string;
+	progress: number | null;
+	message: string;
+}
+
+/** Per-target deployment status (controllerId + its action phase/progress). */
+export interface TargetDeploymentStatus {
+	controllerId: string;
+	name: string;
+	updateStatus: string;
+	action: TargetActionStatus | null;
+}
+
 // ── Status trail (observability timeline per device) ───────────────────
 
 export type DeploymentPhase =

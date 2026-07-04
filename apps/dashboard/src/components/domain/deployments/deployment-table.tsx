@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { EnrichedDeployment } from '@/types/domain';
 import { deploymentSignal } from '@/lib/design/tokens';
 import { DataTable, type Column } from '@/components/data/data-table';
@@ -8,16 +9,20 @@ import { cn } from '@/lib/utils';
 
 /**
  * Per-deployment row includes a compact OTA progress segment: finished (ok),
- * in-progress (busy), failed (fault), pending (idle). At-a-glance how each
- * rollout is progressing without a separate detail page.
+ * in-progress (busy), failed (fault), pending (idle). The deployment name
+ * links to its detail page (per-device outcome). At-a-glance how each rollout
+ * is progressing without a separate detail page.
  */
 export function DeploymentTable({
 	deployments,
+	companyId,
 	loading,
 	error,
 	onRetry,
 }: {
 	deployments: EnrichedDeployment[];
+	/** Company context so each deployment name links to its detail page. */
+	companyId?: string;
 	loading: boolean;
 	error: string | null;
 	onRetry: () => void;
@@ -27,19 +32,7 @@ export function DeploymentTable({
 			key: 'name',
 			header: 'Deployment',
 			sortValue: (d) => d.displayName ?? d.name,
-			render: (d) => (
-				<div className="flex flex-col">
-					<span className="text-sm font-medium text-foreground">
-						{d.displayName ?? d.name}
-					</span>
-					{d.artifactName && (
-						<Id
-							value={`${d.artifactName}${d.artifactVersion ? ` v${d.artifactVersion}` : ''}`}
-							className="text-xs text-muted-foreground"
-						/>
-					)}
-				</div>
-			),
+			render: (d) => <DeploymentName deployment={d} companyId={companyId} />,
 		},
 		{
 			key: 'status',
@@ -75,6 +68,40 @@ export function DeploymentTable({
 				</div>
 			}
 		/>
+	);
+}
+
+/** Deployment name — a Link to the detail page when companyId is known. */
+function DeploymentName({
+	deployment,
+	companyId,
+}: {
+	deployment: EnrichedDeployment;
+	companyId?: string;
+}) {
+	const name = deployment.displayName ?? deployment.name;
+	const inner = <span className="text-sm font-medium text-foreground">{name}</span>;
+	return (
+		<div className="flex flex-col">
+			{companyId ? (
+				<Link
+					href={`/deployments/${companyId}/${deployment.id}`}
+					className="hover:text-primary hover:underline"
+				>
+					{inner}
+				</Link>
+			) : (
+				inner
+			)}
+			{deployment.artifactName && (
+				<Id
+					value={`${deployment.artifactName}${
+						deployment.artifactVersion ? ` v${deployment.artifactVersion}` : ''
+					}`}
+					className="text-xs text-muted-foreground"
+				/>
+			)}
+		</div>
 	);
 }
 

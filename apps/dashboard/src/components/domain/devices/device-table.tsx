@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { FileText, FileSpreadsheet } from 'lucide-react';
 import type { Device, Company } from '@/types/domain';
 import { deviceSignal, connectionSignal } from '@/lib/design/tokens';
@@ -60,7 +61,12 @@ export function DeviceTable({
 			sortValue: (d) => d.serialDisplay ?? d.serialNumber ?? '',
 			render: (d) => (
 				<div className="flex flex-col">
-					<Id value={d.serialDisplay ?? d.serialNumber ?? '—'} copy />
+					<Link
+						href={`/devices/${d.id}`}
+						className="font-mono text-xs text-foreground hover:text-primary hover:underline"
+					>
+						{d.serialDisplay ?? d.serialNumber ?? '—'}
+					</Link>
 					{d.name && <span className="text-xs text-muted-foreground">{d.name}</span>}
 				</div>
 			),
@@ -69,7 +75,20 @@ export function DeviceTable({
 			key: 'company',
 			header: 'Empresa',
 			sortValue: (d) => companyName(d.companyId),
-			render: (d) => <span className="text-sm">{companyName(d.companyId)}</span>,
+			render: (d) => (
+				<span className="text-sm">
+					{d.companyId ? (
+						<Link
+							href={`/companies/${d.companyId}`}
+							className="text-foreground hover:text-primary hover:underline"
+						>
+							{companyName(d.companyId)}
+						</Link>
+					) : (
+						companyName(d.companyId)
+					)}
+				</span>
+			),
 		},
 		{
 			key: 'status',

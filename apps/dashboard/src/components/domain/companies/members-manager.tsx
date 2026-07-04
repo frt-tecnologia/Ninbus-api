@@ -3,13 +3,12 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Users } from 'lucide-react';
+import { Trash2, Users } from 'lucide-react';
 import type { Company } from '@/types/domain';
 import type { CompanyRole, Member } from '@/lib/api';
 import { memberService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
 	Dialog,
 	DialogContent,
@@ -25,22 +24,15 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import { Field, Id, Empty } from '@/components/system';
+import { Empty, Id } from '@/components/system';
 import { useFetch } from '@/hooks/useFetch';
 import { useCallback } from 'react';
-import { Trash2 } from 'lucide-react';
-
-const ROLES: { value: CompanyRole; label: string }[] = [
-	{ value: 'owner', label: 'Owner' },
-	{ value: 'admin', label: 'Admin' },
-	{ value: 'operator', label: 'Operator' },
-	{ value: 'viewer', label: 'Viewer' },
-];
+import { MemberAddForm, ROLES } from './member-add-form';
 
 /**
- * Members manager — opens a dialog listing a company's members, with add
- * (by email + role), role change (select) and remove (trash) actions. All
- * mutations refresh server data via router.refresh().
+ * <MembersManager> — opens a dialog listing a company's members, with add
+ * (search → select → role → add via <MemberAddForm>), role change (select) and
+ * remove (trash) actions.
  */
 export function MembersManager({ company }: { company: Company }) {
 	const [open, setOpen] = React.useState(false);
@@ -68,25 +60,11 @@ export function MembersManager({ company }: { company: Company }) {
 function MembersBody({ companyId }: { companyId: string }) {
 	const router = useRouter();
 	const members = useFetch(useCallback(() => memberService.list(companyId), [companyId]));
-	const [email, setEmail] = React.useState('');
-	const [role, setRole] = React.useState<CompanyRole>('viewer');
-	const [adding, setAdding] = React.useState(false);
 
-	async function add(e: React.FormEvent) {
-		e.preventDefault();
-		setAdding(true);
-		const err = await memberService
-			.add(companyId, { email: email.trim(), role })
-			.then(() => null)
-			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha'));
-		setAdding(false);
-		if (err) return toast.error(err);
-		toast.success('Membro adicionado.');
-		setEmail('');
-		notifyDataChanged();
-		router.refresh();
-		members.refetch();
-	}
+	const memberUserIds = React.useMemo(
+		() => new Set((members.data?.data ?? []).map((m) => m.userId)),
+		[members.data],
+	);
 
 	async function changeRole(m: Member, next: CompanyRole) {
 		const err = await memberService
@@ -113,34 +91,16 @@ function MembersBody({ companyId }: { companyId: string }) {
 
 	return (
 		<div className="mt-4 flex flex-col gap-4">
-			<form onSubmit={add} className="flex items-end gap-2">
-				<Field label="Adicionar por email" htmlFor="memail" className="flex-1">
-					<Input
-						id="memail"
-						type="email"
-						required
-						value={email}
-						onChange={(e) => setEmail(e.target.value)}
-						placeholder="nome@empresa.com"
-					/>
-				</Field>
-				<Select value={role} onValueChange={(v) => setRole(v as CompanyRole)}>
-					<SelectTrigger className="h-9 w-32">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{ROLES.map((r) => (
-							<SelectItem key={r.value} value={r.value}>
-								{r.label}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-				<Button type="submit" size="sm" disabled={adding}>
-					Adicionar
-				</Button>
-			</form>
+			<MemberAddForm
+				companyId={companyId}
+				memberUserIds={memberUserIds}
+				onAdded={() => {
+					router.refresh();
+					members.refetch();
+				}}
+			/>
 
+			{/* ── Current members ── */}
 			<div className="rounded-lg border border-border">
 				{members.loading ? (
 					<p className="p-4 text-sm text-muted-foreground">Carregando…</p>

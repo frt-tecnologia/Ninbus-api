@@ -2,6 +2,7 @@ import { http } from './http';
 import type {
 	EnrichedDeployment,
 	TargetStatusTrail,
+	TargetDeploymentStatus,
 	ListResponse,
 	DetailResponse,
 } from '@/types/domain';
@@ -11,6 +12,8 @@ import type {
  *
  * Endpoints consumed (super admin bypasses companyRole via macro):
  *  GET /api/companies/:id/deployments                     → list deployments
+ *  GET /api/companies/:id/deployments/:dsId/target-statuses
+ *                                                          → per-device phase/progress
  *  GET /api/companies/:id/deployments/:dsId/targets/:targetId/status-trail
  *                                                          → device event timeline
  */
@@ -22,6 +25,17 @@ export const deploymentService = {
 		return http.get<ListResponse<EnrichedDeployment>>(
 			`/companies/${companyId}/deployments`,
 			opts,
+		);
+	},
+
+	/** Per-target status for a deployment (which devices updated / failed). */
+	async targetStatuses(
+		companyId: string,
+		deploymentId: string | number,
+	): Promise<ListResponse<TargetDeploymentStatus>> {
+		return http.get<ListResponse<TargetDeploymentStatus>>(
+			`/companies/${companyId}/deployments/${deploymentId}/target-statuses`,
+			{ limit: 500 },
 		);
 	},
 

@@ -83,6 +83,7 @@ export default function DeploymentsPage() {
 
 			<DeploymentTable
 				deployments={deployments.data?.data ?? []}
+				companyId={active}
 				loading={deployments.loading}
 				error={deployments.error}
 				onRetry={deployments.refetch}

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { X } from 'lucide-react';
 import type { PendingDesignation } from '@/types/domain';
@@ -39,7 +40,14 @@ export function DesignationTable() {
 			key: 'company',
 			header: 'Empresa',
 			sortValue: (d) => d.companyName,
-			render: (d) => <span className="text-sm">{d.companyName}</span>,
+			render: (d) => (
+				<Link
+					href={`/companies/${d.companyId}`}
+					className="text-sm text-foreground hover:text-primary hover:underline"
+				>
+					{d.companyName}
+				</Link>
+			),
 		},
 		{
 			key: 'role',

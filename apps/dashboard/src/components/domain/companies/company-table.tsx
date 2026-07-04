@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { MoreVertical, Power, PowerOff, Trash2 } from 'lucide-react';
@@ -76,7 +77,12 @@ export function CompanyTable({
 			sortValue: (c) => c.name,
 			render: (c) => (
 				<div className="flex flex-col">
-					<span className="text-sm font-medium">{c.name}</span>
+					<Link
+						href={`/companies/${c.id}`}
+						className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+					>
+						{c.name}
+					</Link>
 					<Id value={c.id} truncate className="text-xs text-muted-foreground" />
 				</div>
 			),

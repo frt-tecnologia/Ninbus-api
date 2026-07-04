@@ -895,6 +895,86 @@
       "category": "process",
       "learnedAt": "2026-06-29T01:24:26.551Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-letsencrypt-certbot-webroot-https-nginx-docker",
+      "rule": "Para HTTPS com nginx em container: use `certbot certonly --webroot` (NÃO `--nginx`, que só funciona com nginx nativo no host). Emita `certonly --webroot -w /var/www/certbot -d ninbus.frt.com.br -d api.ninbus.frt.com.br` (primeiro -d vira o nome da pasta do cert → bate com ssl_certificate path). Pré-requisito: vhosts :80 já servem `location /.well-known/acme-challenge/ { root /var/www/certbot; }`. Monte `certbot/www` e `certbot/conf` no nginx (bind mount do host). O cert NÃO vive no container — sobrevive a rebuild/git pull/down (só perde em nova instância). AGMADILHA: certbot roda como root no container → cria certbot/conf e certbot/www como root no host; o `git pull` TRAVA ao criar `.gitkeep` nessas pastas (Permission denied) e aborta, deixando o pull inconsistente. SOLUÇÃO: `sudo chown -R ec2-user:ec2-user certbot/` antes do pull. Ordem rígida: (1) emitir cert ANTES de ativar `listen 443 ssl` (nginx crasha se o .pem não existir); (2) ativar 443 no compose; (3) reload. DDI (hb.) deve ficar em HTTP puro (sem redirect 301) pois firmware não segue redirect.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-06-30T21:33:18.819Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nginx-tls-split-80-vs-443-vhosts",
+      "rule": "When enabling TLS in nginx reverse-proxy, split each host into TWO server blocks: a `:80` block (ACME challenge + `return 301 https://$host$request_uri`) and a `:443 ssl` block (the actual proxy_pass). EXCEPT for device endpoints (hawkBit DDI `hb.`): those stay on a single plain-HTTP `:80` block with NO redirect, because embedded firmware does not follow 301 redirects and would break. The `ssl_certificate` path's directory name matches the FIRST `-d` domain passed to certbot — emit `certbot ... -d ninbus.frt.com.br -d api.ninbus.frt.com.br` so the cert lands in `/etc/letsencrypt/live/ninbus.frt.com.br/` and all vhosts share one cert path. Use `ssl_protocols TLSv1.2 TLSv1.3` + HSTS header (`Strict-Transport-Security max-age=31536000`). Keep the ACME challenge location reachable on BOTH :80 and :443 (renewal uses :80). Bind-mount cert dirs `:ro` into nginx (nginx only reads); certbot writes from a separate container/host.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-06-30T21:33:30.090Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-drizzle-shared-db-tablesfilter",
+      "rule": "drizzle-kit generate introspects the live DB (when dbCredentials/DATABASE_URL resolvable) and emits DROP statements for tables/sequences NOT in the schema. In a shared Postgres (Ninbus + hawkBit sp_* coexist), this is catastrophic — generate wanted DROP SEQUENCE for all 16 hawkBit sp_*_seq. ALWAYS add `tablesFilter` to the drizzle config listing ONLY Ninbus-managed tables. tablesFilter filters TABLES but NOT the snapshot's top-level `sequences` key — so a DB-pull snapshot still captures sp_*_seq. The SAFE baseline snapshot must be generated FROM the schema files (drizzle naming, zero foreign objects), not from a DB pull.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-02T13:46:16.987Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-drizzle-snapshot-chain-reconcile",
+      "rule": "This project's drizzle history is hybrid: migrations 0000/0002 have snapshots; 0003-0011 are hand-written SQL WITHOUT snapshots, so drizzle-kit generate diffs against stale state. To reconcile (Option A): (1) temporarily reduce schema to current-minus-new-feature, (2) generate a fresh baseline snapshot into a temp dir (out: './drizzle-tmp2', no dbCredentials → forces offline, no sp_ leaks), (3) install it as the last journal entry's snapshot with prevId fixed to chain linearly (root uses prevId 00000000-...; each subsequent snapshot's prevId = previous snapshot's id), (4) restore full schema, (5) generate → diff is ONLY the new feature. Fix bigserial with { mode: 'number' } (required in drizzle-orm 0.45). drizzle names migrations by journal-entry-COUNT (zero-padded) not max-prefix — can collide with hand-named migrations.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-02T13:46:37.248Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-transition-event-telemetry",
+      "rule": "For device connection observability at scale, store ONLY state transitions (online↔offline), NEVER per-poll events. A device polling every 60s for 24h = ~1440 rows per-poll vs 2-4 rows transition-based (~140× smaller). Append-only transition events (INSERT only) beat session-with-UPDATE rows: if a sync cycle drops between connect/disconnect, append-only never creates zombie sessions (each event is self-sufficient), while UPDATE-based sessions stay eternally open. Compute graph bands at READ time via LEAD() window function with COALESCE(nextAt, NOW()) — closes the current session at now. The transition detection is free: the sync already computes a changedDevices[] array (devices whose connectionStatus changed); just diff previous (from the existing SELECT) vs current and INSERT.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-02T13:46:54.378Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-postgres-enum-cast-query-param-500",
+      "rule": "Postgres throws a hard ERROR (not empty result) when a WHERE clause compares a pgEnum column to a string that isn't a valid enum value: \"invalid input value for enum\". This surfaces as HTTP 500 from Drizzle, leaking internals. ANY query parameter that filters a pgEnum column (type, action, status, entityType) MUST be validated in the Elysia query schema with t.Union of Literals BEFORE reaching the DB. To avoid drift, derive the literals from the Drizzle enum at module load: `import { activityActionEnum } from schema; const ActionLiterals = activityActionEnum.enumValues.map(v => t.Literal(v))`. Invalid values then return a clean 400. Adversarial test `?type=inexistente` catches this — always test enum filters with garbage values.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-07-02T14:36:52.291Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-compose-restart-no-env-reload",
+      "rule": "`docker compose restart <service>` reuses the container's ORIGINAL environment captured at creation time — it does NOT re-read the host `.env` file. So changing SUPER_ADMIN_EMAILS (or any `${VAR}` interpolation) in `.env` and running `restart` silently has NO effect (the old list persists → a newly-added superadmin email still gets 403). To apply new env vars you must `docker compose up -d <service>` which RECREATES the container with the re-interpolated environment. Verify with `docker exec <container> printenv VAR`. This is a common trap when testing RBAC/superadmin changes locally.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-02T14:37:05.649Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-bun-build-no-typecheck-use-tsc",
+      "rule": "`bun build` only TRANSPILES TypeScript (strips types via esbuild-style) — it does NOT type-check. Type errors (TS2339, TS2322, TS2769, TS18048) pass silently through `bun build` but surface in VS Code's tsc and CI. When touching DB-returning code, ALWAYS run `bunx tsc --noEmit -p tsconfig.json` before declaring done. Common traps this catches: (1) pino logger overloads reject `error: unknown` as 2nd positional arg → use `%s` format string with `error instanceof Error ? error.message : String(error)`; (2) Drizzle `.returning()` destructure `[row]` is `T | undefined` → guard or `?? null`; (3) `db.execute(sql\\`...\\`)` with postgres-js returns the rows array DIRECTLY (not `.rows`); (4) catch variables are `unknown` (useUnknownInCatchVariables) → never pass to typed functions directly; (5) adding a field to a Drizzle schema type breaks mock objects in tests that must match the full type.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-07-02T14:55:19.416Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-orphaned-device-staleness-sweep",
+      "rule": "When syncing device state from an external system (hawkBit), a device whose target was DELETED from the external system stops appearing in the sync's target map → it gets skipped (if (!target) return) → its connection_status FREEZES forever at its last value (e.g. 'connected' from a poll a month ago). The external system can't self-correct because it never returns the deleted target. FIX: add a TIME-BASED staleness sweep that runs each sync cycle and marks devices offline when next_expected_poll_at < NOW() — independent of the external system's availability/target existence. This is the standard OTA self-healing pattern: connectivity is derived from the device's OWN poll schedule, not solely from external state. Cheap (1 indexed UPDATE), correct for orphans, and also fixes the case where the external system is temporarily unreachable.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-02T17:50:20.522Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-nextjs-pwa-basepath-production-sw",
+      "rule": "To make a Next.js app a PWA with the native install prompt, THREE requirements must coexist: (1) a valid Web App Manifest served (display:standalone, start_url, scope, icons 192+512+maskable with purpose); (2) a Service Worker WITH a fetch handler (an empty SW does NOT count for installability) — register it PRODUCTION-ONLY via `process.env.NODE_ENV === 'production'` guard (in dev the SW would serve stale chunks and break Fast Refresh, and the browser requires HTTPS/localhost prod for the prompt); (3) HTTPS or localhost. The beforeinstallprompt event is DISPOSABLE — call preventDefault() to defer it, then .prompt() exactly once from a user gesture (never from a timeout). With basePath (e.g. '/console'), serve manifest+sw from public/ so they land at /console/manifest.webmanifest and /console/sw.js, set scope to the basePath, and add headers: sw.js needs 'no-cache' + 'Service-Worker-Allowed' (so SW scope can be the basePath, not just /sw.js's dir). iOS/Safari has no beforeinstallprompt — only manifest + apple-mobile-web-app-capable meta + apple-touch-icon (manual install via Share menu). Android needs a maskable 512px icon or the home icon renders cropped/white.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-03T13:45:00.892Z",
+      "reinforcementCount": 1
     }
   ]
 }

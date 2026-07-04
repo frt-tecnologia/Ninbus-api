@@ -16,9 +16,28 @@ const nextConfig: NextConfig = {
 	basePath: '/console',
 	output: 'standalone',
 	reactStrictMode: true,
-	// The dashboard never talks to the API directly from the browser (cross-origin
-	// cookie). All API calls go through the Route Handler proxy at /api/[...path].
-	// No rewrites needed — the proxy handles forwarding to http://api:8081.
+	async headers() {
+		return [
+			{
+				// The service worker must NEVER be cached long-term, or users get
+				// stuck on an old SW version after a deploy. Serve it with a short
+				// no-cache + correct JS MIME (some CDNs/proxies default to text/plain).
+				source: '/sw.js',
+				headers: [
+					{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+					{ key: 'Service-Worker-Allowed', value: '/console' },
+				],
+			},
+			{
+				// Manifest should revalidate too (icon/name changes).
+				source: '/manifest.webmanifest',
+				headers: [
+					{ key: 'Cache-Control', value: 'no-cache' },
+					{ key: 'Content-Type', value: 'application/manifest+json' },
+				],
+			},
+		];
+	},
 };
 
 export default nextConfig;

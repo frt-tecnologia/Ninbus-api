@@ -1,199 +1,356 @@
 'use client';
 
-import * as React from 'react';
-import { useCallback, useEffect, useState } from 'react';
-import type { Device, EnrichedDeployment } from '@/types/domain';
-import { connectionSignal, deploymentSignal } from '@/lib/design/tokens';
+import { FleetLegend, FleetPulse } from '@/components/domain/devices/fleet-pulse';
+import { BarChart } from '@/components/domain/observability/bar-chart';
 import { PageHeader } from '@/components/layout/page-header';
-import { Section, Kpi, BarMeter, Signal, SignalDot } from '@/components/system';
-import { FleetPulse, FleetLegend } from '@/components/domain/devices/fleet-pulse';
+import {
+	BarMeter,
+	Kpi,
+	RangeProvider,
+	Section,
+	Signal,
+	type TimeRange,
+	TimeRangePicker,
+	last7d,
+	useRange,
+} from '@/components/system';
 import { useFetch } from '@/hooks/useFetch';
-import { companyService, deviceService, userService, designationService, deploymentService } from '@/lib/api';
+import { companyService, deploymentService, deviceService, observabilityService } from '@/lib/api';
+import type { PlatformStats } from '@/lib/api/observability';
+import { connectionSignal, deploymentSignal } from '@/lib/design/tokens';
+import type { EnrichedDeployment } from '@/types/domain';
+import * as React from 'react';
+import { useCallback } from 'react';
 
 /**
- * Overview — platform-wide health at a glance (CLIENT component).
+ * Overview — rich platform observability (super admin).
  *
- * WHY client: the browser runs same-origin through the Route Handler proxy
- * (`/admin/api/*`), which has a real document origin. The previous server
- * component silently failed (`fetch('/admin/api/...')` has no origin on the
- * server) → every count was zero. As a client component it behaves like every
- * other page (devices/companies/…), which already work.
+ * Wraps everything in a RangeProvider so the time window (preset or custom)
+ * drives every section: the daily online histogram, the update stats, the
+ * top-company ranking, and the update-hour distribution. Reuses the existing
+ * FleetPulse + Kpi + BarMeter primitives + the new BarChart.
  */
 export default function OverviewPage() {
+	return (
+		<RangeProvider initial={last7d()}>
+			<OverviewBody />
+		</RangeProvider>
+	);
+}
+
+function OverviewBody() {
+	const { range } = useRange();
+
 	const companies = useFetch(useCallback(() => companyService.list(), []));
 	const devices = useFetch(useCallback(() => deviceService.listAll(), []));
-	const users = useFetch(useCallback(() => userService.list(), []));
-	const designations = useFetch(useCallback(() => designationService.listPending(), []));
+	const stats = useFetch(
+		useCallback(
+			() => observabilityService.stats({ from: range.from, to: range.to }),
+			[range.from, range.to],
+		),
+		[range.from, range.to],
+	);
 
-	const companyList = companies.data?.data ?? [];
-
-	// ── Fleet health by connection signal tone ────────────────────────
 	const deviceList = React.useMemo(() => devices.data?.data ?? [], [devices.data]);
-	const counts = React.useMemo(() => {
-		const c = { ok: 0, busy: 0, idle: 0, fault: 0, info: 0 };
-		for (const d of deviceList) {
-			const tone = connectionSignal(d.connectionStatus).tone;
-			c[tone] += 1;
-		}
-		return c;
-	}, [deviceList]);
-	const online = counts.ok;
-	const offline = counts.idle; // offline + unknown both resolve to 'idle' tone
-
-	// ── OTA rollups (aggregate deployments across companies) ──────────
-	const { inProgress, completed, failed, totalTargets } = useDeploymentRollup(
-		companyList.map((c) => c.id),
+	const online = React.useMemo(
+		() => deviceList.filter((d) => connectionSignal(d.connectionStatus).tone === 'ok').length,
+		[deviceList],
 	);
 
 	return (
 		<>
 			<PageHeader
 				title="Visão geral"
-				description="Estado global da frota OTA em tempo real."
+				description="Observabilidade temporal da frota OTA — atualizações, conectividade e adesão."
+				action={<TimeRangePicker />}
 			/>
-
-			{/* KPI strip */}
-			<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-				<Section>
-					<Kpi label="Dispositivos" value={deviceList.length} hint={`${online} online · ${deviceList.length - online} inativos`} />
-				</Section>
-				<Section>
-					<Kpi label="Empresas" value={companyList.length} hint="tenants ativos" />
-				</Section>
-				<Section>
-					<Kpi
-						label="Usuários"
-						value={users.data?.data.length ?? 0}
-						hint={`${designations.data?.data.length ?? 0} convites pendentes`}
-					/>
-				</Section>
-				<Section>
-					<Kpi
-						label="Atualizações em andamento"
-						value={inProgress}
-						hint={`${completed} concluídas · ${failed} falhas`}
-						indicator={
-							inProgress > 0 ? (
-								<Signal token={deploymentSignal('in_progress')} glyphOnly size="sm" />
-							) : undefined
-						}
-					/>
-				</Section>
-			</div>
-
-			{/* Fleet health + OTA activity gauges */}
-			<div className="mt-4 grid gap-4 lg:grid-cols-2">
-				<Section title="Saúde da frota" description="Distribuição por estado de conexão.">
-					<div className="flex flex-col gap-4">
-						<BarMeter
-							label="Online"
-							value={online}
-							max={Math.max(deviceList.length, 1)}
-							tone="ok"
-							hint="Dispositivos ativos agora."
-						/>
-						<BarMeter
-							label="Inativos"
-							value={deviceList.length - online}
-							max={Math.max(deviceList.length, 1)}
-							tone="idle"
-						/>
-					</div>
-				</Section>
-
-				<Section title="Atividade de atualização" description="Rollups OTA agregados entre todas as empresas.">
-					<div className="flex flex-col gap-4">
-						<BarMeter
-							label="Concluídos"
-							value={completed}
-							max={Math.max(completed + inProgress + failed, 1)}
-							tone="ok"
-						/>
-						<BarMeter
-							label="Em andamento"
-							value={inProgress}
-							max={Math.max(completed + inProgress + failed, 1)}
-							tone="busy"
-						/>
-						<BarMeter
-							label="Falhas"
-							value={failed}
-							max={Math.max(completed + inProgress + failed, 1)}
-							tone="fault"
-						/>
-						<div className="flex items-center gap-2 pt-1 text-sm text-muted-foreground">
-							<SignalDot token={deploymentSignal('in_progress')} />
-							{inProgress} rollouts ativos · {totalTargets} dispositivos alvo no total
-						</div>
-					</div>
-				</Section>
-			</div>
-
-			{/* Fleet pulse — the signature overview visual */}
-			<Section
-				title="Frota"
-				description="Cada célula é um dispositivo, colorido pelo estado de conexão."
-				className="mt-4"
-				action={<FleetLegend />}
-			>
-				{deviceList.length > 0 ? (
-					<FleetPulse devices={deviceList} />
-				) : (
-					<p className="py-10 text-center text-sm text-muted-foreground">
-						Nenhum dispositivo provisionado.
-					</p>
-				)}
-			</Section>
+			<OverviewKpis
+				online={online}
+				totalDevices={deviceList.length}
+				totalCompanies={companies.data?.data.length ?? 0}
+				stats={stats.data}
+				loading={stats.loading}
+			/>
+			<OverviewCharts stats={stats.data} loading={stats.loading} />
+			<FleetPulseSection devices={deviceList} />
+			<RecentDeployments range={range} />
+			<UserOnboarding stats={stats.data} loading={stats.loading} />
 		</>
 	);
 }
 
-/**
- * Aggregate OTA deployment statistics across N companies (parallel fetch,
- * tolerant of per-company failures). Company IDs are joined into a stable key
- * so the effect re-runs only when the set changes, not on every render.
- */
-function useDeploymentRollup(companyIds: string[]) {
-	const [stats, setStats] = useState({
-		inProgress: 0,
-		completed: 0,
-		failed: 0,
-		totalTargets: 0,
-	});
-	const key = companyIds.join(',');
+function OverviewKpis({
+	online,
+	totalDevices,
+	totalCompanies,
+	stats,
+	loading,
+}: {
+	online: number;
+	totalDevices: number;
+	totalCompanies: number;
+	stats?: PlatformStats | null;
+	loading: boolean;
+}) {
+	const histTotal =
+		stats?.onlineHistogram.reduce((s: number, p: { online: number }) => s + p.online, 0) ?? 0;
+	return (
+		<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+			<Section>
+				<Kpi
+					label="Dispositivos online agora"
+					value={loading ? '…' : online}
+					hint={`de ${totalDevices} provisionados`}
+					indicator={
+						online > 0 ? (
+							<Signal token={connectionSignal('online')} glyphOnly size="sm" />
+						) : undefined
+					}
+				/>
+			</Section>
+			<Section>
+				<Kpi
+					label="Devices online no período"
+					value={loading ? '…' : (stats?.onlineDevices ?? 0)}
+					hint={`${histTotal} sessões registradas`}
+				/>
+			</Section>
+			<Section>
+				<Kpi
+					label="Atualizações no período"
+					value={loading ? '…' : (stats?.deploymentCreated ?? 0)}
+					hint={`${stats?.artifactUploaded ?? 0} artifacts enviados`}
+				/>
+			</Section>
+			<Section>
+				<Kpi
+					label="Empresas ativas"
+					value={totalCompanies}
+					hint={`${stats?.newUserDesignations ?? 0} convites pendentes`}
+				/>
+			</Section>
+		</div>
+	);
+}
 
-	useEffect(() => {
+function OverviewCharts({ stats, loading }: { stats?: PlatformStats | null; loading: boolean }) {
+	// Histogram x-axis: ensure every day in range has a point (fill gaps with 0).
+	const hist = React.useMemo(() => {
+		if (!stats) return [];
+		const map = new Map(
+			stats.onlineHistogram.map((p: { date: string; online: number }) => [p.date, p.online]),
+		);
+		const out: { label: string; value: number }[] = [];
+		const { from, to } = stats.range;
+		const start = new Date(from);
+		const end = new Date(to);
+		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+			const key = d.toISOString().slice(0, 10);
+			out.push({ label: key, value: map.get(key) ?? 0 });
+		}
+		return out;
+	}, [stats]);
+
+	const hours = React.useMemo(() => {
+		if (!stats) return [];
+		const map = new Map(
+			stats.updateHourDistribution.map((h: { hour: number; count: number }) => [h.hour, h.count]),
+		);
+		return Array.from({ length: 24 }, (_, h) => ({ label: String(h), value: map.get(h) ?? 0 }));
+	}, [stats]);
+
+	return (
+		<div className="mt-4 grid gap-4 lg:grid-cols-3">
+			<Section
+				className="lg:col-span-2"
+				title="Conectividade diária"
+				description="Devices que ficaram online por dia, no período selecionado."
+			>
+				{loading ? (
+					<div className="h-[120px] animate-pulse rounded bg-secondary/60" />
+				) : (
+					<BarChart data={hist} fillClass="fill-signal-ok" height={140} />
+				)}
+			</Section>
+			<Section
+				title="Horários de atualização"
+				description="Quando costumam ocorrer os rollouts (0–23h)."
+			>
+				{loading ? (
+					<div className="h-[120px] animate-pulse rounded bg-secondary/60" />
+				) : (
+					<BarChart data={hours} fillClass="fill-signal-info" height={140} compact />
+				)}
+			</Section>
+		</div>
+	);
+}
+
+function FleetPulseSection({
+	devices,
+}: { devices: { connectionStatus: string | null; id: string; name: string }[] }) {
+	const counts = React.useMemo(() => {
+		const c = { ok: 0, busy: 0, idle: 0, fault: 0, info: 0 };
+		for (const d of devices) c[connectionSignal(d.connectionStatus).tone] += 1;
+		return c;
+	}, [devices]);
+	const online = counts.ok;
+
+	return (
+		<Section
+			className="mt-4"
+			title="Frota"
+			description="Cada célula é um dispositivo, colorido pelo estado de conexão."
+			action={<FleetLegend />}
+		>
+			{devices.length > 0 ? (
+				<>
+					<div className="mb-3 flex gap-4">
+						<BarMeter label="Online" value={online} max={Math.max(devices.length, 1)} tone="ok" />
+						<BarMeter
+							label="Inativos"
+							value={devices.length - online}
+							max={Math.max(devices.length, 1)}
+							tone="idle"
+						/>
+					</div>
+					<FleetPulse devices={devices as any} />
+				</>
+			) : (
+				<p className="py-10 text-center text-sm text-muted-foreground">
+					Nenhum dispositivo provisionado.
+				</p>
+			)}
+		</Section>
+	);
+}
+
+function RecentDeployments({ range }: { range: TimeRange }) {
+	// Aggregate deployments across companies for the selected range.
+	const companies = useFetch(useCallback(() => companyService.list(), []));
+	const companyIds = companies.data?.data.map((c) => c.id) ?? [];
+	const key = companyIds.join(',');
+	const [list, setList] = React.useState<EnrichedDeployment[]>([]);
+	const [loading, setLoading] = React.useState(true);
+
+	React.useEffect(() => {
 		if (!companyIds.length) return;
 		let active = true;
+		setLoading(true);
 		(async () => {
 			try {
 				const results = await Promise.allSettled(
 					companyIds.map((id) => deploymentService.list(id)),
 				);
 				if (!active) return;
-				let inProgress = 0;
-				let completed = 0;
-				let failed = 0;
-				let totalTargets = 0;
+				const all: EnrichedDeployment[] = [];
 				for (const r of results) {
 					if (r.status !== 'fulfilled') continue;
 					for (const d of r.value.data as EnrichedDeployment[]) {
-						if (d.status === 'in_progress') inProgress++;
-						else if (d.status === 'completed') completed++;
-						else if (d.status === 'failed') failed++;
-						totalTargets += d.statistics?.totalTargets ?? 0;
+						const created = d.createdAt ? new Date(d.createdAt * 1000) : null;
+						if (created && created >= range.from && created <= range.to) all.push(d);
 					}
 				}
-				setStats({ inProgress, completed, failed, totalTargets });
+				all.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+				setList(all.slice(0, 8));
 			} catch {
-				/* tolerated — overview must not crash */
+				/* tolerated */
+			} finally {
+				if (active) setLoading(false);
 			}
 		})();
 		return () => {
 			active = false;
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [key]);
+	}, [key, range.from.getTime(), range.to.getTime()]);
 
-	return stats;
+	return (
+		<Section
+			className="mt-4"
+			title="Atualizações recentes"
+			description={`Rollouts criados no período (${range.label}).`}
+		>
+			{loading ? (
+				<div className="space-y-1.5 p-2">
+					{Array.from({ length: 3 }).map((_, i) => (
+						<div key={i} className="h-8 animate-pulse rounded bg-secondary/60" />
+					))}
+				</div>
+			) : list.length === 0 ? (
+				<p className="py-6 text-center text-sm text-muted-foreground">
+					Nenhuma atualização no período.
+				</p>
+			) : (
+				<ul className="divide-y divide-border">
+					{list.map((d) => {
+						const failed = d.statistics.failed;
+						return (
+							<li key={d.id} className="flex items-center gap-2 px-3 py-2">
+								<Signal token={deploymentSignal(d.status)} glyphOnly size="sm" />
+								<div className="min-w-0 flex-1">
+									<div className="truncate text-xs font-medium text-foreground">
+										{d.displayName ?? d.name}
+									</div>
+									<div className="truncate text-[10px] text-muted-foreground">
+										{d.creatorEmail ?? '—'} · {d.artifactName ?? '—'}
+									</div>
+								</div>
+								<div className="flex items-center gap-2 font-mono text-[10px]">
+									<span className="text-signal-ok">{d.statistics.finished}</span>
+									{failed > 0 && (
+										<span className="text-signal-fault" title="Dispositivos com falha">
+											{failed}✕
+										</span>
+									)}
+									<span className="text-muted-foreground">/ {d.statistics.totalTargets}</span>
+								</div>
+							</li>
+						);
+					})}
+				</ul>
+			)}
+		</Section>
+	);
+}
+
+function UserOnboarding({ stats, loading }: { stats?: PlatformStats | null; loading: boolean }) {
+	return (
+		<div className="mt-4 grid gap-4 lg:grid-cols-2">
+			<Section title="Adesão de usuários" description="Novos convites (designações) no período.">
+				{loading ? (
+					<div className="h-16 animate-pulse rounded bg-secondary/60" />
+				) : (
+					<div className="flex items-center gap-3 p-3">
+						<Kpi
+							label="Novos convites"
+							value={stats?.newUserDesignations ?? 0}
+							hint="aguardando cadastro"
+						/>
+						<p className="flex-1 text-xs text-muted-foreground">
+							Designações criadas no período — usuários que ganharão acesso ao se cadastrar.
+						</p>
+					</div>
+				)}
+			</Section>
+			<Section title="Empresas mais ativas" description="Quem mais realizou operações no período.">
+				{loading ? (
+					<div className="h-16 animate-pulse rounded bg-secondary/60" />
+				) : (stats?.topCompanies.length ?? 0) === 0 ? (
+					<p className="py-6 text-center text-sm text-muted-foreground">
+						Sem atividade registrada no período.
+					</p>
+				) : (
+					<ul className="divide-y divide-border">
+						{(stats?.topCompanies ?? []).map((c) => (
+							<li key={c.companyId} className="flex items-center justify-between px-3 py-1.5">
+								<span className="truncate text-xs text-foreground">{c.companyName ?? '—'}</span>
+								<span className="font-mono text-[10px] text-muted-foreground">{c.actions}</span>
+							</li>
+						))}
+					</ul>
+				)}
+			</Section>
+		</div>
+	);
 }

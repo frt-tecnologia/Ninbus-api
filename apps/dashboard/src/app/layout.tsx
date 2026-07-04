@@ -1,8 +1,7 @@
-import type { Metadata } from 'next';
-import { Poppins, JetBrains_Mono } from 'next/font/google';
-import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/theme-provider';
-import { BRAND_LOGOS } from '@/lib/brand-logos';
+import type { Metadata, Viewport } from 'next';
+import { JetBrains_Mono, Poppins } from 'next/font/google';
+import { Toaster } from 'sonner';
 import './globals.css';
 
 /**
@@ -35,10 +34,32 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
 	title: 'Ninbus',
 	description: 'Console de operações OTA — provisioning, deployments e telemetria da frota.',
-	icons: {
-		icon: BRAND_LOGOS.ninbus,
-		apple: BRAND_LOGOS.ninbus,
+	manifest: '/console/manifest.webmanifest',
+	applicationName: 'Ninbus',
+	appleWebApp: {
+		capable: true,
+		title: 'Ninbus',
+		statusBarStyle: 'black-translucent',
 	},
+	formatDetection: {
+		telephone: false,
+	},
+	icons: {
+		icon: [
+			{ url: '/console/favicon-32.png', sizes: '32x32', type: 'image/png' },
+			{ url: '/console/icon-192.png', sizes: '192x192', type: 'image/png' },
+			{ url: '/console/icon-512.png', sizes: '512x512', type: 'image/png' },
+		],
+		apple: [{ url: '/console/apple-icon-180.png', sizes: '180x180' }],
+	},
+};
+
+export const viewport: Viewport = {
+	themeColor: '#0a0a0c',
+	width: 'device-width',
+	initialScale: 1,
+	maximumScale: 5,
+	viewportFit: 'cover',
 };
 
 export default function RootLayout({

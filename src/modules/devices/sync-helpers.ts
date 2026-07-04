@@ -7,15 +7,11 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { appLogger } from '@common/logger';
 import { normalizeSerial } from '@common/utils/serial-number';
-import { and, eq, isNotNull } from 'drizzle-orm';
-import {
-	type ConnectionStatus,
-	type HawkbitUpdateStatus,
-	extractTargetData,
-	getProtectedStatus,
-} from './sync-core';
-import { fetchTargetsByIds } from './sync-fetch';
 import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
+import { recordConnectionTransition } from '@modules/observability/connections-service';
+import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
+import { extractTargetData, getProtectedStatus } from './sync-core';
+import { fetchTargetsByIds } from './sync-fetch';
 
 // Re-export everything from split files
 export {
@@ -52,7 +48,13 @@ export interface ChangedDevice {
  *  Returns Map<companyId, count> of updated devices per company for SSE emission.
  */
 export async function batchUpdateDevicesFromTargets(
-	devicesToUpdate: { id: string; hawkbitTargetId: string; companyId?: string | null }[],
+	devicesToUpdate: {
+		id: string;
+		hawkbitTargetId: string | null;
+		companyId?: string | null;
+		name?: string | null;
+		previousConnectionStatus?: string | null;
+	}[],
 	targetMap: Map<string, any>,
 ): Promise<{ companyUpdates: Map<string, number>; changedDevices: ChangedDevice[] }> {
 	if (devicesToUpdate.length === 0) return { companyUpdates: new Map(), changedDevices: [] };
@@ -66,6 +68,8 @@ export async function batchUpdateDevicesFromTargets(
 	for (let i = 0; i < devicesToUpdate.length; i += chunkSize) {
 		const chunk = devicesToUpdate.slice(i, i + chunkSize);
 		const updates = chunk.map(async (device) => {
+			// A device without a hawkBit target id cannot be synced from a target map.
+			if (!device.hawkbitTargetId) return;
 			const target = targetMap.get(device.hawkbitTargetId);
 			if (!target) return;
 
@@ -92,6 +96,25 @@ export async function batchUpdateDevicesFromTargets(
 						lastPollAt: targetData.lastPollAt,
 						ipAddress: targetData.ipAddress,
 					});
+
+					// Telemetry: capture ONLY real connection transitions (online↔offline).
+					// Steady-state polls produce ZERO writes. Fire-and-forget (best-effort).
+					const previous = device.previousConnectionStatus ?? null;
+					const current = targetData.connectionStatus ?? null;
+					if (previous !== current) {
+						void recordConnectionTransition({
+							deviceId: device.id,
+							companyId: device.companyId,
+							hawkbitTargetId: device.hawkbitTargetId,
+							deviceName: device.name ?? device.hawkbitTargetId,
+							previous,
+							current,
+							occurredAt: targetData.lastPollAt ?? now,
+							ipAddress: targetData.ipAddress,
+						}).catch(() => {
+							/* telemetry is best-effort */
+						});
+					}
 				}
 			} catch (error: any) {
 				appLogger.debug('[SYNC] Failed to update device %s: %s', device.id, error?.message);
@@ -147,7 +170,7 @@ export async function syncPendingDevices(targetMap: Map<string, any>): Promise<v
 
 	for (const local of localPending) {
 		const match = local.serialNumber
-			? targetMap.get(local.serialNumber) ?? targetMap.get(local.name)
+			? (targetMap.get(local.serialNumber) ?? targetMap.get(local.name))
 			: null;
 
 		if (match) {
@@ -161,7 +184,11 @@ export async function syncPendingDevices(targetMap: Map<string, any>): Promise<v
 				})
 				.where(eq(devices.id, local.id));
 
-			appLogger.info('[SYNC] Linked pending device %s → hawkBit %s', local.name, match.controllerId);
+			appLogger.info(
+				'[SYNC] Linked pending device %s → hawkBit %s',
+				local.name,
+				match.controllerId,
+			);
 		}
 	}
 }
@@ -175,7 +202,11 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 	if (!hawkbitConfig.enabled) return 0;
 
 	const companyDevices = await db
-		.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId, companyId: devices.companyId })
+		.select({
+			id: devices.id,
+			hawkbitTargetId: devices.hawkbitTargetId,
+			companyId: devices.companyId,
+		})
 		.from(devices)
 		.where(
 			and(
@@ -192,7 +223,10 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 		.filter((id): id is string => id !== null);
 
 	const targetMap = await fetchTargetsByIds(controllerIds);
-	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(companyDevices, targetMap);
+	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(
+		companyDevices,
+		targetMap,
+	);
 
 	const count = companyUpdates.get(companyId) ?? 0;
 	if (count > 0) {
@@ -218,4 +252,62 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 	}
 
 	return count;
+}
+
+/**
+ * Staleness sweep — marks devices as DISCONNECTED when they missed their
+ * expected poll window, independent of hawkBit availability.
+ *
+ * WHY: a device whose hawkBit target was deleted (orphan) stops appearing in
+ * the sync's target map, so `batchUpdateDevicesFromTargets` skips it and its
+ * `connection_status` freezes at `connected` forever. This time-based check
+ * self-heals that: if `next_expected_poll_at` has passed, the device cannot be
+ * connected. Cheap (1 indexed UPDATE), correct, and independent of hawkBit.
+ *
+ * Returns the count of devices corrected (for logging / SSE).
+ */
+export async function markOverdueDevicesOffline(): Promise<number> {
+	try {
+		const corrected = await db
+			.update(devices)
+			.set({ connectionStatus: 'disconnected', updatedAt: new Date() })
+			.where(
+				and(
+					inArray(devices.connectionStatus, ['connected', 'online']),
+					isNotNull(devices.nextExpectedPollAt),
+					lt(devices.nextExpectedPollAt, new Date()),
+				),
+			)
+			.returning({
+				id: devices.id,
+				companyId: devices.companyId,
+				hawkbitTargetId: devices.hawkbitTargetId,
+				name: devices.name,
+			});
+
+		if (corrected.length > 0) {
+			appLogger.info(
+				'[SYNC] Staleness sweep: marked %d overdue device(s) offline',
+				corrected.length,
+			);
+			// Capture transition telemetry (connected→offline) for each.
+			for (const d of corrected) {
+				void recordConnectionTransition({
+					deviceId: d.id,
+					companyId: d.companyId ?? '',
+					hawkbitTargetId: d.hawkbitTargetId,
+					deviceName: d.name ?? d.hawkbitTargetId ?? d.id,
+					previous: 'connected',
+					current: 'disconnected',
+					occurredAt: new Date(),
+				}).catch(() => {
+					/* best-effort */
+				});
+			}
+		}
+		return corrected.length;
+	} catch (error: any) {
+		appLogger.debug('[SYNC] Staleness sweep failed: %s', error?.message);
+		return 0;
+	}
 }

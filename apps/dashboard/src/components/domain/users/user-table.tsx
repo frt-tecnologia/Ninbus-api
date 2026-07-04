@@ -1,9 +1,9 @@
 'use client';
 
-import type { User } from '@/types/domain';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Id, Time, Signal } from '@/components/system';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Signal, Time } from '@/components/system';
 import type { SignalToken } from '@/lib/design/tokens';
+import type { User } from '@/types/domain';
 
 function roleSignal(u: User): SignalToken {
 	return u.isSuperAdmin
@@ -13,6 +13,10 @@ function roleSignal(u: User): SignalToken {
 			: { tone: 'idle', shape: 'ring', label: 'Sem empresa' };
 }
 
+/**
+ * <UserTable> — registered-accounts table. Search filters by name + email
+ * (custom predicate, delegated to <DataTable> which now actually filters).
+ */
 export function UserTable({
 	users,
 	loading,
@@ -26,6 +30,10 @@ export function UserTable({
 	onRetry: () => void;
 	search: { value: string; onChange: (v: string) => void; placeholder?: string };
 }) {
+	// Search predicate: match name OR email (the human-readable fields).
+	const filter = (u: User, term: string) =>
+		u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term);
+
 	const columns: Column<User>[] = [
 		{
 			key: 'email',
@@ -48,9 +56,7 @@ export function UserTable({
 			key: 'companies',
 			header: 'Empresas',
 			sortValue: (u) => u.companyCount,
-			render: (u) => (
-				<span className="font-mono tabular-nums text-sm">{u.companyCount}</span>
-			),
+			render: (u) => <span className="font-mono tabular-nums text-sm">{u.companyCount}</span>,
 		},
 		{
 			key: 'verified',
@@ -62,7 +68,12 @@ export function UserTable({
 				</span>
 			),
 		},
-		{ key: 'createdAt', header: 'Cadastro', sortValue: (u) => u.createdAt, render: (u) => <Time value={u.createdAt} /> },
+		{
+			key: 'createdAt',
+			header: 'Cadastro',
+			sortValue: (u) => u.createdAt,
+			render: (u) => <Time value={u.createdAt} />,
+		},
 	];
 
 	return (
@@ -73,7 +84,7 @@ export function UserTable({
 			loading={loading}
 			error={error}
 			onRetry={onRetry}
-			search={search}
+			search={{ ...search, filter, hideInput: true }}
 			empty={<div className="py-12 text-center text-sm text-muted-foreground">Nenhum usuário.</div>}
 		/>
 	);

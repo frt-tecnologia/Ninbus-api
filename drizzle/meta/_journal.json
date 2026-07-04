@@ -78,6 +78,13 @@
 			"when": 1750100000000,
 			"tag": "0011_deployment_target_snapshot",
 			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1782997621957,
+			"tag": "0012_observability",
+			"breakpoints": true
 		}
 	]
 }

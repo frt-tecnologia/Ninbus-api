@@ -16,14 +16,15 @@ import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
 import { eq } from 'drizzle-orm';
+import { fetchAllHawkBitTargets } from './sync-fetch';
 import {
 	type SyncState,
-	syncSingleDeviceSwr,
 	syncCompanyOnDemand,
 	syncNewTargets,
+	syncSingleDeviceSwr,
 } from './sync-helpers';
-import { fetchAllHawkBitTargets } from './sync-fetch';
-import { syncPeriodic, syncHybrid } from './sync-strategies';
+import { markOverdueDevicesOffline } from './sync-helpers';
+import { syncHybrid, syncPeriodic } from './sync-strategies';
 
 // ---------------------------------------------------------------------------
 // State
@@ -120,9 +121,19 @@ export const DeviceSyncEngine = {
 
 		try {
 			switch (hawkbitConfig.syncMode) {
-				case 'periodic': state.totalSynced = await syncPeriodic(); break;
-				case 'hybrid': state.totalSynced = await syncHybrid(); break;
+				case 'periodic':
+					state.totalSynced = await syncPeriodic();
+					break;
+				case 'hybrid':
+					state.totalSynced = await syncHybrid();
+					break;
 			}
+
+			// Staleness sweep: self-heal orphaned/overdue devices (independent of
+			// hawkBit). Catches devices whose hawkBit target was deleted and would
+			// otherwise freeze at 'connected' forever.
+			await markOverdueDevicesOffline();
+
 			state.lastFullSyncAt = new Date();
 			state.lastDurationMs = Date.now() - startTime;
 
@@ -154,7 +165,10 @@ export const DeviceSyncEngine = {
 					clearInterval(syncTimer);
 					syncTimer = null;
 				}
-				appLogger.info('[SYNC] Active deployment detected — fast sync enabled (%ds), normal sync paused', FAST_SYNC_INTERVAL_SEC);
+				appLogger.info(
+					'[SYNC] Active deployment detected — fast sync enabled (%ds), normal sync paused',
+					FAST_SYNC_INTERVAL_SEC,
+				);
 				fastSyncTimer = setInterval(() => {
 					this.runSyncCycle().catch((err) => {
 						appLogger.debug('[SYNC] Fast cycle error: %s', err?.message);
@@ -176,7 +190,10 @@ export const DeviceSyncEngine = {
 						state.errors++;
 					});
 				}, intervalSec * 1000);
-				appLogger.info('[SYNC] All deployments complete — fast sync disabled, normal sync resumed (%ds)', intervalSec);
+				appLogger.info(
+					'[SYNC] All deployments complete — fast sync disabled, normal sync resumed (%ds)',
+					intervalSec,
+				);
 			}
 		}
 	},
@@ -186,7 +203,9 @@ export const DeviceSyncEngine = {
 		if (!hawkbitConfig.enabled) return 0;
 		const targetMap = await fetchAllHawkBitTargets();
 		await syncNewTargets(targetMap);
-		const localDevices = await db.select({ hawkbitTargetId: devices.hawkbitTargetId }).from(devices);
+		const localDevices = await db
+			.select({ hawkbitTargetId: devices.hawkbitTargetId })
+			.from(devices);
 		return localDevices.length;
 	},
 
@@ -214,11 +233,16 @@ export const DeviceSyncEngine = {
 	},
 
 	/** Legacy — kept for backward compatibility. */
-	async syncCompany(_companyId: string) { /* no-op */ },
+	async syncCompany(_companyId: string) {
+		/* no-op */
+	},
 
 	/** Single-device stale-while-revalidate (used by all modes). */
 	async syncSingleDevice(targetId: string) {
-		return syncSingleDeviceSwr(targetId, { enabled: hawkbitConfig.enabled, syncStaleSec: hawkbitConfig.syncStaleSec });
+		return syncSingleDeviceSwr(targetId, {
+			enabled: hawkbitConfig.enabled,
+			syncStaleSec: hawkbitConfig.syncStaleSec,
+		});
 	},
 
 	/** Company-scoped on-demand sync (fire-and-forget on GET /devices). */

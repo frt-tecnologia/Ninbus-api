@@ -128,6 +128,9 @@ services:
       SSE_HEARTBEAT_SEC: ${SSE_HEARTBEAT_SEC:-30}
       SSE_MAX_CONNECTIONS_PER_COMPANY: ${SSE_MAX_CONNECTIONS_PER_COMPANY:-50}
 
+      # Observability (telemetry retention; audit log is never expired)
+      OBS_CONNECTIONS_RETENTION_DAYS: ${OBS_CONNECTIONS_RETENTION_DAYS:-90}
+
 
     depends_on:
       hawkbit:

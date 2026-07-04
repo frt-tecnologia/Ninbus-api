@@ -1,6 +1,7 @@
 import { http } from './http';
 import type {
 	Device,
+	DeviceCategory,
 	ListResponse,
 	ProvisionDeviceInput,
 	ActionResponse,
@@ -39,5 +40,27 @@ export const deviceService = {
 	/** Force-refresh every device's connection status from hawkBit. */
 	async syncAll(): Promise<ActionResponse> {
 		return http.post<ActionResponse>('/admin/devices/sync');
+	},
+
+	/** List the categories (groups) assigned to a device. */
+	async listCategories(
+		companyId: string,
+		deviceId: string,
+	): Promise<ListResponse<DeviceCategory>> {
+		return http.get<ListResponse<DeviceCategory>>(
+			`/companies/${companyId}/devices/${deviceId}/categories`,
+		);
+	},
+
+	/** Replace ALL category assignments for a device (N:N). */
+	async assignCategories(
+		companyId: string,
+		deviceId: string,
+		categoryIds: string[],
+	): Promise<ActionResponse> {
+		return http.put<ActionResponse>(
+			`/companies/${companyId}/devices/${deviceId}/categories`,
+			{ categoryIds },
+		);
 	},
 };

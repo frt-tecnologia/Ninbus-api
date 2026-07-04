@@ -208,6 +208,19 @@ const EnvSchema = Type.Object({
 	RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 150 })),
 	AUTH_RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
 	AUTH_RATE_LIMIT_MAX: Type.Optional(Type.Number({ default: 20 })),
+
+	// ── Observability (audit + telemetry retention) ────────────
+	OBS_CONNECTIONS_RETENTION_DAYS: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			default: 90,
+			description:
+				'Device connection telemetry retention in days. Rows older than this are ' +
+				'batch-deleted by the background retention job (runs hourly). ' +
+				'Default 90 days. Set to 0 to disable retention (keep forever). ' +
+				'activity_log is an audit log and is NEVER expired.',
+		}),
+	),
 });
 
 export type Env = Static<typeof EnvSchema>;
@@ -285,6 +298,9 @@ export function validateEnv(): Env {
 			: undefined,
 		AUTH_RATE_LIMIT_MAX: process.env['AUTH_RATE_LIMIT_MAX']
 			? Number(process.env['AUTH_RATE_LIMIT_MAX'])
+			: undefined,
+		OBS_CONNECTIONS_RETENTION_DAYS: process.env['OBS_CONNECTIONS_RETENTION_DAYS']
+			? Number(process.env['OBS_CONNECTIONS_RETENTION_DAYS'])
 			: undefined,
 	};
 

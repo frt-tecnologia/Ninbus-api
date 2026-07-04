@@ -1,5 +1,6 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import { assignCategoriesSchema } from '@modules/devices/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import * as service from './service';
 
@@ -36,8 +37,17 @@ export const deviceCategoryRoutes = withAuth(
 	// PUT /:deviceId/categories — Assign categories to device
 	.put(
 		'/:deviceId/categories',
-		async ({ params, body }: any) => {
+		async ({ params, body, user }: any) => {
 			await service.assignCategories(params.deviceId, body.categoryIds);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'device.category_changed',
+				entityType: 'device',
+				entityId: params.deviceId,
+				metadata: { categoryIds: body.categoryIds },
+			});
 			return { message: 'Categories assigned successfully' };
 		},
 		{

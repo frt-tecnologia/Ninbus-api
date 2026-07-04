@@ -1,95 +1,94 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-06-26T19:46:40.891Z
+**Date**: 2026-07-02T17:51:02.091Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Build limpo (1317 módulos). VALIDADO EMPÍRICAMENTE no Docker: API healthy, /health→200, /docs→401/200, Mgmt→404, DDI→401. Frente B altera findSoftwareModule (agora recebe companyId) e Frente C adiciona guard em 2 rotas — sem quebrar contratos da API (mesmo campo artifactName, mesmo targetId no path). createDeployment continua funcionando com artifact próprio (B-T1/B-T2). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (segfault pré-existente, não relacionado: build verde, DB conecta isolado, meus testes passam).
+Bug do device offline CORRIGIDO e validado no Docker (target deletado do hawkBit → status congelado → sweep temporal marca disconnected). Endpoint /stats criado, debugado (Date→ISO string), validado adversarialmente (401/403/400/200). Overview redesenhado serve (200). Typecheck+build limpos. SEM REGRESSÃO.
 
-**Evidence**: bun build 1317; Docker: api(healthy); curl /health→200 /docs→401; B-T1/B-T2 pass (artifact próprio encontrado)
+**Evidence**: Docker: device Veículo 06 = 'disconnected' (era 'connected' congelado). /api/admin/stats→200 com topCompanies populado. /console/overview→200. tsc limpo. next build: overview 7.4kB.
 
 ### ✅ Code Quality
 
-Arquivos <250: helpers.ts=189, device-routes.ts=280 (pré-existente >250? verificar), deployments-tenant-isolation.test.ts=49, deployments-target-ownership.test.ts=53, nginx-proxy.test.ts=145. Separação mantida: helpers.ts (ownership + lookup) → service.ts/routes.ts. Import não-usado removido (hawkbitSoftwareModules). Biome limpo nos arquivos novos/alterados (Number.isNaN aplicado). Logger inalterado.
+Componentização: BarChart (reutilizável p/ histograma + horas), GroupTypeIcon (reutilizável), GroupManageDialog (container), stats-service (lógica isolada). Logger %s. Sem emoji (line-art SVGs). Gear button p/ modal. Clean separation mantida.
 
-**Evidence**: wc -l helpers=189; biome check helpers.ts/device-routes.ts → No fixes applied
+**Evidence**: wc -l: bar-chart=99, group-type-icon=72, group-manage-dialog=180, stats-service=117, retention=106 — todos <250. group-organizer refatorado. BarChart/GroupTypeIcon reutilizáveis.
 
 ### ✅ Schema Organization
 
-Nenhum schema TS de response/body alterado. device-routes.ts usa schemas pré-existentes (deploymentParams, deploymentActionParams) importados de schemas.ts. Não introduzi schemas inline. Não se aplica diretamente.
+PlatformStatsResponseSchema e StatsQuerySchema definidos em observability/schemas.ts (t.Date para timestamps). Rota /stats importa de schemas.ts (nunca inline). Tipos frontend centralizados em lib/api/observability.ts. DeviceCategory/EnrichedDeployment types em domain.ts.
 
-**Evidence**: git diff --stat src/modules/deployments/schemas.ts → vazio
+**Evidence**: PlatformStatsResponseSchema + StatsQuerySchema em observability/schemas.ts. Endpoint importa de schemas.ts. tipos PlatformStats em lib/api/observability.ts.
 
 ### ✅ Error Handling
 
-Two-level hawkBit protection intacta. Frente C adiciona 404 (target não pertence à empresa) ANTES do try/hawkBit — para o fluxo cedo sem chamar hawkBit. findSoftwareModule retorna null (vira 400 'Artifact not found') quando cross-tenant. Erro de FK/DB propagam para onError global (não há swallowing). Decisão 404 (não 403) para não vazar existência de target — documentada.
+Staleness sweep é best-effort (try/catch, loga debug, não derruba sync). Bug do /stats (Date em db.execute) corrigido com ISO string. Endpoints /stats validados adversarialmente. Sweep auto-corretivo independente de hawkBit.
 
-**Evidence**: device-routes.ts: if (!isTargetOwnedByCompany) return 404 antes do try
+**Evidence**: markOverdueDevicesOffline try/catch→debug (não quebra sync). stats-service: Date params falhavam→corrigido p/ ISO. /stats 401/403/400 coerentes.
 
 ### ✅ Test Coverage
 
-Adicionei 2 novos arquivos de teste (13 testes) + 3 testes no nginx-proxy: tests/deployments-tenant-isolation.test.ts (7: setup, B-T1..T6 cross-tenant, brute-force), tests/deployments-target-ownership.test.ts (6: C-T1..T5), tests/nginx-proxy.test.ts (+3: docs auth_basic, mount .htpasswd, gitignore). TODOS PASSAM (31 total). afterAll cleanAll() em ambos. Cobrem exatamente os bugs fechados (cross-tenant SM ID, cross-tenant targetId, brute-force enumeração). Suíte base ampla bloqueada por bug Bun (documentado).
+Bug do device investigado com método de hipóteses (H1-H6, descartadas até H5 confirmado: target deletado). Fix validado empiricamente no Docker. /stats testado adversarialmente (auth/types/range). Overview serve (200). Limite pré-existente: buntest segfault Bun 1.3.12.
 
-**Evidence**: bun test 3 arquivos → 28 pass; +3 nginx → 31 total / 0 fail
+**Evidence**: /stats 401/403/400/200 testados. device fix validado (disconnected). topCompanies populado testado.
 
 ### ✅ Config Centralization
 
-Nenhuma nova var de env. Frente A usa .htpasswd no host (gitignored, NÃO em env.ts) — decisão correta: segredo não deve ir pro repo/env versionado. Basic Auth realm 'Ninbus API Docs' hardcoded no nginx (não é config de app). hawkBit forward-headers (iteração anterior) é Spring property no docker-compose. Nenhuma leitura process.env adicionada.
+Nenhuma config nova adicionada (sweep roda no ciclo de sync existente, usa hawkbitConfig.enabled via sync.ts). stats-service recebe from/to como parâmetros (não lê env). Sem process.env fora de env.ts nos arquivos novos.
 
-**Evidence**: .gitignore tem docker/nginx/.htpasswd; git diff env.ts → vazio
+**Evidence**: Nenhuma var de env nova nesta fase. sweep usa hawkbitConfig (pré-existente). stats-service usa datas passadas como param. Sem process.env novo.
 
 ### ✅ Security
 
-MELHORADO: (A) /docs + /docs/json protegidos por Basic Auth (defesa em profundidade, credencial separada da app); (B) cross-tenant de artifacts FECHADO — operator de empresa A não referencia SM da empresa B (404), brute-force de IDs não enumera; (C) target ownership em action-status/ddi-check FECHADO — empresa B não lê status de device da empresa A. Validação empírica Docker confirma sem regressão (Mgmt API continua 404, DDI continua 401). .htpasswd BCrypt gitignored. deviceKey/Tokens inalterados (não armazenados).
+Endpoint /stats é {auth:true, superAdmin:true} — validado 401 sem auth, 403 com cookie inválido. Read-only (GET). GroupManageDialog usa endpoints company-scoped autenticados. Sweep não expõe nada (interno ao sync). confirm() antes de excluir grupo.
 
-**Evidence**: B-T3/C-T2 pass (cross-tenant→null/false); curl /docs→401; .htpasswd no .gitignore
+**Evidence**: /stats superadmin-only (401/403/200). sweep não expõe dados. GroupManageDialog mutations via endpoints autenticados.
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Princípio p-hawkbit-single-tenant-ownership-via-local-table aprendido (104 total): hawkBit single-tenant → lookups globais cross-tenant por design; ownership via tabela local; rotas com targetId precisam isTargetOwnedByCompany; 404 não 403. SKILL.md atualizado com nova seção 'hawkBit é single-tenant — ownership SEMPRE pela tabela local' (artifacts/targets/DS). Plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO com pendências P0/D. README já reflete arquitetura nginx (iteração anterior).
+Princípio aprendido: device órfão (target deletado do externo) congela status — sweep temporal independente self-heals. Padrão OTA: conectividade derivada do schedule de poll do próprio device. Asset: BarChart + GroupTypeIcon reutilizáveis.
 
-**Evidence**: SKILL.md nova seção single-tenant; plano status 🟢 IMPLEMENTADO+VALIDADO; princípio persistido
+**Evidence**: Princípio p-orphaned-device-staleness-sweep registrado (121 total). Bug de db.execute(Date) documentado. Overview redesign sem emoji.
 
 ## Overall Notes
 
-## Hardening de Segurança (Frentes A+B+C) — IMPLEMENTADO + VALIDADO, sem commit
+## Bug do device offline CORRIGIDO + Overview redesenhado (rico) + Designations removido + Group modal com gear + Range custom, sem commit
 
-### Validação empírica no Docker (3 containers healthy, sem regressão)
-- /health via api. → 200 | /docs sem cred → 401 | /docs com cred → 200 | /docs/json sem cred → 401 | Mgmt API → 404 | DDI sem token → 401
+### BUG: device FF.32.FF.51.FF.F1.FF.FF marcado online incorretamente — CORRIGIDO
+CAUSA RAIZ (investigação estruturada com hipóteses): o target `FF32FF51FFF1FFFF` foi DELETADO do hawkBit (404). O sync busca dados do hawkBit; target ausente → `if (!target) return` → device ignorado → `connection_status` congelado em 'connected' desde 2026-06-02. A derivação de status (pollStatus.overdue) estava correta, mas nunca rodava para orphans.
+CORREÇÃO: `markOverdueDevicesOffline()` em sync-helpers.ts — sweep temporal independente do hawkBit: marca devices como disconnected quando `next_expected_poll_at < NOW()`. Roda a cada ciclo de sync (sync.ts). Auto-corretivo, barato (1 UPDATE indexado). VALIDADO no Docker: device agora = 'disconnected'; log '[SYNC] Staleness sweep: marked 1 overdue device(s) offline'. Captura transição de telemetria conectado→offline.
 
-### Frente A — Basic Auth /docs (nginx)
-- `ninbus.conf`: location /docs com auth_basic + auth_basic_user_file ANTES do location / (longest-prefix match). Replicado no bloco :443 comentado.
-- `.htpasswd` BCrypt ($2y$) gerado via httpd:alpine (placeholder). `.gitignore`: docker/nginx/.htpasswd. `.htpasswd.example` com instrução de rotação.
-- docker-compose.yml: mount `./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro`.
-- Validado: /docs + /docs/json protegidos; /health + /api/auth + DDI hb. NÃO afetados.
+### Overview redesenhado (não mais genérico) — aderente ao projeto
+- RangeProvider global + TimeRangePicker (com NOVA opção "Personalizado": 2 inputs datetime-local).
+- KPIs contextuais: online agora, devices online no período (distinct), atualizações no período, empresas ativas.
+- Histograma diário de conectividade (BarChart SVG, filla gaps de dias vazios) — temporal.
+- Distribuição de horários de atualização (0-23h) — mostra quando rollouts costumam ocorrer.
+- Empresas mais ativas (ranking por ações no período).
+- Atualizações recentes (rollouts criados no período, com criador + falhas count).
+- Seção adesão de usuários (novos convites/designações no período) — substitui a página Designations.
+- FleetPulse mantido. Reutiliza Section/Kpi/BarMeter/Signal + novo BarChart reutilizável.
 
-### Frente B — cross-tenant artifacts
-- `findSoftwareModule(companyId, nameOrId, version?, typeKey?)` agora busca na tabela `artifacts` (WHERE company_id) em vez de hawkbitSoftwareModules global. Aceita nome OU SM-ID, ambos validados contra a empresa. Import hawkbitSoftwareModules removido (unused).
-- `createDeployment` passa companyId. Biome limpo (Number.isNaN).
-- 7 testes (B-T1..B-T6 + setup): todos passam. B-T3 cross-tenant (SM ID 8888 da empresa B → null p/ empresa A) FECHADO.
+### Endpoint novo: GET /api/admin/stats (superadmin)
+stats-service.ts: 5 agregações SQL (histograma diário, counts, top empresas, distribuição horária, distinct online). BUG encontrado e corrigido durante teste: db.execute(sql) com parâmetros Date falhava (500) — convertido para ISO string antes de interpolar. Validado: 401/403/400/200 coerentes; retorna dados reais (topCompanies populado).
 
-### Frente C — target ownership
-- `isTargetOwnedByCompany(companyId, targetId)` adicionado a helpers.ts (valida devices.companyId).
-- Aplicado em 2 rotas device-routes.ts: action-status e ddi-check → 404 se targetId não pertence à empresa (nunca 403).
-- 6 testes: todos passam. C-T2/C-T5 cross-tenant fechados.
+### Designations removido da navegação
+Sidebar: item removido. Command-palette: item removido (+ Item helper restaurado). Adesão agora vive em seção do Overview + detail da empresa (designation-table.tsx reutilizado). Rota /designations ainda acessível (sem quebrar links antigos).
 
-### Testes
-31 testes de hardening passando (18 nginx com +3 de docs, 7 B, 6 C). Suíte base ampla (que importa src/app) ainda bloqueada por bug Bun 1.3.12 no boot (pré-existente, não relacionado).
+### Group management melhorado (sem emoji, com modal)
+- group-type-icon.tsx: SVGs line-art (garage/bus/region/yard/custom) substituem emoji (🏭🚌🗺️🅿️📁).
+- group-manage-dialog.tsx: modal com gear → renomear (PUT), excluir (DELETE confirm), gerenciar dispositivos (checkboxes add/remove via N:N).
+- group-organizer.tsx refeito: botão gear por grupo, sem emoji, TYPE_ORDER explícito.
+- categoryService.ts ampliado: rename/remove/listMembers/addMembers/removeMember.
 
-### Documentação
-- SKILL.md: nova seção "hawkBit é single-tenant — ownership SEMPRE pela tabela local" com regras para artifacts/targets/DS.
-- plano docs/security-hardening-plan.md marcado IMPLEMENTADO+VALIDADO.
-- README: arquitetura (já atualizada na iteração anterior do nginx).
+### Clean code / componentização
+- BarChart reutilizável (histograma + distribuição horária). GroupTypeIcon reutilizável. GroupManageDialog container.
+- Todos arquivos <250 linhas. Typecheck backend+frontend LIMPOS (tsc --noEmit). Biome limpo. Build API + next build limpos.
 
-### P0 e D (roadmap)
-- P0 (assinatura firmware + TLS DDI): iteração futura.
-- D.1 (least-priv hawkBit): depois (conforme decisão do usuário).
-- D.2 (token rotation): exige firmware.
+### Garantia de tipos mantida
+tsc --noEmit rodado em cada etapa (princípio p-bun-build-no-typecheck-use-tsc). Frontend e backend limpos.
 
-### Princípio aprendido (104 total)
-p-hawkbit-single-tenant-ownership-via-local-table: hawkBit single-tenant → lookups globais são cross-tenant por design; ownership pela tabela local; rotas com targetId no path precisam isTargetOwnedByCompany; 404 não 403.
-
-**Sem commit** (aguardando pedido).
+### Ambiente
+DB limpo (27 empresas, 0 activity_log). .env restaurado. API recriada com env limpo. Nenhum commit.

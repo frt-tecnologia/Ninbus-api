@@ -7,6 +7,7 @@ import {
 	designateMemberSchema,
 	updateMemberRoleSchema,
 } from '@modules/companies/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { designateMember } from './designation';
 import { LastOwnerError } from './service';
@@ -64,6 +65,16 @@ export const companyMemberRoutes = withAuth(
 			});
 
 			set.status = 201;
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'member.added',
+				entityType: 'member',
+				entityId: body.email,
+				entityLabel: body.email,
+				metadata: { role: body.role, granted: result.granted, pending: result.pending },
+			});
 			return {
 				message: result.granted
 					? 'Member added successfully'
@@ -101,12 +112,22 @@ export const companyMemberRoutes = withAuth(
 	// PUT /:userId — Update member role (admin+)
 	.put(
 		'/:userId',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			const member = await service.updateMemberRole(params.companyId, params.userId, body.role);
 			if (!member) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Member not found' };
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'member.role_changed',
+				entityType: 'member',
+				entityId: params.userId,
+				entityLabel: params.userId,
+				metadata: { newRole: body.role },
+			});
 			return { message: 'Member role updated successfully', data: member };
 		},
 		{
@@ -133,7 +154,7 @@ export const companyMemberRoutes = withAuth(
 	// DELETE /:userId — Remove member (admin+)
 	.delete(
 		'/:userId',
-		async ({ params, set }) => {
+		async ({ params, user, set }) => {
 			try {
 				await service.removeMember(params.companyId, params.userId);
 			} catch (error) {
@@ -143,6 +164,14 @@ export const companyMemberRoutes = withAuth(
 				}
 				throw error;
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'member.removed',
+				entityType: 'member',
+				entityId: params.userId,
+			});
 			return { message: 'Member removed successfully' };
 		},
 		{

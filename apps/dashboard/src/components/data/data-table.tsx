@@ -1,8 +1,6 @@
 'use client';
 
-import * as React from 'react';
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Empty, ErrorState, SearchField, TableLoading } from '@/components/system';
 import {
 	Table,
 	TableBody,
@@ -11,9 +9,9 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Empty, ErrorState, TableLoading } from '@/components/system';
+import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import * as React from 'react';
 
 /**
  * Lightweight, reusable data table.
@@ -43,7 +41,16 @@ type DataTableProps<T> = {
 	error?: string | null;
 	onRetry?: () => void;
 	/** When set, shows a search box that filters via this predicate. */
-	search?: { value: string; onChange: (v: string) => void; placeholder?: string };
+	search?: {
+		value: string;
+		onChange: (v: string) => void;
+		placeholder?: string;
+		/** Predicate over a row; defaults to matching all column string values. */
+		filter?: (row: T, term: string) => boolean;
+		/** When true, the search INPUT is NOT rendered here (the parent renders its
+		 *  own input via e.g. a Section action slot) but filtering still applies. */
+		hideInput?: boolean;
+	};
 	empty?: React.ReactNode;
 	actions?: (row: T) => React.ReactNode;
 };
@@ -62,11 +69,30 @@ export function DataTable<T>({
 	const [sortKey, setSortKey] = React.useState<string | null>(null);
 	const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('asc');
 
+	const filtered = React.useMemo(() => {
+		if (!search?.value) return rows;
+		const term = search.value.trim().toLowerCase();
+		if (!term) return rows;
+		// Custom predicate, or default: match any column's rendered/sort text.
+		if (search.filter) return rows.filter((r) => search.filter!(r, term));
+		return rows.filter((r) => {
+			return columns.some((c) => {
+				if (c.sortValue) {
+					const v = c.sortValue(r);
+					return String(v ?? '')
+						.toLowerCase()
+						.includes(term);
+				}
+				return false;
+			});
+		});
+	}, [rows, search?.value, search?.filter, columns]);
+
 	const sorted = React.useMemo(() => {
-		if (!sortKey) return rows;
+		if (!sortKey) return filtered;
 		const col = columns.find((c) => c.key === sortKey);
-		if (!col?.sortValue) return rows;
-		const copy = [...rows];
+		if (!col?.sortValue) return filtered;
+		const copy = [...filtered];
 		copy.sort((a, b) => {
 			const av = col.sortValue!(a);
 			const bv = col.sortValue!(b);
@@ -75,7 +101,7 @@ export function DataTable<T>({
 			return 0;
 		});
 		return copy;
-	}, [rows, sortKey, sortDir, columns]);
+	}, [filtered, sortKey, sortDir, columns]);
 
 	const toggleSort = (key: string) => {
 		if (sortKey !== key) {
@@ -90,10 +116,10 @@ export function DataTable<T>({
 
 	return (
 		<div className="flex flex-col gap-3">
-			{search && (
-				<Input
+			{search && !search.hideInput && (
+				<SearchField
 					value={search.value}
-					onChange={(e) => search.onChange(e.target.value)}
+					onChange={search.onChange}
 					placeholder={search.placeholder ?? 'Buscar…'}
 					className="max-w-xs"
 				/>
@@ -103,7 +129,7 @@ export function DataTable<T>({
 			) : loading ? (
 				<TableLoading />
 			) : sorted.length === 0 ? (
-				empty ?? <Empty />
+				(empty ?? <Empty />)
 			) : (
 				<div className="overflow-hidden rounded-lg border border-border">
 					<Table>
@@ -150,9 +176,7 @@ export function DataTable<T>({
 											{col.render ? col.render(row) : null}
 										</TableCell>
 									))}
-									{actions && (
-										<TableCell className="text-right">{actions(row)}</TableCell>
-									)}
+									{actions && <TableCell className="text-right">{actions(row)}</TableCell>}
 								</TableRow>
 							))}
 						</TableBody>

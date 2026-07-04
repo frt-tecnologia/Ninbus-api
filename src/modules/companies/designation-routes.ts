@@ -4,6 +4,7 @@ import {
 	DesignationListResponseSchema,
 	ErrorResponseSchema,
 } from '@modules/companies/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { getPendingDesignations, revokePendingDesignation } from './designation';
 
@@ -50,7 +51,7 @@ export const designationRoutes = withAuth(
 	// DELETE /:id — Revoke a pending designation (admin+)
 	.delete(
 		'/:designationId',
-		async ({ params, set }) => {
+		async ({ params, user, set }) => {
 			const revoked = await revokePendingDesignation(params.companyId, params.designationId);
 			if (!revoked) {
 				set.status = 404;
@@ -59,6 +60,15 @@ export const designationRoutes = withAuth(
 					message: 'Designation not found or already claimed',
 				};
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'designation.cancelled',
+				entityType: 'designation',
+				entityId: params.designationId,
+				entityLabel: revoked.email,
+			});
 			return { message: 'Designation revoked successfully' };
 		},
 		{

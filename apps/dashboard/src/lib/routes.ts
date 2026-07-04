@@ -21,6 +21,7 @@ export const ROUTES = {
 	deployments: '/deployments',
 	designations: '/designations',
 	login: '/auth/login',
+	signUp: '/auth/sign-up',
 	resetPassword: '/auth/reset-password',
 } as const;
 
@@ -28,10 +29,7 @@ export type RouteKey = keyof typeof ROUTES;
 export type RoutePath = (typeof ROUTES)[RouteKey];
 
 /** Build a route path with params, e.g. routeFor('devices', { companyId }). */
-export function routeFor(
-	key: RouteKey,
-	params?: Record<string, string>,
-): string {
+export function routeFor(key: RouteKey, params?: Record<string, string>): string {
 	let path: string = ROUTES[key];
 	if (params) {
 		for (const [k, v] of Object.entries(params)) {

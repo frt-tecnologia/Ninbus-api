@@ -16,6 +16,17 @@ const nextConfig: NextConfig = {
 	basePath: '/console',
 	output: 'standalone',
 	reactStrictMode: true,
+	// Skip TypeScript + ESLint checks during the production build. These checks
+	// are EXTREMELY memory-hungry (spawn extra worker threads) and can OOM
+	// small EC2 instances (t2.micro with 1GB RAM) during `next build` — to the
+	// point the OS kills sshd and the instance becomes unreachable.
+	// Type-checking is enforced locally (`tsc --noEmit`) and in CI instead.
+	typescript: {
+		ignoreBuildErrors: true,
+	},
+	eslint: {
+		ignoreDuringBuilds: true,
+	},
 	async headers() {
 		return [
 			{

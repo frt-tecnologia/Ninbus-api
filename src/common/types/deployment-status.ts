@@ -24,6 +24,27 @@
  *  IMPORTANT: type='finished' ALWAYS means installed (success).
  *  hawkBit maps closed+failure → type='error', closed+success → type='finished'.
  *  See docs/hawkbit-status-flow-mapping.md for the full DDI feedback mapping.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ *  FIRMWARE-NINBUS SELF-UPDATE (STM32F407) — adds a REBOOT phase:
+ * ═══════════════════════════════════════════════════════════════════════
+ *  Step  DDI exec              hawkBit type  Message                                  Phase
+ *  ────  ──────────────────    ───────────   ───────────────────────────────────────  ───────────
+ *  R7    proceeding            running       "processing artifact"                    installing
+ *  R8    proceeding            running       "staging firmware to NAND"               installing
+ *  R9    proceeding            running       "firmware staged, rebooting to apply"    rebooting
+ *        ── REBOOT (~15-40s: reset → bootloader → flash 0x08008000 → boot) ──
+ *  R10a  closed+success        finished      "firmware installed successfully"        installed
+ *  R10b  closed+failure        error         "firmware was not applied by bootloader" error
+ *
+ *  The 'rebooting' phase is the device's LAST feedback before it reboots.
+ *  The UI must treat the R9→R10 gap as "reiniciando / aplicando" — NOT a stall.
+ *  closed+success only arrives after the bootloader verified the new app's CRC
+ *  (offset 1047) and jumped to it, so success == firmware truly updated.
+ *  closed+failure means the bootloader rejected the image and kept the old app.
+ *  Other failure messages (closed+failure → type='error'): "firmware CRC invalid",
+ *  "firmware staging failed", "artifact processing failed", "download failed",
+ *  "unknown artifact type".
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -56,7 +77,7 @@ export type DdiResultStatus = (typeof DDI_RESULT_STATUS)[number];
 // ---------------------------------------------------------------------------
 
 export const DEPLOYMENT_PHASE_VALUES = [
-	'assigned', 'pending', 'downloading', 'downloaded', 'installing',
+	'assigned', 'pending', 'downloading', 'downloaded', 'installing', 'rebooting',
 	'installed', 'error', 'canceled', 'unknown',
 ] as const;
 export type DeploymentPhase = (typeof DEPLOYMENT_PHASE_VALUES)[number];

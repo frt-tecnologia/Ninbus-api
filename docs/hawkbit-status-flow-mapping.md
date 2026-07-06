@@ -67,6 +67,55 @@ installed
   └─ finished "installed successfully"
 ```
 
+## 5b. Firmware-Ninbus Self-Update Lifecycle (STM32F407 — has REBOOT)
+
+Unlike NFX/controller, updating the Ninbus's own firmware reboots the device so
+the bootloader can flash `0x08008000`. The sequence adds a **`rebooting`** phase
+between `installing` and `installed`. The UI must treat the R9→R10 gap
+(~15–40 s) as "reiniciando / aplicando", never as a stall.
+
+```
+assigned → pending → downloading → downloaded → installing → rebooting ──► REBOOT ──► installed | error
+```
+
+| # | execution | result.finished | ?exec= | hawkBit type | message                                  | API phase  |
+|---|-----------|----------------|--------|--------------|------------------------------------------|------------|
+| R3 | proceeding | none | 0 | running  | "deployment started"                       | installing |
+| R4 | download   | none | 0 | download | "downloading artifact"                     | downloading|
+| R5a-d | proceeding | none | 0 | running | "downloading 25%"/50%/75%/100%         | downloading|
+| R6 | downloaded | none | 0 | downloaded | "download complete"                       | downloaded |
+| R7 | proceeding | none | 1 | running  | "processing artifact"                      | installing |
+| R8 | proceeding | none | 1 | running  | "staging firmware to NAND"                 | installing |
+| R9 | proceeding | none | 1 | running  | "firmware staged, rebooting to apply"      | **rebooting** |
+| —  | REBOOT     | —    | — | —        | (reset → bootloader → flash → boot)        | rebooting  |
+| R10a | closed   | success | 1 | finished | "firmware installed successfully"      | installed  |
+| R10b | closed   | failure | 1 | error    | "firmware was not applied by bootloader"| error      |
+
+### Reboot gap (R9 → R10)
+
+During reboot the device sends no feedback, so the **last entry stays R9** for
+~15–40 s (reset + boot + WiFi reconnect). The sync engine keeps emitting
+`device.action.status` with `phase: 'rebooting'` and `progress: null`; the
+device simply reappears with `finished` (success) or `error` (failure). The
+backend does NOT time this out as a failure — it waits for the post-reboot poll.
+
+### Why `closed+success` is trustworthy (R10a)
+
+`finished` only arrives after the bootloader verified the new application's
+CRC16 at offset 1047 and jumped to it. So `phase: 'installed'` for a
+firmware-ninbus deployment **guarantees** the firmware is truly running. If the
+bootloader rejected the image, the device boots the OLD app and reports
+`closed+failure` (`phase: 'error'`, "firmware was not applied by bootloader").
+
+### Firmware-ninbus failure messages (all closed+failure → `error`)
+
+- "download failed"
+- "artifact processing failed"
+- "firmware CRC invalid"
+- "firmware staging failed"
+- "firmware was not applied by bootloader"
+- "unknown artifact type"
+
 ## 6. Error Paths
 
 | Scenario | hawkBit type | API phase | UI Status |
@@ -88,6 +137,7 @@ The API returns a `phase` field in deployment status responses. Valid values:
 | `downloading` | Device is downloading artifact | Downloading |
 | `downloaded` | Download complete, waiting to install | Downloaded |
 | `installing` | Device is installing artifact | Installing |
+| `rebooting` | Firmware staged; device rebooting so the bootloader can flash (firmware-ninbus only) | Reiniciando |
 | `installed` | Installation completed successfully | Installed |
 | `error` | Installation or download failed | Error |
 | `canceled` | Deployment was canceled | Canceled |
@@ -114,3 +164,44 @@ Computed from hawkBit action statistics (counts per status type):
 | `GET /api/companies/:companyId/deployments/:id/targets/:targetId/status-trail` | Full timeline per target |
 | `GET /api/companies/:companyId/deployments/:id/statistics` | Aggregated statistics |
 | `GET /api/companies/:companyId/deployments/:id/targets/:targetId/actions/:actionId/status` | Raw hawkBit action status history |
+
+## 10. Type Registration & Packaging (how the backend differentiates deployments)
+
+The three artifact types are **fully independent** at every layer. There is no
+shared DS type; each type has its own Software Module Type AND Distribution Set
+Type, so a firmware-ninbus DS can only ever contain firmware-ninbus modules.
+
+| header-info `type` (case-sensitive) | SM type key | DS type key | destination |
+|--------------------------------------|-------------|-------------|-------------|
+| `firmware-ninbus` | `firmware-ninbus` | `ninbus-firmware-ninbus` | STM32 flash via bootloader |
+| `firmware-controller` | `firmware-controller` | `ninbus-firmware-controller` | LightDot via CAN |
+| `configuration-nfx` | `configuration-nfx` | `ninbus-configuration-nfx` | LightDot NAND via CAN (gzip) |
+
+- On `POST /artifacts`, `getOrCreateSoftwareModuleType(type)` creates the SM
+  type (key = the type string) if missing, then the SM is created with that type.
+- On `POST /deployments`, `getOrCreateDistributionSetType(type)` creates the DS
+  type (`ninbus-<type>`) if missing and assigns the matching SM type as
+  **mandatory**, then the DS is created with `type: dsTypeKey`.
+- The device does **not** read the DS/SM type from hawkBit. It identifies the
+  update path solely from `header-info/featureidentity.json` `{"type":"..."}`
+  inside the `.tar`, and branches in its install switch-case. The backend's
+  `tar-packager.ts` writes that file with the exact case-sensitive string.
+
+### Tar packaging (identical for all three types)
+
+```
+artifact.tar          ← PLAIN tar (NOT .tar.gz — device gunzip is a stub)
+├── header-info/featureidentity.json   → {"type":"firmware-ninbus"}
+└── data/payload.bin                   → the raw firmware bytes, served verbatim
+```
+
+### ⚠️ firmware-ninbus payload = post-CalcCRC `wifi3.fir`
+
+The backend serves `data/payload.bin` byte-for-byte as uploaded — it does **not**
+run `CalcCRC.exe` and does **not** inject or verify the CRC. The build chain
+must upload the `.fir` **after** `CalcCRC.exe wifi3.fir` has written the
+bootloader CRC16 at offset 1047 (read by the STM32 as
+`*(U16*)(0x08008000 + 1047)`). Serving a raw pre-CRC `.fir`, `.hex`, or `.axf`
+makes the bootloader reject the image and silently keep the old firmware. The
+upload endpoint logs a warning when a firmware-ninbus payload is < 1048 bytes
+(too small to carry the CRC), but cannot validate the CRC value itself.

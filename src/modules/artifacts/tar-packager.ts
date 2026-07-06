@@ -14,6 +14,15 @@
  * - Payload filename MUST be "payload.bin"
  * - featureidentity.json has a single {"type": "..."} field
  *
+ * ⚠️ FIRMWARE-NINBUS PAYLOAD REQUIREMENT (critical):
+ * For type "firmware-ninbus" the backend serves the uploaded bytes VERBATIM as
+ * data/payload.bin — it does NOT run CalcCRC.exe and does NOT validate the CRC.
+ * The uploaded .fir MUST already be the post-CalcCRC binary with the bootloader
+ * CRC16 written at offset 1047 (validated by the STM32 bootloader as
+ * *(U16*)(0x08008000 + 1047)). Uploading a raw pre-CRC .fir / .hex / .axf causes
+ * the bootloader to silently reject the image and keep the old firmware.
+ * See docs/hawkbit-status-flow-mapping.md "Firmware-Ninbus Self-Update".
+ *
  * @see SKILL.md — "DDI Artifact Download" section
  */
 

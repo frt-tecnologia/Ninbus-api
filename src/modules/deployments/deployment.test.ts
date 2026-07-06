@@ -15,6 +15,7 @@ import {
 	isDownloadMessage,
 	isAssignmentMessage,
 	isRetrievedMessage,
+	isRebootMessage,
 	actionStatusToPhase,
 	enrichActionStatus,
 	computeLatestPhase,
@@ -100,6 +101,33 @@ describe('message type detection', () => {
 
 	test('isRetrievedMessage detects retrieved', () => {
 		expect(isRetrievedMessage('Target retrieved update action')).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// isRebootMessage — firmware-ninbus reboot detection (R9)
+// ---------------------------------------------------------------------------
+describe('isRebootMessage', () => {
+	test('detects "firmware staged, rebooting to apply" (R9)', () => {
+		expect(isRebootMessage('firmware staged, rebooting to apply')).toBe(true);
+	});
+
+	test('detects plain "rebooting"', () => {
+		expect(isRebootMessage('rebooting')).toBe(true);
+	});
+
+	test('detects "reboot to apply"', () => {
+		expect(isRebootMessage('firmware reboot to apply')).toBe(true);
+	});
+
+	test('returns false for install/staging messages (must precede isInstallMessage)', () => {
+		expect(isRebootMessage('staging firmware to NAND')).toBe(false);
+		expect(isRebootMessage('installing NFX to controller')).toBe(false);
+		expect(isRebootMessage('deployment started')).toBe(false);
+	});
+
+	test('returns false for empty string', () => {
+		expect(isRebootMessage('')).toBe(false);
 	});
 });
 
@@ -253,6 +281,76 @@ describe('enrichActionStatus', () => {
 });
 
 // ---------------------------------------------------------------------------
+// enrichActionStatus — firmware-ninbus self-update path
+// ---------------------------------------------------------------------------
+describe('enrichActionStatus — firmware-ninbus path', () => {
+	test('R7 "processing artifact" (running) → installing', () => {
+		const result = enrichActionStatus({
+			id: 11,
+			type: 'running',
+			messages: ['processing artifact'],
+		});
+		expect(result.phase).toBe('installing');
+	});
+
+	test('R8 "staging firmware to NAND" (running) → installing', () => {
+		const result = enrichActionStatus({
+			id: 12,
+			type: 'running',
+			messages: ['staging firmware to NAND'],
+		});
+		expect(result.phase).toBe('installing');
+	});
+
+	test('R9 "firmware staged, rebooting to apply" (running) → rebooting', () => {
+		// CRITICAL: checked before isInstallMessage despite containing "staged".
+		const result = enrichActionStatus({
+			id: 13,
+			type: 'running',
+			messages: ['firmware staged, rebooting to apply'],
+		});
+		expect(result.phase).toBe('rebooting');
+		expect(result.progress).toBeNull();
+	});
+
+	test('R10a "firmware installed successfully" (finished) → installed', () => {
+		const result = enrichActionStatus({
+			id: 14,
+			type: 'finished',
+			messages: ['firmware installed successfully'],
+		});
+		expect(result.phase).toBe('installed');
+	});
+
+	test('R10b "firmware was not applied by bootloader" (error) → error', () => {
+		const result = enrichActionStatus({
+			id: 15,
+			type: 'error',
+			messages: ['firmware was not applied by bootloader'],
+		});
+		expect(result.phase).toBe('error');
+	});
+
+	test('"firmware CRC invalid" (error) → error', () => {
+		const result = enrichActionStatus({
+			id: 16,
+			type: 'error',
+			messages: ['firmware CRC invalid'],
+		});
+		expect(result.phase).toBe('error');
+	});
+
+	test('"firmware staging failed" (error) → error', () => {
+		const result = enrichActionStatus({
+			id: 17,
+			type: 'error',
+			messages: ['firmware staging failed'],
+		});
+		expect(result.phase).toBe('error');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // computeLatestPhase
 // ---------------------------------------------------------------------------
 describe('computeLatestPhase', () => {
@@ -290,6 +388,23 @@ describe('computeLatestPhase', () => {
 			{ type: 'running' as const, messages: ['installing NFX'] },
 		];
 		expect(computeLatestPhase(history)).toBe('installed');
+	});
+
+	test('firmware-ninbus R9 reboot is detected before install ("staged" present)', () => {
+		const history = [
+			{ type: 'running' as const, messages: ['firmware staged, rebooting to apply'] },
+			{ type: 'running' as const, messages: ['staging firmware to NAND'] },
+			{ type: 'downloaded' as const, messages: ['download complete'] },
+		];
+		expect(computeLatestPhase(history)).toBe('rebooting');
+	});
+
+	test('firmware-ninbus R8 staging before downloaded → installing', () => {
+		const history = [
+			{ type: 'running' as const, messages: ['staging firmware to NAND'] },
+			{ type: 'downloaded' as const, messages: ['download complete'] },
+		];
+		expect(computeLatestPhase(history)).toBe('installing');
 	});
 });
 

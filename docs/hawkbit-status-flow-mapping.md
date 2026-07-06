@@ -192,16 +192,41 @@ Type, so a firmware-ninbus DS can only ever contain firmware-ninbus modules.
 ```
 artifact.tar          ← PLAIN tar (NOT .tar.gz — device gunzip is a stub)
 ├── header-info/featureidentity.json   → {"type":"firmware-ninbus"}
-└── data/payload.bin                   → the raw firmware bytes, served verbatim
+└── data/payload.bin                   → the raw firmware bytes (delivered verbatim via CloudFront)
 ```
 
 ### ⚠️ firmware-ninbus payload = post-CalcCRC `wifi3.fir`
 
-The backend serves `data/payload.bin` byte-for-byte as uploaded — it does **not**
-run `CalcCRC.exe` and does **not** inject or verify the CRC. The build chain
-must upload the `.fir` **after** `CalcCRC.exe wifi3.fir` has written the
-bootloader CRC16 at offset 1047 (read by the STM32 as
-`*(U16*)(0x08008000 + 1047)`). Serving a raw pre-CRC `.fir`, `.hex`, or `.axf`
-makes the bootloader reject the image and silently keep the old firmware. The
-upload endpoint logs a warning when a firmware-ninbus payload is < 1048 bytes
-(too small to carry the CRC), but cannot validate the CRC value itself.
+The backend is NOT in the device download path. It uploads the tar to hawkBit
+ONCE via the Management API; hawkBit's S3 extension stores it in the
+`ninbus-artifacts` bucket, and the device later downloads it from CloudFront.
+Nothing in that chain (upload → hawkBit → S3 → CloudFront → device) runs
+`CalcCRC.exe` or modifies a single byte. So the `.fir` placed in `payload.bin`
+MUST already be the post-CalcCRC image with the bootloader CRC16 at offset 1047
+(read by the STM32 as `*(U16*)(0x08008000 + 1047)`). Uploading a raw pre-CRC
+`.fir`, `.hex`, or `.axf` makes the bootloader reject the image and silently
+keep the old firmware. The upload endpoint logs a warning when a firmware-ninbus
+payload is < 1048 bytes (too small to carry the CRC), but cannot validate the
+CRC value itself.
+
+### Delivery via CloudFront — IDENTICAL to NFX (no new CDN config)
+
+firmware-ninbus reuses the exact same CDN path as configuration-nfx and
+firmware-controller. There is **no per-type CDN configuration**: the
+`CdnArtifactUrlResolver` (a hawkBit-side Java extension) builds the download
+URL from `tenant + "/" + sha1`, which is type-agnostic. As soon as a
+firmware-ninbus tar is uploaded, it lands in the same S3 bucket
+(`ninbus-artifacts`) and is served by the same CloudFront distribution.
+
+```
+Device download flow (same for all 3 types):
+  STM32 → hawkBit DDI (poll) → deploymentBase w/ URL
+        http://dxxx.cloudfront.net/DEFAULT/{sha1}?Signature=...&Key-Pair-Id=...
+  STM32 → CloudFront (HTTP :80) → S3 (HTTPS via OAC) → tar bytes
+  STM32 → hawkBit DDI (feedback)
+```
+
+Each uploaded firmware gets a unique SHA1, so CloudFront caches it under a new
+key with no collision or invalidation needed. The device follows the
+CloudFront URL transparently — it does not know or care that the bytes are
+firmware-ninbus vs NFX.

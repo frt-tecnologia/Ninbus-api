@@ -11,6 +11,7 @@ import { notifyDataChanged } from '@/lib/data-events';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import {
 	Select,
 	SelectContent,
@@ -31,11 +32,10 @@ const ROLES: { value: CompanyRole; label: string }[] = [
 /**
  * <MemberAddForm> — the "add member" combobox inside the members dialog.
  *
- * Search-and-select over ALL platform users. Clicking a user SELECTS it
- * (stores the user object, not text), so the email submitted to the API always
- * comes from that object — never a "name (email)" string. When the typed query
- * is a valid email that matches nobody, it is added directly as a pending
- * designation (the API creates one for not-yet-registered emails).
+ * Search-and-select over ALL platform users using a Radix <Popover> (Portal),
+ * so the dropdown is NEVER clipped by the dialog bounds or trapped under other
+ * components. Clicking a user SELECTS it (stores the object, not text); a
+ * typed email that matches nobody is added directly as a pending designation.
  */
 export function MemberAddForm({
 	companyId,
@@ -60,8 +60,7 @@ export function MemberAddForm({
 		if (!term) return all.slice(0, 8);
 		return all
 			.filter(
-				(u) =>
-					u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term),
+				(u) => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term),
 			)
 			.slice(0, 8);
 	}, [platformUsers.data, query]);
@@ -93,7 +92,6 @@ export function MemberAddForm({
 		<form onSubmit={add} className="space-y-2">
 			<span className="text-xs font-medium text-foreground">Adicionar membro</span>
 
-			{/* Selected user chip OR search field */}
 			{selectedUser ? (
 				<div className="flex items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2">
 					<div className="min-w-0 flex-1">
@@ -117,62 +115,65 @@ export function MemberAddForm({
 					</Button>
 				</div>
 			) : (
-				<div className="relative">
-					<Input
-						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Pesquisar por nome ou email…"
-						autoFocus
-					/>
-					{dropdownOpen && (
-						<div className="absolute left-0 right-0 top-full z-[100] mt-1 rounded-md border border-border bg-popover shadow-lg">
-							<ScrollArea className="max-h-56">
-								{matches.length === 0 ? (
-									<p className="px-3 py-3 text-center text-xs text-muted-foreground">
-										{looksLikeEmail
-											? `Novo convite para "${emailInput}".`
-											: 'Nenhum usuário encontrado.'}
-									</p>
-								) : (
-									<ul className="divide-y divide-border">
-										{matches.map((u: User) => {
-											const isMember = memberUserIds.has(u.id);
-											return (
-												<li key={u.id}>
-													<button
-														type="button"
-														onClick={() => {
-															setSelectedUser(u);
-															setQuery('');
-														}}
-														className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-secondary"
-													>
-														<div className="min-w-0 flex-1">
-															<div className="truncate text-xs font-medium text-foreground">
-																{u.name || u.email}
-															</div>
-															<div className="truncate font-mono text-[10px] text-muted-foreground">
-																{u.email}
-															</div>
+				<Popover open={dropdownOpen}>
+					<PopoverAnchor asChild>
+						<Input
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder="Pesquisar por nome ou email…"
+							autoFocus
+						/>
+					</PopoverAnchor>
+					<PopoverContent
+						className="max-h-56 w-(--radix-popover-trigger-width) p-0"
+						align="start"
+						onOpenAutoFocus={(e) => e.preventDefault()}
+					>
+						<ScrollArea className="max-h-56">
+							{matches.length === 0 ? (
+								<p className="px-3 py-3 text-center text-xs text-muted-foreground">
+									{looksLikeEmail
+										? `Novo convite para "${emailInput}".`
+										: 'Nenhum usuário encontrado.'}
+								</p>
+							) : (
+								<ul className="divide-y divide-border">
+									{matches.map((u: User) => {
+										const isMember = memberUserIds.has(u.id);
+										return (
+											<li key={u.id}>
+												<button
+													type="button"
+													onClick={() => {
+														setSelectedUser(u);
+														setQuery('');
+													}}
+													className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-secondary"
+												>
+													<div className="min-w-0 flex-1">
+														<div className="truncate text-xs font-medium text-foreground">
+															{u.name || u.email}
 														</div>
-														{isMember && (
-															<span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">
-																já é membro
-															</span>
-														)}
-													</button>
-												</li>
-											);
-										})}
-									</ul>
-								)}
-							</ScrollArea>
-						</div>
-					)}
-				</div>
+														<div className="truncate font-mono text-[10px] text-muted-foreground">
+															{u.email}
+														</div>
+													</div>
+													{isMember && (
+														<span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">
+															já é membro
+														</span>
+													)}
+												</button>
+											</li>
+										);
+									})}
+								</ul>
+							)}
+						</ScrollArea>
+					</PopoverContent>
+				</Popover>
 			)}
 
-			{/* Role + Add */}
 			<div className="flex items-center gap-2">
 				<Select value={role} onValueChange={(v) => setRole(v as CompanyRole)}>
 					<SelectTrigger className="h-9 w-32">

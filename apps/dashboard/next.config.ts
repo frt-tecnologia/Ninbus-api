@@ -16,38 +16,18 @@ const nextConfig: NextConfig = {
 	basePath: '/console',
 	output: 'standalone',
 	reactStrictMode: true,
-	// Skip TypeScript + ESLint checks during the production build. These checks
-	// are EXTREMELY memory-hungry (spawn extra worker threads) and can OOM
-	// small EC2 instances (t2.micro with 1GB RAM) during `next build` — to the
-	// point the OS kills sshd and the instance becomes unreachable.
-	// Type-checking is enforced locally (`tsc --noEmit`) and in CI instead.
-	typescript: {
-		ignoreBuildErrors: true,
-	},
-	eslint: {
-		ignoreDuringBuilds: true,
-	},
-	async headers() {
-		return [
-			{
-				// The service worker must NEVER be cached long-term, or users get
-				// stuck on an old SW version after a deploy. Serve it with a short
-				// no-cache + correct JS MIME (some CDNs/proxies default to text/plain).
-				source: '/sw.js',
-				headers: [
-					{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-					{ key: 'Service-Worker-Allowed', value: '/console' },
-				],
-			},
-			{
-				// Manifest should revalidate too (icon/name changes).
-				source: '/manifest.webmanifest',
-				headers: [
-					{ key: 'Cache-Control', value: 'no-cache' },
-					{ key: 'Content-Type', value: 'application/manifest+json' },
-				],
-			},
-		];
+	// The dashboard never talks to the API directly from the browser (cross-origin
+	// cookie). All API calls go through the Route Handler proxy at /api/[...path].
+	// No rewrites needed — the proxy handles forwarding to http://api:8081.
+
+	// Root / (→ /console with basePath) → /overview. Done at the CONFIG level so
+	// it runs BEFORE the (admin) layout renders. A server-side redirect() inside
+	// the root page collides with the layout's auth redirect (both throw
+	// NEXT_REDIRECT in one RSC pass → error page for unauthenticated visitors).
+	// A config redirect is resolved in the routing phase, so the layout never
+	// runs for the bare root, eliminating the double-redirect conflict.
+	async redirects() {
+		return [{ source: '/', destination: '/overview', permanent: false }];
 	},
 };
 

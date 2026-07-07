@@ -26,8 +26,8 @@ type NavItem = {
 
 const NAV: NavItem[] = [
 	{ key: 'overview', label: 'Visão geral', icon: LayoutDashboard, exact: true },
-	{ key: 'devices', label: 'Dispositivos', icon: HardDrive },
 	{ key: 'companies', label: 'Empresas', icon: Building2 },
+	{ key: 'devices', label: 'Dispositivos', icon: HardDrive },
 	{ key: 'users', label: 'Usuários', icon: Users },
 	{ key: 'deployments', label: 'Deployments', icon: Package },
 ];

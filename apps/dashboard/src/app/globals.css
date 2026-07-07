@@ -52,6 +52,12 @@
 		--signal-idle: 240 5% 58%; /* neutral */
 		--signal-info: 192 85% 52%; /* cyan   */
 
+		/* ── BRAND chart palette (from the Ninbus logo + secondary) ── */
+		/* Used by overview charts so they read as brand, not gray. */
+		--brand-lime: 67 98% 52%; /* #e3f504 — neon lime (logo primary) */
+		--brand-violet: 254 98% 67%; /* #7c58fd — electric violet */
+		--brand-chartreuse: 73 99% 67%; /* #ccfe55 — chartreuse green */
+
 		--radius: 0.5rem;
 	}
 
@@ -86,6 +92,11 @@
 		--signal-fault: 0 68% 45%;
 		--signal-idle: 240 4% 45%;
 		--signal-info: 192 75% 42%;
+
+		/* ── BRAND chart palette (from the Ninbus logo + secondary) ── */
+		--brand-lime: 67 92% 45%; /* #e3f504 — neon lime */
+		--brand-violet: 254 72% 60%; /* #7c58fd — electric violet */
+		--brand-chartreuse: 73 90% 55%; /* #ccfe55 — chartreuse green */
 	}
 }
 

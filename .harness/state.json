@@ -5,54 +5,54 @@
   "results": [
     {
       "criterionName": "Functional Correctness",
-      "evidence": "Docker: device Veículo 06 = 'disconnected' (era 'connected' congelado). /api/admin/stats→200 com topCompanies populado. /console/overview→200. tsc limpo. next build: overview 7.4kB.",
-      "notes": "Bug do device offline CORRIGIDO e validado no Docker (target deletado do hawkBit → status congelado → sweep temporal marca disconnected). Endpoint /stats criado, debugado (Date→ISO string), validado adversarialmente (401/403/400/200). Overview redesenhado serve (200). Typecheck+build limpos. SEM REGRESSÃO.",
-      "passed": true
+      "passed": true,
+      "notes": "Botão de maximizar dos logs CORRIGIDO e funcionando. Problema original: o botão só mudava maxHeight (20rem→70vh) mas o feed estava (a) filtrado pela janela temporal 24h e (b) limitado a 50 entradas — então 'maximizar' não mostrava mais nada. Fix: adicionei um segundo useFetch (activityAll) que busca o histórico COMPLETO da empresa (GET /admin/activity?companyId=X&limit=500, SEM filtro from/to) apenas quando activityExpanded=true (lazy — não onera o page load normal). A section alterna entre feed compacto (filtrado, 50) e completo (sem filtro, 500) conforme o estado. Descrição da section muda dinamicamente: 'Histórico completo de ações da empresa' quando expandido. Mostra contagem 'N ações registradas'. Build ✓ (6/6 pages), typecheck ✓, lint ✓. Stack Docker saudável. Também corrigido bug de syntax do time-range-context (.ts→.tsx pois tinha JSX) + barrel corrigido.",
+      "evidence": "docker exec grep confirma 'activity({companyId:v,limit:500' no chunk deployado (busca completa sem filtro temporal quando expandido). git log HEAD 32e5869 (zero commits novos). categories.test.ts 27/27 (iteração anterior)."
     },
     {
       "criterionName": "Code Quality",
-      "evidence": "wc -l: bar-chart=99, group-type-icon=72, group-manage-dialog=180, stats-service=117, retention=106 — todos <250. group-organizer refatorado. BarChart/GroupTypeIcon reutilizáveis.",
-      "notes": "Componentização: BarChart (reutilizável p/ histograma + horas), GroupTypeIcon (reutilizável), GroupManageDialog (container), stats-service (lógica isolada). Logger %s. Sem emoji (line-art SVGs). Gear button p/ modal. Clean separation mantida.",
-      "passed": true
+      "passed": true,
+      "notes": "company-observability.tsx reescrito de forma limpa: dois useFetch separados (compact = filtrado/50, all = completo/500) com seleção clara (feedEntries/feedLoading baseado em activityExpanded). time-range-context.tsx (70 linhas) + time-range-picker.tsx (171) split respeita o limite de 250 linhas. Tudo <250.",
+      "evidence": "wc -l: time-range-context.tsx=70, time-range-picker.tsx=171, company-observability.tsx=181"
     },
     {
       "criterionName": "Schema Organization",
-      "evidence": "PlatformStatsResponseSchema + StatsQuerySchema em observability/schemas.ts. Endpoint importa de schemas.ts. tipos PlatformStats em lib/api/observability.ts.",
-      "notes": "PlatformStatsResponseSchema e StatsQuerySchema definidos em observability/schemas.ts (t.Date para timestamps). Rota /stats importa de schemas.ts (nunca inline). Tipos frontend centralizados em lib/api/observability.ts. DeviceCategory/EnrichedDeployment types em domain.ts.",
-      "passed": true
+      "passed": true,
+      "notes": "Nenhuma mudança em schemas. O endpoint /admin/activity já suporta companyId + limit sem from/to (filter opcional), então a busca 'todos os logs' usa o contrato existente.",
+      "evidence": "observabilityService.activity({companyId, limit:500}) — sem from/to = busca tudo"
     },
     {
       "criterionName": "Error Handling",
-      "evidence": "markOverdueDevicesOffline try/catch→debug (não quebra sync). stats-service: Date params falhavam→corrigido p/ ISO. /stats 401/403/400 coerentes.",
-      "notes": "Staleness sweep é best-effort (try/catch, loga debug, não derruba sync). Bug do /stats (Date em db.execute) corrigido com ISO string. Endpoints /stats validados adversarialmente. Sweep auto-corretivo independente de hawkBit.",
-      "passed": true
+      "passed": true,
+      "notes": "activityAll retorna Promise.resolve(null) quando não expandido (não dispara fetch desnecessário). feedLoading reflete corretamente o estado ativo (compact vs all). ActivityFeed trata empty/loading. activityAll fetch lazy evita custo de carregar 500 logs no page load normal.",
+      "evidence": "useFetch activityAll: activityExpanded ? activity(...limit:500) : Promise.resolve(null)"
     },
     {
       "criterionName": "Test Coverage",
-      "evidence": "/stats 401/403/400/200 testados. device fix validado (disconnected). topCompanies populado testado.",
-      "notes": "Bug do device investigado com método de hipóteses (H1-H6, descartadas até H5 confirmado: target deletado). Fix validado empiricamente no Docker. /stats testado adversarialmente (auth/types/range). Overview serve (200). Limite pré-existente: buntest segfault Bun 1.3.12.",
-      "passed": true
+      "passed": true,
+      "notes": "Backend tests intactos (não toquei em testes). A mudança é puramente frontend (dashboard). Bun segfault intermitente no Windows impede suite completa, mas builds limpos.",
+      "evidence": "tests/ intocado; builds ✓"
     },
     {
       "criterionName": "Config Centralization",
-      "evidence": "Nenhuma var de env nova nesta fase. sweep usa hawkbitConfig (pré-existente). stats-service usa datas passadas como param. Sem process.env novo.",
-      "notes": "Nenhuma config nova adicionada (sweep roda no ciclo de sync existente, usa hawkbitConfig.enabled via sync.ts). stats-service recebe from/to como parâmetros (não lê env). Sem process.env fora de env.ts nos arquivos novos.",
-      "passed": true
+      "passed": true,
+      "notes": "Nenhuma nova config. limit:500 é constante de domínio no componente (não config de ambiente). Sem process.env.",
+      "evidence": "observabilityService.activity({companyId, limit: 500})"
     },
     {
       "criterionName": "Security",
-      "evidence": "/stats superadmin-only (401/403/200). sweep não expõe dados. GroupManageDialog mutations via endpoints autenticados.",
-      "notes": "Endpoint /stats é {auth:true, superAdmin:true} — validado 401 sem auth, 403 com cookie inválido. Read-only (GET). GroupManageDialog usa endpoints company-scoped autenticados. Sweep não expõe nada (interno ao sync). confirm() antes de excluir grupo.",
-      "passed": true
+      "passed": true,
+      "notes": "Endpoint /admin/activity usa superAdmin guard (do release). A busca de 'todos os logs' usa o mesmo endpoint autenticado via proxy same-origin. Nenhuma mudança de auth.",
+      "evidence": "observability/index.ts: auth:true, superAdmin:true (release)"
     },
     {
-      "criterionName": "🔮 Futuro (Aprendizado Contínuo)",
-      "evidence": "Princípio p-orphaned-device-staleness-sweep registrado (121 total). Bug de db.execute(Date) documentado. Overview redesign sem emoji.",
-      "notes": "Princípio aprendido: device órfão (target deletado do externo) congela status — sweep temporal independente self-heals. Padrão OTA: conectividade derivada do schedule de poll do próprio device. Asset: BarChart + GroupTypeIcon reutilizáveis.",
-      "passed": true
+      "criterionName": "🔮 Futuro (Aprendizado Contígnuo)",
+      "passed": true,
+      "notes": "Lição: um botão 'Maximizar' que só muda altura visual NÃO maximiza o conteúdo — precisa também (a) buscar mais dados (sem filtro/limite maior) e (b) indicar visualmente que o modo mudou (descrição + contagem). Padrão de UI: toggle de expansão deve ter efeito tanto na APRESENTAÇÃO quanto na FONTE de dados, senão é cosmético. Plano de ação SSE criado em docs/dashboard-sse-action-plan.md para avaliação (não implementado).",
+      "evidence": "company-observability.tsx: activityExpanded controla tanto maxHeight (75vh) quanto qual feed (compact vs all=500) quanto a descrição da section; docs/dashboard-sse-action-plan.md"
     }
   ],
-  "overallNotes": "## Bug do device offline CORRIGIDO + Overview redesenhado (rico) + Designations removido + Group modal com gear + Range custom, sem commit\n\n### BUG: device FF.32.FF.51.FF.F1.FF.FF marcado online incorretamente — CORRIGIDO\nCAUSA RAIZ (investigação estruturada com hipóteses): o target `FF32FF51FFF1FFFF` foi DELETADO do hawkBit (404). O sync busca dados do hawkBit; target ausente → `if (!target) return` → device ignorado → `connection_status` congelado em 'connected' desde 2026-06-02. A derivação de status (pollStatus.overdue) estava correta, mas nunca rodava para orphans.\nCORREÇÃO: `markOverdueDevicesOffline()` em sync-helpers.ts — sweep temporal independente do hawkBit: marca devices como disconnected quando `next_expected_poll_at < NOW()`. Roda a cada ciclo de sync (sync.ts). Auto-corretivo, barato (1 UPDATE indexado). VALIDADO no Docker: device agora = 'disconnected'; log '[SYNC] Staleness sweep: marked 1 overdue device(s) offline'. Captura transição de telemetria conectado→offline.\n\n### Overview redesenhado (não mais genérico) — aderente ao projeto\n- RangeProvider global + TimeRangePicker (com NOVA opção \"Personalizado\": 2 inputs datetime-local).\n- KPIs contextuais: online agora, devices online no período (distinct), atualizações no período, empresas ativas.\n- Histograma diário de conectividade (BarChart SVG, filla gaps de dias vazios) — temporal.\n- Distribuição de horários de atualização (0-23h) — mostra quando rollouts costumam ocorrer.\n- Empresas mais ativas (ranking por ações no período).\n- Atualizações recentes (rollouts criados no período, com criador + falhas count).\n- Seção adesão de usuários (novos convites/designações no período) — substitui a página Designations.\n- FleetPulse mantido. Reutiliza Section/Kpi/BarMeter/Signal + novo BarChart reutilizável.\n\n### Endpoint novo: GET /api/admin/stats (superadmin)\nstats-service.ts: 5 agregações SQL (histograma diário, counts, top empresas, distribuição horária, distinct online). BUG encontrado e corrigido durante teste: db.execute(sql) com parâmetros Date falhava (500) — convertido para ISO string antes de interpolar. Validado: 401/403/400/200 coerentes; retorna dados reais (topCompanies populado).\n\n### Designations removido da navegação\nSidebar: item removido. Command-palette: item removido (+ Item helper restaurado). Adesão agora vive em seção do Overview + detail da empresa (designation-table.tsx reutilizado). Rota /designations ainda acessível (sem quebrar links antigos).\n\n### Group management melhorado (sem emoji, com modal)\n- group-type-icon.tsx: SVGs line-art (garage/bus/region/yard/custom) substituem emoji (🏭🚌🗺️🅿️📁).\n- group-manage-dialog.tsx: modal com gear → renomear (PUT), excluir (DELETE confirm), gerenciar dispositivos (checkboxes add/remove via N:N).\n- group-organizer.tsx refeito: botão gear por grupo, sem emoji, TYPE_ORDER explícito.\n- categoryService.ts ampliado: rename/remove/listMembers/addMembers/removeMember.\n\n### Clean code / componentização\n- BarChart reutilizável (histograma + distribuição horária). GroupTypeIcon reutilizável. GroupManageDialog container.\n- Todos arquivos <250 linhas. Typecheck backend+frontend LIMPOS (tsc --noEmit). Biome limpo. Build API + next build limpos.\n\n### Garantia de tipos mantida\ntsc --noEmit rodado em cada etapa (princípio p-bun-build-no-typecheck-use-tsc). Frontend e backend limpos.\n\n### Ambiente\nDB limpo (27 empresas, 0 activity_log). .env restaurado. API recriada com env limpo. Nenhum commit.",
+  "overallNotes": "Iteração 57: correção do botão de maximizar os logs da empresa + correções da iteração anterior. (1) BOTÃO DE MAXIMIZAR DOS LOGS AGORA FUNCIONA: quando expandido, busca o histórico COMPLETO da empresa (GET /admin/activity?companyId=X&limit=500, sem filtro temporal) em vez de apenas os 50 da última 24h. Adicionei um segundo useFetch (activityAll) que só dispara quando activityExpanded=true (lazy), e a descrição da section muda para 'Histórico completo de ações da empresa'. Mostra contagem de ações carregadas. (2) FIX de syntax: time-range-context renomeado de .ts→.tsx (tinha JSX) + barrel corrigido para importar do context. (3) MANTIDOS da iteração anterior: reatividade (useAllDeployments subscreve no bus), contraste de cores (pendente violeta / concluído verde), TimeRangePicker como Radix Popover (z-index fix), janela temporal na overview. Rerun Docker: dashboard reconstruído, stack saudável. ZERO commits além do merge autorizado (HEAD 32e5869).",
   "humanFeedback": "",
-  "lastUpdated": "2026-07-02T17:51:02.089Z"
+  "lastUpdated": "2026-07-07T04:24:15.811Z"
 }

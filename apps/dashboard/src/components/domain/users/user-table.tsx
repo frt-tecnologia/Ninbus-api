@@ -4,6 +4,7 @@ import { type Column, DataTable } from '@/components/data/data-table';
 import { Id, Signal, Time } from '@/components/system';
 import type { SignalToken } from '@/lib/design/tokens';
 import type { User } from '@/types/domain';
+import Link from 'next/link';
 
 function roleSignal(u: User): SignalToken {
 	return u.isSuperAdmin
@@ -41,7 +42,12 @@ export function UserTable({
 			sortValue: (u) => u.email,
 			render: (u) => (
 				<div className="flex flex-col">
-					<span className="text-sm font-medium">{u.name || u.email}</span>
+					<Link
+						href={`/users/${u.id}`}
+						className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+					>
+						{u.name || u.email}
+					</Link>
 					<Id value={u.email} className="text-xs text-muted-foreground" />
 				</div>
 			),

@@ -54,3 +54,6 @@ apps
 docker-compose*.yml
 Dockerfile
 .dockerignore
+
+# ── Windows reserved-name artifact ────────────────────────
+nul

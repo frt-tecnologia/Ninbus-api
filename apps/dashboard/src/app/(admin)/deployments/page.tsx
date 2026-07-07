@@ -1,57 +1,104 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { Package, Cpu, Settings2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
-import { Section, Pipeline } from '@/components/system';
+import { Section } from '@/components/system';
+import { DeploymentDonut, type DonutSegment } from '@/components/system/charts';
 import { DeploymentTable } from '@/components/domain/deployments/deployment-table';
+import { CompanyPicker } from '@/components/domain/deployments/company-picker';
 import { useFetch } from '@/hooks/useFetch';
-import { companyService, deploymentService } from '@/lib/api';
-import type { PipelineStage } from '@/lib/design/tokens';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
+import { useAllDeployments } from '@/hooks/use-all-deployments';
+import { companyService } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 /**
- * Aggregate OTA funnel across the selected company's deployments, plus the
- * per-deployment table. The funnel (Pendente → Em andamento → Concluído →
- * Falha) is the signature overview of rollout health — what OTA means.
+ * Deployments — observability of OTA rollouts.
+ *
+ * The funnel is a full-ring donut (recharts <DeploymentDonut>) conveying the
+ * four outcomes (Pendente · Em andamento · Concluído · Falha) with the total
+ * device count in the center. Beside it:
+ *  - <CompanyPicker> — aggregate (all) or a single company
+ *  - Type filter — Firmware Ninbus / Configuração NFX / Todos, so the two
+ *    rollout kinds (high-risk reboot firmware vs low-risk CAN config) can be
+ *    inspected in isolation.
+ * The table mirrors both selections. No redundant stat cards — the donut +
+ * legend already carry the counts.
  */
-const FUNNEL: PipelineStage[] = [
-	{ phase: 'pending', tone: 'busy', label: 'Pendente' },
-	{ phase: 'inProgress', tone: 'info', label: 'Em andamento' },
-	{ phase: 'finished', tone: 'ok', label: 'Concluído' },
-	{ phase: 'failed', tone: 'fault', label: 'Falha' },
+
+/** funnel stages → donut segments.
+ *  Color separation matters: Pendente vs Concluído must be visually distinct.
+ *  Pendente → violet (waiting), Em andamento → lime (active),
+ *  Concluído → signal-ok GREEN (success — a different HUE from lime so it
+ *  never reads as "also pending"), Falha → red.
+ */
+const SEGMENTS: Array<{ key: keyof Funnel; tone: DonutSegment['tone']; brand?: DonutSegment['brand']; label: string }> = [
+	{ key: 'pending', tone: 'idle', brand: 'violet', label: 'Pendente' },
+	{ key: 'inProgress', tone: 'busy', brand: 'lime', label: 'Em andamento' },
+	{ key: 'finished', tone: 'ok', label: 'Concluído' },
+	{ key: 'failed', tone: 'fault', label: 'Falha' },
 ];
+
+/** Rollout-type filters. `type` on a deployment maps to the DS module type. */
+type TypeFilter = 'all' | 'firmware-ninbus' | 'configuration-nfx';
+const TYPE_OPTIONS: { value: TypeFilter; label: string; icon: typeof Cpu }[] = [
+	{ value: 'all', label: 'Todos os tipos', icon: Package },
+	{ value: 'firmware-ninbus', label: 'Firmware Ninbus', icon: Cpu },
+	{ value: 'configuration-nfx', label: 'Configuração NFX', icon: Settings2 },
+];
+
+interface Funnel {
+	pending: number;
+	inProgress: number;
+	finished: number;
+	failed: number;
+}
 
 export default function DeploymentsPage() {
 	const companies = useFetch(useCallback(() => companyService.list(), []));
-	const [companyId, setCompanyId] = useState<string>('');
-	const active = companyId || companies.data?.data[0]?.id || '';
-	const deployments = useFetch(
-		useCallback(
-			() =>
-				active
-					? deploymentService.list(active)
-					: Promise.resolve({ data: [], total: 0 }),
-			[active],
-		),
-		[active],
+	const companyList = useMemo(() => companies.data?.data ?? [], [companies.data]);
+	const companyNameById = useMemo(
+		() => Object.fromEntries(companyList.map((c) => [c.id, c.name])),
+		[companyList],
 	);
 
-	const funnel = useMemo(() => {
-		const counts: Record<string, number> = { pending: 0, inProgress: 0, finished: 0, failed: 0 };
-		for (const d of deployments.data?.data ?? []) {
-			counts.pending += d.statistics.pending;
-			counts.inProgress += d.statistics.inProgress;
-			counts.finished += d.statistics.finished;
-			counts.failed += d.statistics.failed;
+	const all = useAllDeployments(companyList);
+
+	const [companyId, setCompanyId] = useState<string>(''); // '' = all (grouped)
+	const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+	const isAll = companyId === '';
+
+	// Apply company + type filters.
+	const filtered = useMemo(() => {
+		let rows = isAll ? all.deployments : all.deployments.filter((d) => d.companyId === companyId);
+		if (typeFilter !== 'all') {
+			rows = rows.filter((d) => d.type === typeFilter);
 		}
-		return counts;
-	}, [deployments.data]);
+		return rows;
+	}, [all.deployments, companyId, isAll, typeFilter]);
+
+	const funnel = useMemo<Funnel>(() => {
+		const f: Funnel = { pending: 0, inProgress: 0, finished: 0, failed: 0 };
+		for (const d of filtered) {
+			const s = d.statistics;
+			f.pending += s?.pending ?? 0;
+			f.inProgress += s?.inProgress ?? 0;
+			f.finished += s?.finished ?? 0;
+			f.failed += s?.failed ?? 0;
+		}
+		return f;
+	}, [filtered]);
+
+	const segments: DonutSegment[] = SEGMENTS.map((g) => ({
+		value: funnel[g.key],
+		tone: g.tone,
+		brand: g.brand,
+		label: g.label,
+	}));
+
+	const description = isAll
+		? 'Soma de dispositivos por estágio em todas as empresas.'
+		: `Soma de dispositivos por estágio — ${companyNameById[companyId] ?? ''}.`;
 
 	return (
 		<>
@@ -59,33 +106,67 @@ export default function DeploymentsPage() {
 				title="Deployments"
 				description="Observabilidade das atualizações OTA por empresa."
 			/>
-			<Section
-				title="Funil de atualização"
-				description="Soma de dispositivos por estágio em todos os rollouts da empresa."
-				className="mb-4"
-				action={
-					<Select value={active} onValueChange={setCompanyId}>
-						<SelectTrigger className="h-8 w-48">
-							<SelectValue placeholder="Empresa" />
-						</SelectTrigger>
-						<SelectContent>
-							{(companies.data?.data ?? []).map((c) => (
-								<SelectItem key={c.id} value={c.id}>
-									{c.name}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				}
-			>
-				<Pipeline counts={funnel} stages={FUNNEL} />
+
+			<Section title="Funil de atualização" description={description} className="mb-4">
+				<div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem] md:items-center">
+					<DeploymentDonut
+						segments={segments}
+						loading={all.loading}
+						centerLabel="dispositivos"
+						size={240}
+					/>
+
+					<aside className="flex flex-col gap-4">
+						<div>
+							<label className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+								Empresa
+							</label>
+							<CompanyPicker
+								companies={companyList}
+								value={companyId}
+								onChange={setCompanyId}
+								loading={companies.loading}
+							/>
+						</div>
+						<div>
+							<label className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+								Tipo de atualização
+							</label>
+							<div className="flex flex-col gap-1.5">
+								{TYPE_OPTIONS.map((opt) => {
+									const active = typeFilter === opt.value;
+									const Icon = opt.icon;
+									return (
+										<button
+											key={opt.value}
+											type="button"
+											onClick={() => setTypeFilter(opt.value)}
+											className={cn(
+												'flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors',
+												active
+													? 'border-primary/40 bg-primary/10 text-foreground'
+													: 'border-border bg-background/40 text-muted-foreground hover:bg-muted/40',
+											)}
+										>
+											<Icon className="h-4 w-4 shrink-0" />
+											{opt.label}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					</aside>
+				</div>
 			</Section>
 
 			<DeploymentTable
-				deployments={deployments.data?.data ?? []}
-				loading={deployments.loading}
-				error={deployments.error}
-				onRetry={deployments.refetch}
+				deployments={filtered}
+				companyId={isAll ? undefined : companyId}
+				showCompany={isAll}
+				companyNameById={companyNameById}
+				loading={all.loading}
+				error={all.error}
+				onRetry={all.refetch}
 			/>
 		</>
 	);

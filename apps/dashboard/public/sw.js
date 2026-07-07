@@ -1,84 +1,54 @@
 /* eslint-disable no-restricted-globals */
 /**
- * Ninbus Console — Service Worker
+ * Ninbus Console — Service Worker KILL SWITCH.
  *
- * PURPOSE: makes the dashboard INSTALLABLE (a SW with a fetch handler is a
- * hard requirement for the PWA install prompt). Also provides offline shell
- * resilience via a network-first + cache-fallback strategy for navigations.
+ * WHY THIS EXISTS: a previous dashboard build registered a PWA service worker
+ * (feat/dashboard-improvement, public/sw.js) that intercepted every navigation
+ * and asset fetch. This branch has NO service-worker feature, but browsers that
+ * installed the old SW keep running it indefinitely (SWs persist until
+ * explicitly unregistered), serving stale chunks and masking the real server.
  *
- * Registered ONLY in production builds (see pwa/register.ts) — in dev the SW
- * would serve stale code and break HMR. The installability popup therefore
- * only fires on HTTPS or localhost production builds (per the PWA spec).
+ * This file is registered once (see src/lib/pwa/register.ts) ONLY to REMOVE any
+ * existing SW for this scope. It:
+ *   1. Unregisters itself (and any sibling SW) on activate.
+ *   2. Reloads open tabs so they run without a SW.
+ * After it runs, the browser has no SW for /console and the registration code
+ * (gated by a localStorage flag) never registers again — leaving a clean state.
  *
- * NO Workbox/Serwist dependency — a hand-rolled ~40-line SW keeps the bundle
- * minimal and works across all major browsers (Chrome, Edge, Safari, Firefox,
- * Samsung Internet, Brave, Opera).
+ * This is a one-shot cleanup, NOT a working SW — it has no fetch handler, so if
+ * it ever fails to self-unregister it still passes requests straight through to
+ * the network.
  */
 
-const CACHE = 'ninbus-console-v1';
-const APP_SHELL = [
-	// Precache the app shell so the offline page loads instantly.
-	'/console',
-	'/console/manifest.webmanifest',
-	'/console/icon-192.png',
-	'/console/icon-512.png',
-];
-
-self.addEventListener('install', (event) => {
-	event.waitUntil(
-		caches.open(CACHE).then((cache) =>
-			// addAll is all-or-nothing; ignore individual failures (basePath nuances).
-			Promise.allSettled(APP_SHELL.map((url) => cache.add(url))),
-		),
-	);
-	self.skipWaiting();
+self.addEventListener('install', () => {
+	// Take control immediately so activate runs without waiting for all tabs to close.
+	void self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
-		caches
-			.keys()
-			.then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-			.then(() => self.clients.claim()),
-	);
-});
-
-// The fetch handler is what makes the SW count toward installability.
-self.addEventListener('fetch', (event) => {
-	const { request } = event;
-
-	// Only handle GET; ignore cross-origin + API calls (auth cookies + fresh data).
-	if (request.method !== 'GET') return;
-	const url = new URL(request.url);
-	if (url.origin !== self.location.origin) return;
-	if (url.pathname.startsWith('/console/api/')) return;
-
-	// Navigations: network-first, fall back to cached shell (offline support).
-	if (request.mode === 'navigate') {
-		event.respondWith(
-			fetch(request)
-				.then((res) => {
-					const copy = res.clone();
-					caches.open(CACHE).then((c) => c.put(request, copy));
-					return res;
-				})
-				.catch(() => caches.match(request).then((r) => r ?? caches.match('/console'))),
-		);
-		return;
-	}
-
-	// Static assets: cache-first (fast), then network.
-	event.respondWith(
-		caches.match(request).then((cached) => {
-			if (cached) return cached;
-			return fetch(request).then((res) => {
-				// Cache successful same-origin responses for next time.
-				if (res.ok && res.type === 'basic') {
-					const copy = res.clone();
-					caches.open(CACHE).then((c) => c.put(request, copy));
+		(async () => {
+			try {
+				// Unregister THIS registration (clears the old SW from this scope).
+				await self.registration.unregister();
+				// Reload every open tab under our control so it picks up a SW-free state.
+				const clients = await self.clients.matchAll({
+					type: 'window',
+					includeUncontrolled: true,
+				});
+				for (const client of clients) {
+					try {
+						await client.navigate(client.url);
+					} catch {
+						/* navigate can reject if the client is gone — ignore */
+					}
 				}
-				return res;
-			});
-		}),
+			} catch {
+				/* best-effort cleanup; never block activation */
+			}
+		})(),
 	);
 });
+
+// Deliberately NO 'fetch' listener: if activate hasn't run yet, requests pass
+// through to the network untouched.

@@ -897,83 +897,75 @@
       "reinforcementCount": 1
     },
     {
-      "id": "p-letsencrypt-certbot-webroot-https-nginx-docker",
-      "rule": "Para HTTPS com nginx em container: use `certbot certonly --webroot` (NÃO `--nginx`, que só funciona com nginx nativo no host). Emita `certonly --webroot -w /var/www/certbot -d ninbus.frt.com.br -d api.ninbus.frt.com.br` (primeiro -d vira o nome da pasta do cert → bate com ssl_certificate path). Pré-requisito: vhosts :80 já servem `location /.well-known/acme-challenge/ { root /var/www/certbot; }`. Monte `certbot/www` e `certbot/conf` no nginx (bind mount do host). O cert NÃO vive no container — sobrevive a rebuild/git pull/down (só perde em nova instância). AGMADILHA: certbot roda como root no container → cria certbot/conf e certbot/www como root no host; o `git pull` TRAVA ao criar `.gitkeep` nessas pastas (Permission denied) e aborta, deixando o pull inconsistente. SOLUÇÃO: `sudo chown -R ec2-user:ec2-user certbot/` antes do pull. Ordem rígida: (1) emitir cert ANTES de ativar `listen 443 ssl` (nginx crasha se o .pem não existir); (2) ativar 443 no compose; (3) reload. DDI (hb.) deve ficar em HTTP puro (sem redirect 301) pois firmware não segue redirect.",
-      "origin": "learned",
-      "category": "process",
-      "learnedAt": "2026-06-30T21:33:18.819Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-nginx-tls-split-80-vs-443-vhosts",
-      "rule": "When enabling TLS in nginx reverse-proxy, split each host into TWO server blocks: a `:80` block (ACME challenge + `return 301 https://$host$request_uri`) and a `:443 ssl` block (the actual proxy_pass). EXCEPT for device endpoints (hawkBit DDI `hb.`): those stay on a single plain-HTTP `:80` block with NO redirect, because embedded firmware does not follow 301 redirects and would break. The `ssl_certificate` path's directory name matches the FIRST `-d` domain passed to certbot — emit `certbot ... -d ninbus.frt.com.br -d api.ninbus.frt.com.br` so the cert lands in `/etc/letsencrypt/live/ninbus.frt.com.br/` and all vhosts share one cert path. Use `ssl_protocols TLSv1.2 TLSv1.3` + HSTS header (`Strict-Transport-Security max-age=31536000`). Keep the ACME challenge location reachable on BOTH :80 and :443 (renewal uses :80). Bind-mount cert dirs `:ro` into nginx (nginx only reads); certbot writes from a separate container/host.",
+      "id": "p-combobox-select-by-reference",
+      "rule": "Em comboboxes de busca-seleção, NUNCA preencher um campo de texto livre com um \"display label\" composto (ex: \"nome (email)\"). O bug: o campo aceita só um formato (email) mas recebe outro. Em vez disso: armazenar o objeto/id SELECIONADO por referência (useState<User|null>), exibir um chip com nome+email, e derivar o valor submetido do objeto selecionado (selectedUser?.email). Para entradas que não casam (email novo sem conta), validar formato e submeter direto como pending. Isso elimina mismatch entre exibição e submissão.",
       "origin": "learned",
       "category": "quality",
-      "learnedAt": "2026-06-30T21:33:30.090Z",
+      "learnedAt": "2026-07-04T04:21:38.314Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-drizzle-shared-db-tablesfilter",
-      "rule": "drizzle-kit generate introspects the live DB (when dbCredentials/DATABASE_URL resolvable) and emits DROP statements for tables/sequences NOT in the schema. In a shared Postgres (Ninbus + hawkBit sp_* coexist), this is catastrophic — generate wanted DROP SEQUENCE for all 16 hawkBit sp_*_seq. ALWAYS add `tablesFilter` to the drizzle config listing ONLY Ninbus-managed tables. tablesFilter filters TABLES but NOT the snapshot's top-level `sequences` key — so a DB-pull snapshot still captures sp_*_seq. The SAFE baseline snapshot must be generated FROM the schema files (drizzle naming, zero foreign objects), not from a DB pull.",
+      "id": "p-reboot-phase-artifact-specific",
+      "rule": "When a device OTA path includes a reboot with a silent gap (device sends no feedback during reset), add a dedicated semantic phase (e.g. 'rebooting') distinct from 'installing'. Detect it via a keyword in the LAST pre-reboot feedback message, and check that keyword BEFORE the install keyword because the same message often contains both ('firmware staged, rebooting to apply' has 'staged' AND 'rebooting'). The reboot phase is type-specific (only the device's own firmware self-update reboots; peripheral firmware/config via CAN does not). The UI must treat the reboot gap (15-40s) as 'reiniciando / aplicando', never as a stall or timeout. closed+success ('finished' type) after a reboot is trustworthy: it only arrives after the bootloader verified the new image.",
       "origin": "learned",
       "category": "architecture",
-      "learnedAt": "2026-07-02T13:46:16.987Z",
+      "learnedAt": "2026-07-06T17:09:09.633Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-drizzle-snapshot-chain-reconcile",
-      "rule": "This project's drizzle history is hybrid: migrations 0000/0002 have snapshots; 0003-0011 are hand-written SQL WITHOUT snapshots, so drizzle-kit generate diffs against stale state. To reconcile (Option A): (1) temporarily reduce schema to current-minus-new-feature, (2) generate a fresh baseline snapshot into a temp dir (out: './drizzle-tmp2', no dbCredentials → forces offline, no sp_ leaks), (3) install it as the last journal entry's snapshot with prevId fixed to chain linearly (root uses prevId 00000000-...; each subsequent snapshot's prevId = previous snapshot's id), (4) restore full schema, (5) generate → diff is ONLY the new feature. Fix bigserial with { mode: 'number' } (required in drizzle-orm 0.45). drizzle names migrations by journal-entry-COUNT (zero-padded) not max-prefix — can collide with hand-named migrations.",
+      "id": "p-dashboard-charts-pure-svg-no-lib",
+      "rule": "Dashboard charts (bar, stacked, gauge, dotted-map) must be built with PURE HTML/SVG that reads the SIGNAL token system via hsl(var(--signal-*)) — NEVER add a chart library (recharts/visx/chart.js) and NEVER hardcode hex colors. Bars use HTML divs (trivial Radix Tooltip integration + responsive flex layout); arcs/gauges use SVG <path> with describeArc (polar→cartesian, sweep=1 over the dome). Every chart must: (1) reserve a fixed-height frame, (2) render a skeleton occupying the SAME frame during load (zero layout shift + organic cross-fade), (3) wrap each interactive element in TooltipProvider/TooltipTrigger for hover breakdowns, and (4) guard degenerate cases (gauge segments whose span collapses below the inter-segment gap must be skipped to avoid inverted arc paths).",
       "origin": "learned",
       "category": "architecture",
-      "learnedAt": "2026-07-02T13:46:37.248Z",
+      "learnedAt": "2026-07-06T21:37:59.718Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-transition-event-telemetry",
-      "rule": "For device connection observability at scale, store ONLY state transitions (online↔offline), NEVER per-poll events. A device polling every 60s for 24h = ~1440 rows per-poll vs 2-4 rows transition-based (~140× smaller). Append-only transition events (INSERT only) beat session-with-UPDATE rows: if a sync cycle drops between connect/disconnect, append-only never creates zombie sessions (each event is self-sufficient), while UPDATE-based sessions stay eternally open. Compute graph bands at READ time via LEAD() window function with COALESCE(nextAt, NOW()) — closes the current session at now. The transition detection is free: the sync already computes a changedDevices[] array (devices whose connectionStatus changed); just diff previous (from the existing SELECT) vs current and INSERT.",
-      "origin": "learned",
-      "category": "architecture",
-      "learnedAt": "2026-07-02T13:46:54.378Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-postgres-enum-cast-query-param-500",
-      "rule": "Postgres throws a hard ERROR (not empty result) when a WHERE clause compares a pgEnum column to a string that isn't a valid enum value: \"invalid input value for enum\". This surfaces as HTTP 500 from Drizzle, leaking internals. ANY query parameter that filters a pgEnum column (type, action, status, entityType) MUST be validated in the Elysia query schema with t.Union of Literals BEFORE reaching the DB. To avoid drift, derive the literals from the Drizzle enum at module load: `import { activityActionEnum } from schema; const ActionLiterals = activityActionEnum.enumValues.map(v => t.Literal(v))`. Invalid values then return a clean 400. Adversarial test `?type=inexistente` catches this — always test enum filters with garbage values.",
-      "origin": "learned",
-      "category": "security",
-      "learnedAt": "2026-07-02T14:36:52.291Z",
-      "reinforcementCount": 1
-    },
-    {
-      "id": "p-docker-compose-restart-no-env-reload",
-      "rule": "`docker compose restart <service>` reuses the container's ORIGINAL environment captured at creation time — it does NOT re-read the host `.env` file. So changing SUPER_ADMIN_EMAILS (or any `${VAR}` interpolation) in `.env` and running `restart` silently has NO effect (the old list persists → a newly-added superadmin email still gets 403). To apply new env vars you must `docker compose up -d <service>` which RECREATES the container with the re-interpolated environment. Verify with `docker exec <container> printenv VAR`. This is a common trap when testing RBAC/superadmin changes locally.",
+      "id": "p-verify-dashboard-docker-deploy",
+      "rule": "After rebuilding a Next.js dashboard Docker image (docker compose build dashboard && docker compose up -d dashboard), VERIFY the new code is actually served — don't trust \"Up\" status alone. Function names are minified in production chunks, so grep for UI STRING LITERALS (Portuguese labels like \"Atividade de rollout\", \"Todas as empresas\") that survive minification inside the container: `docker exec <c> sh -c 'grep -o \"UI string\" /app/.next/static/chunks/app/*admin*/overview/page-*.js'`. Also confirm OLD code is removed (grep for a removed-component string returns empty). Confirm dashboard→API proxy works via `docker exec ninbus-dashboard wget -qO- http://api:8081/health`. Note: nginx may show \"Restarting\" locally if Let's Encrypt TLS certs for the production domain are absent — this is a pre-existing cert issue, NOT a dashboard deploy failure; the dashboard is reachable directly on :3001 for local dev.",
       "origin": "learned",
       "category": "process",
-      "learnedAt": "2026-07-02T14:37:05.649Z",
+      "learnedAt": "2026-07-06T22:34:36.353Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-bun-build-no-typecheck-use-tsc",
-      "rule": "`bun build` only TRANSPILES TypeScript (strips types via esbuild-style) — it does NOT type-check. Type errors (TS2339, TS2322, TS2769, TS18048) pass silently through `bun build` but surface in VS Code's tsc and CI. When touching DB-returning code, ALWAYS run `bunx tsc --noEmit -p tsconfig.json` before declaring done. Common traps this catches: (1) pino logger overloads reject `error: unknown` as 2nd positional arg → use `%s` format string with `error instanceof Error ? error.message : String(error)`; (2) Drizzle `.returning()` destructure `[row]` is `T | undefined` → guard or `?? null`; (3) `db.execute(sql\\`...\\`)` with postgres-js returns the rows array DIRECTLY (not `.rows`); (4) catch variables are `unknown` (useUnknownInCatchVariables) → never pass to typed functions directly; (5) adding a field to a Drizzle schema type breaks mock objects in tests that must match the full type.",
+      "id": "p-never-commit-without-explicit-permission",
+      "rule": "NUNCA faça `git commit`, `git push`, `git tag` ou qualquer operação que altere o histórico do repositório sem permissão EXPLÍCITA do usuário. Editar arquivos, rodar build/typecheck/test/deploy local (docker) é permitido, mas criar commits é uma ação de autoria que só o humano decide. Se o usuário disser apenas \"executa os passos\" ou \"faz o deploy\", isso NÃO inclui commitar — commit é uma etapa separada que requer comando direto (\"commita\", \"faz o commit\", \"salva com um commit\"). O agente trabalha no working tree; o git history pertence ao humano. Após concluir o trabalho, deixar as mudanças no working tree (modificadas/não-rastreadas) e aguardar. Para desfazer um commit acidental mantendo os arquivos: `git reset --soft HEAD~1`.",
       "origin": "learned",
-      "category": "quality",
-      "learnedAt": "2026-07-02T14:55:19.416Z",
+      "category": "process",
+      "learnedAt": "2026-07-06T22:45:43.613Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-orphaned-device-staleness-sweep",
-      "rule": "When syncing device state from an external system (hawkBit), a device whose target was DELETED from the external system stops appearing in the sync's target map → it gets skipped (if (!target) return) → its connection_status FREEZES forever at its last value (e.g. 'connected' from a poll a month ago). The external system can't self-correct because it never returns the deleted target. FIX: add a TIME-BASED staleness sweep that runs each sync cycle and marks devices offline when next_expected_poll_at < NOW() — independent of the external system's availability/target existence. This is the standard OTA self-healing pattern: connectivity is derived from the device's OWN poll schedule, not solely from external state. Cheap (1 indexed UPDATE), correct for orphans, and also fixes the case where the external system is temporarily unreachable.",
+      "id": "p-restoring-removed-features-check-backend-first",
+      "rule": "Before restoring a \"disappeared\" frontend feature, verify the BACKEND still exists. Refactors often remove the full stack (DB table + module + endpoint + frontend) together — not just the UI. Faking data or calling a removed endpoint violates \"always use endpoints\". When the backend is gone: (1) Groups/Categories-type features backed by a surviving CRUD endpoint → restore frontend directly; (2) features needing a removed DB table (activity_log, telemetry events) → restore the backend too: re-add the schema table, create an idempotent IF NOT EXISTS migration + _journal.json entry + migrator skip-condition, re-add the service (best-effort try/catch so a missing table NEVER breaks the primary mutation), register the route, and wire logging into handlers. Apply the migration (auto-runs on boot via runStartupMigrations). Be honest in evaluation that the table is empty for past activity and populates going forward.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-07T00:06:36.481Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-enrichment-local-is-source-of-truth",
+      "rule": "When enriching a hawkBit entity into an API response, the LOCAL DB record is the source of truth for domain fields (artifactType, displayName, version), NOT the hawkBit raw fields. hawkBit internal keys carry a namespace prefix that differs from the canonical enum the API exposes and the frontend filters on. Example: the Deployment Set `type` field in hawkBit is the DS-type KEY ('ninbus-firmware-ninbus'), but the API exposes artifactType as the bare key ('firmware-ninbus'). enrichDeployment MUST prefer `local.artifactType` and, as a fallback, strip the known prefix (`stripDsTypePrefix`) so the frontend filter values match. A type mismatch that 'looks like a data-integrity bug' is almost always an enrichment mapping bug, not a direct-DB-write bug — verify the write path (write-through after API validation) before assuming corruption.",
       "origin": "learned",
       "category": "architecture",
-      "learnedAt": "2026-07-02T17:50:20.522Z",
+      "learnedAt": "2026-07-07T01:54:07.705Z",
       "reinforcementCount": 1
     },
     {
-      "id": "p-nextjs-pwa-basepath-production-sw",
-      "rule": "To make a Next.js app a PWA with the native install prompt, THREE requirements must coexist: (1) a valid Web App Manifest served (display:standalone, start_url, scope, icons 192+512+maskable with purpose); (2) a Service Worker WITH a fetch handler (an empty SW does NOT count for installability) — register it PRODUCTION-ONLY via `process.env.NODE_ENV === 'production'` guard (in dev the SW would serve stale chunks and break Fast Refresh, and the browser requires HTTPS/localhost prod for the prompt); (3) HTTPS or localhost. The beforeinstallprompt event is DISPOSABLE — call preventDefault() to defer it, then .prompt() exactly once from a user gesture (never from a timeout). With basePath (e.g. '/console'), serve manifest+sw from public/ so they land at /console/manifest.webmanifest and /console/sw.js, set scope to the basePath, and add headers: sw.js needs 'no-cache' + 'Service-Worker-Allowed' (so SW scope can be the basePath, not just /sw.js's dir). iOS/Safari has no beforeinstallprompt — only manifest + apple-mobile-web-app-capable meta + apple-touch-icon (manual install via Share menu). Android needs a maskable 512px icon or the home icon renders cropped/white.",
+      "id": "p-merge-stash-conflict-strategy",
+      "rule": "When merging an upstream branch while holding a large uncommitted working tree: (1) `git stash --include-untracked` BEFORE merging; (2) merge (creates a merge commit — explicitly authorized by the user); (3) resolve the COMMITTED conflicts first (prefer the newer upstream for shared files); (4) `git stash pop` re-applies your work — auto-merge will add DUPLICATE imports for files both branches modified (same import added twice) → manually dedupe `import` lines and `.use()` registrations; (5) remove orphaned re-implementations if the upstream brought a more complete version of the same feature (e.g., my partial observability re-impl in domain/companies/ was superseded by release's complete domain/observability/). When the stash pop auto-merges an import block, the result has DUPLICATE identifiers (TS2300) that compile errors pinpoint exactly — fix by deleting the redundant line, NOT by rewriting the file.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-07T03:01:58.374Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-custom-hooks-must-subscribe-to-data-bus",
+      "rule": "When a page uses a CUSTOM data hook (not the shared `useFetch`) — e.g. `useAllDeployments`, `useCompanyDevices` — that hook MUST subscribe to the global data-mutation bus (`subscribeData` → bump nonce → refetch), exactly like `useFetch` does by default. A custom hook that manages its own useEffect/nonce but skips `subscribeData` silently breaks reactivity: mutations call `notifyDataChanged()`, every `useFetch` refetches, but the custom-hook pages stay STALE. Symptom: \"the table doesn't update after my action\" on pages built on custom hooks (deployments, overview) while `useFetch`-based pages (companies, users) update fine. Fix is one line: `useEffect(() => subscribeData(() => setNonce((n) => n + 1)), [])`.",
       "origin": "learned",
       "category": "architecture",
-      "learnedAt": "2026-07-03T13:45:00.892Z",
+      "learnedAt": "2026-07-07T04:07:45.092Z",
       "reinforcementCount": 1
     }
   ]

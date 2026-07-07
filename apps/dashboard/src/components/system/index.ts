@@ -15,11 +15,15 @@ export { Toolbar } from './toolbar';
 export { Empty, ErrorState, TableLoading } from './state';
 export { Time, Relative } from './time';
 export { SearchField } from './search-field';
+export { TimeRangePicker, TimeRangePickerStandalone } from './time-range-picker';
 export {
-	TimeRangePicker,
 	RangeProvider,
 	useRange,
 	last24h,
 	last7d,
+	last1h,
+	last30d,
+	PRESETS,
+	rangeFromHours,
 	type TimeRange,
-} from './time-range-picker';
+} from './time-range-context';

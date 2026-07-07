@@ -1,6 +1,8 @@
 'use client';
 
 import { RangeProvider, Section, TimeRangePicker, last24h, useRange } from '@/components/system';
+import { Button } from '@/components/ui/button';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { useFetch } from '@/hooks/useFetch';
 import {
 	type ActivityLogEntry,
@@ -19,11 +21,9 @@ import { GroupOrganizer } from './group-organizer';
  * <CompanyObservability> — the CONTAINER for the company observability page.
  *
  * Wires the three sections to the shared RangeProvider so a range change
- * re-fetches the timeline and feed. Holds the focused-device state shared
- * between the timeline and the device list (clicking a device focuses its lane).
- *
- * This is a CLIENT container: it fetches via the same-origin proxy and composes
- * the presentational children. The page that renders it just passes a companyId.
+ * re-fetches the timeline and feed. The Activity (logs) section has a
+ * Maximize/Minimize toggle: maximized fetches the COMPLETE history (no time
+ * filter, limit 500) so the operator can review all of the company's actions.
  */
 export function CompanyObservability({ companyId }: { companyId: string }) {
 	return (
@@ -36,15 +36,14 @@ export function CompanyObservability({ companyId }: { companyId: string }) {
 function ObservabilityBody({ companyId }: { companyId: string }) {
 	const { range } = useRange();
 	const [focusedDeviceId, setFocusedDeviceId] = React.useState<string | null>(null);
+	const [activityExpanded, setActivityExpanded] = React.useState(false);
 
-	// Devices of this company (for the side list — not range-dependent).
 	const devices = useFetch(
 		useCallback(() => deviceService.listByCompany(companyId), [companyId]),
 		[companyId],
 		false,
 	);
 
-	// Connection timeline sessions for the selected range.
 	const connections = useFetch(
 		useCallback(
 			() =>
@@ -60,7 +59,7 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 		false,
 	);
 
-	// Audit feed for this company in the selected range.
+	// Compact audit feed: last 50 entries within the selected time window.
 	const activity = useFetch(
 		useCallback(
 			() =>
@@ -76,7 +75,20 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 		false,
 	);
 
-	// Aggregated categories for this company (group organizer).
+	// When MAXIMIZED, fetch the COMPLETE history (no time filter, high limit).
+	// Only triggered on expand so the normal page load stays cheap.
+	const activityAll = useFetch(
+		useCallback(
+			() =>
+				activityExpanded
+					? observabilityService.activity({ companyId, limit: 500 })
+					: Promise.resolve(null),
+			[companyId, activityExpanded],
+		),
+		[companyId, activityExpanded],
+		false,
+	);
+
 	const categories = useFetch(
 		useCallback(() => observabilityService.categories({ companyId }), [companyId]),
 		[companyId],
@@ -93,6 +105,15 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 		connectionStatus: d.connectionStatus ?? null,
 		lastSeenAt: d.lastSeenAt ?? null,
 	}));
+
+	// Resolve which feed to render based on the expand state.
+	const expandedData = activityAll.data;
+	const feedEntries = (
+		activityExpanded
+			? (expandedData?.data ?? [])
+			: (activity.data?.data ?? [])
+	) as ActivityLogEntry[];
+	const feedLoading = activityExpanded ? activityAll.loading : activity.loading;
 
 	return (
 		<div className="space-y-4">
@@ -145,15 +166,40 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 				/>
 			</Section>
 
-			{/* ── Section 3: Activity log ─────────────────────────────── */}
+			{/* ── Section 3: Activity log (maximize = ALL company logs) ── */}
 			<Section
 				title="Atividade"
-				description="Quem fez o quê, quando — log de auditoria da empresa."
+				description={
+					activityExpanded
+						? 'Histórico completo de ações da empresa.'
+						: 'Quem fez o quê, quando — log de auditoria da empresa (período selecionado).'
+				}
+				action={
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-8 gap-1.5"
+						onClick={() => setActivityExpanded((v) => !v)}
+						aria-label={activityExpanded ? 'Minimizar' : 'Maximizar'}
+					>
+						{activityExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+						{activityExpanded ? 'Minimizar' : 'Maximizar'}
+					</Button>
+				}
 			>
-				<ActivityFeed
-					entries={(activity.data?.data ?? []) as ActivityLogEntry[]}
-					loading={activity.loading}
-				/>
+				{activityExpanded && (
+					<div className="mb-2 px-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+						{feedEntries.length > 0
+							? `${feedEntries.length} ações registradas`
+							: 'Carregando histórico completo…'}
+					</div>
+				)}
+				<div
+					style={{ maxHeight: activityExpanded ? '75vh' : '20rem' }}
+					className="overflow-y-auto transition-all duration-300"
+				>
+					<ActivityFeed entries={feedEntries} loading={feedLoading} />
+				</div>
 			</Section>
 		</div>
 	);

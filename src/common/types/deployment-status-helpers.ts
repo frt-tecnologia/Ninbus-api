@@ -26,6 +26,20 @@ export function isInstallMessage(message: string): boolean {
 	return lower.includes('installing') || lower.includes('staging') || lower.includes('staged');
 }
 
+/**
+ * Detect a firmware-ninbus "about to reboot" feedback message.
+ *
+ * Only the firmware-ninbus self-update path reboots the STM32. The device sends
+ * "firmware staged, rebooting to apply" (R9) as its LAST feedback before the
+ * reset; NFX/controller paths never contain "reboot". MUST be checked before
+ * isInstallMessage() because R9 also contains the "staged" keyword.
+ */
+export function isRebootMessage(message: string): boolean {
+	if (!message) return false;
+	const lower = message.toLowerCase();
+	return lower.includes('rebooting') || lower.includes('reboot to apply') || lower.includes('reboot');
+}
+
 export function isDownloadMessage(message: string): boolean {
 	if (!message) return false;
 	const lower = message.toLowerCase();
@@ -89,6 +103,11 @@ export function enrichActionStatus(entry: {
 	if (entry.type === 'running') {
 		if (isDownloadMessage(msg)) {
 			phase = 'downloading';
+		} else if (isRebootMessage(msg)) {
+			// firmware-ninbus R9: "firmware staged, rebooting to apply" — device is
+			// about to reset so the bootloader can flash 0x08008000. Must come before
+			// isInstallMessage() because R9 also contains "staged".
+			phase = 'rebooting';
 		} else if (isAssignmentMessage(msg)) {
 			phase = 'assigned';
 		} else if (isRetrievedMessage(msg)) {
@@ -133,6 +152,7 @@ export function computeLatestPhase(
 
 	if (latest.type === 'running') {
 		if (isDownloadMessage(msg)) return 'downloading';
+		if (isRebootMessage(msg)) return 'rebooting'; // firmware-ninbus R9
 		if (isAssignmentMessage(msg)) return 'assigned';
 		if (isRetrievedMessage(msg)) return 'pending';
 		if (isInstallMessage(msg)) return 'installing';

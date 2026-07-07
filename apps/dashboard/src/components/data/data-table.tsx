@@ -121,7 +121,7 @@ export function DataTable<T>({
 					value={search.value}
 					onChange={search.onChange}
 					placeholder={search.placeholder ?? 'Buscar…'}
-					className="max-w-xs"
+					className="w-full sm:max-w-md"
 				/>
 			)}
 			{error ? (

@@ -2,6 +2,7 @@ import { NINBUS_ARTIFACT_TYPE_META } from '@common/hawkbit/client';
 import { HawkbitApiError } from '@common/hawkbit/http';
 import { appLogger } from '@common/logger';
 import { withAuth } from '@common/middleware/auth-guard';
+import { logActivity } from '@modules/observability/activity-service';
 import {
 	ArtifactTypeListResponseSchema,
 	DeploymentCreateResponseSchema,
@@ -11,7 +12,6 @@ import {
 	GenericActionResponseSchema,
 	createOtaDeploymentSchema,
 } from '@modules/deployments/schemas';
-import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { DeploymentNotFoundError } from './service';
 import * as service from './service';
@@ -79,6 +79,17 @@ export const deploymentsModule = withAuth(
 					allDevices: body.allDevices,
 				});
 				set.status = 201;
+
+				await logActivity({
+					actorUserId: user.id,
+					actorEmail: user.email,
+					companyId: params.companyId,
+					action: 'deployment.created',
+					entityType: 'deployment',
+					entityId: String(deployment.dsId),
+					entityLabel: body.name,
+					metadata: { artifactName: body.artifactName, version: body.version, artifactType: body.artifactType },
+				});
 
 				// SSE: notify connected clients that deployment was created
 				try {

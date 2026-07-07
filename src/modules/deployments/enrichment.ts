@@ -175,12 +175,25 @@ function extractDeploymentDisplayName(ds: HawkbitDistributionSet): string | unde
 
 /** Enrich an orphaned deployment (DS deleted in hawkBit) using local DB data only.
  *  Preserves full audit history after artifact deletion. */
+/**
+ * hawkBit DS-type keys are prefixed 'ninbus-' (e.g. 'ninbus-firmware-ninbus').
+ * Strip the prefix to recover the canonical artifact-type key, so the frontend
+ * filter values ('firmware-ninbus', etc.) match. If the prefix is absent,
+ * return the value as-is.
+ */
+function stripDsTypePrefix(dsType?: string): string | undefined {
+	if (!dsType) return undefined;
+	return dsType.startsWith('ninbus-') ? dsType.slice('ninbus-'.length) : dsType;
+}
+
 export function enrichOrphanedDeployment(local: LocalDeploymentRecord): EnrichedDeployment {
 	const targetCount = local.targetCount ?? 0;
 	return {
 		id: local.hawkbitDsId,
 		name: local.name,
 		displayName: local.name,
+		/** The canonical artifact type from the local record. */
+		type: local.artifactType,
 		/** version = artifact version (semantic), not hawkBit's internal DS version. */
 		version: local.artifactVersion ?? undefined,
 		status: 'completed' as DeploymentStatusType,
@@ -232,7 +245,16 @@ export async function enrichDeployment(
 		displayName: local?.name ?? extractDeploymentDisplayName(ds),
 		/** version = artifact version (semantic). DS.version is an internal timestamp. */
 		version: local?.artifactVersion ?? ds.version,
-		type: ds.type,
+		/**
+		 * type = canonical Ninbus artifact type key (e.g. 'firmware-ninbus').
+		 * The local DB record is the source of truth — it's validated at the
+		 * API schema level (Union of 3 literals). The hawkBit DS `type` field is
+		 * the DS-type KEY ('ninbus-firmware-ninbus'), which does NOT match the
+		 * artifact-type enum the frontend filters on. Without this preference,
+		 * deployments appear with a type the API doesn't expose, which looks
+		 * like a data-integrity bug.
+		 */
+		type: local?.artifactType ?? stripDsTypePrefix(ds.type),
 		typeName: ds.typeName,
 		description: ds.description,
 		createdAt: ds.createdAt,

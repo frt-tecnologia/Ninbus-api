@@ -65,6 +65,11 @@ export interface Device {
 	createdAt: string;
 	updatedAt: string;
 	lastSeenAt: string | null;
+	/** hawkBit poll telemetry — drives the connectivity section. */
+	lastPollAt?: string | null;
+	nextExpectedPollAt?: string | null;
+	ipAddress?: string | null;
+	hawkbitUpdateStatus?: string | null;
 }
 
 export interface ProvisionDeviceInput {
@@ -135,9 +140,29 @@ export interface EnrichedDeployment {
 	artifactOriginalFile?: string;
 	targetCount?: number;
 	targetIds?: string[];
-	/** Who created the deployment (super-admin observability). */
-	createdBy?: string | null;
-	creatorEmail?: string | null;
+	/** Client-side tag: the owning company for cross-company ("all") views.
+	 *  Not returned by the API — set by the dashboard when aggregating. */
+	companyId?: string;
+}
+
+// ── Target status (per-device deployment outcome) ────────────────────
+
+export interface TargetActionStatus {
+	id: number;
+	type: string;
+	active: boolean;
+	status: string;
+	phase: DeploymentPhase | string;
+	progress: number | null;
+	message: string;
+}
+
+/** Per-target deployment status (controllerId + its action phase/progress). */
+export interface TargetDeploymentStatus {
+	controllerId: string;
+	name: string;
+	updateStatus: string;
+	action: TargetActionStatus | null;
 }
 
 // ── Status trail (observability timeline per device) ───────────────────

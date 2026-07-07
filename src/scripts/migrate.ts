@@ -69,6 +69,10 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (entry.tag === '0012_observability' && tableSet.has('activity_log') && tableSet.has('device_connections')) {
+				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+				continue;
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

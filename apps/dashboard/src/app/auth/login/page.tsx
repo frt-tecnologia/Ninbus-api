@@ -1,13 +1,15 @@
 'use client';
 
-import { Suspense, useState, type FormEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, EyeOff } from 'lucide-react';
-import { signIn } from '@/lib/auth/client';
+import { Brand } from '@/components/layout/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Brand } from '@/components/layout/brand';
+import { signIn } from '@/lib/auth/client';
 import { BRAND_LOGOS } from '@/lib/brand-logos';
+import { ROUTES } from '@/lib/routes';
+import { Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { type FormEvent, Suspense, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,8 +57,11 @@ function LoginForm() {
 			setError('E-mail ou senha incorretos.');
 			return;
 		}
+		// router.refresh() re-runs server components (admin layout's requireAdmin)
+		// against the NEW session cookie. router.replace avoids leaving a back
+		// entry into the login page.
 		router.refresh();
-		router.push('/overview');
+		router.replace(ROUTES.overview);
 	}
 
 	return (
@@ -82,21 +87,14 @@ function LoginForm() {
 						className="h-20 w-20 object-contain"
 					/>
 					<div className="text-center">
-						<h1 className="text-2xl font-bold leading-tight tracking-tight">
-							Bem-vindo de volta
-						</h1>
-						<p className="mt-1 text-sm text-muted-foreground">
-							Entre para continuar no Ninbus
-						</p>
+						<h1 className="text-2xl font-bold leading-tight tracking-tight">Bem-vindo de volta</h1>
+						<p className="mt-1 text-sm text-muted-foreground">Entre para continuar no Ninbus</p>
 					</div>
 				</div>
 
 				<form onSubmit={submit} className="flex flex-col gap-4">
 					<div className="flex flex-col gap-2">
-						<label
-							htmlFor="email"
-							className="text-sm font-semibold text-foreground"
-						>
+						<label htmlFor="email" className="text-sm font-semibold text-foreground">
 							E-mail
 						</label>
 						<Input
@@ -112,10 +110,7 @@ function LoginForm() {
 					</div>
 
 					<div className="flex flex-col gap-2">
-						<label
-							htmlFor="password"
-							className="text-sm font-semibold text-foreground"
-						>
+						<label htmlFor="password" className="text-sm font-semibold text-foreground">
 							Senha
 						</label>
 						<div className="relative">
@@ -135,11 +130,7 @@ function LoginForm() {
 								className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
 								aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
 							>
-								{showPassword ? (
-									<EyeOff className="h-5 w-5" />
-								) : (
-									<Eye className="h-5 w-5" />
-								)}
+								{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 							</button>
 						</div>
 					</div>
@@ -158,6 +149,16 @@ function LoginForm() {
 						{loading ? 'Entrando…' : 'Entrar'}
 					</Button>
 				</form>
+
+				<p className="mt-6 text-center text-sm text-muted-foreground">
+					NÃ£o tem conta?{' '}
+					<Link
+						href={ROUTES.signUp}
+						className="font-semibold text-foreground underline-offset-4 hover:underline"
+					>
+						Criar conta
+					</Link>
+				</p>
 
 				{/* Brand lockup — "Logo Ninbus | FRT logo" always visible. */}
 				<div className="mt-10 flex justify-center">

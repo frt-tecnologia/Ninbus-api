@@ -12,3 +12,16 @@ export type { AddMemberInput, UpdateMemberInput, CompanyRole, Member } from './m
 export { designationService, userService } from './users';
 export type { CreateDesignationInput } from './users';
 export { deploymentService } from './deployments';
+export { observabilityService } from './observability';
+export { categoryService } from './categories';
+export type {
+	ActivityLogEntry,
+	SessionBand,
+	AggregateBucket,
+	ConnectionsResponse,
+	AggregatedCategory,
+	PlatformStats,
+	DailyOnlinePoint,
+	CompanyActivity,
+	HourlyBucket,
+} from './observability';

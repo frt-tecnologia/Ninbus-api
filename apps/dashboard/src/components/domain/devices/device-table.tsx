@@ -1,14 +1,8 @@
 'use client';
 
-import * as React from 'react';
-import Link from 'next/link';
-import { FileText, FileSpreadsheet } from 'lucide-react';
-import type { Device, Company } from '@/types/domain';
-import { deviceSignal, connectionSignal } from '@/lib/design/tokens';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Signal, Id, Relative, Time, Toolbar } from '@/components/system';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Relative, SearchField, Signal, Time, Toolbar } from '@/components/system';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
 	Select,
 	SelectContent,
@@ -16,8 +10,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import { exportToPdf, exportToExcel } from '@/lib/export';
+import { connectionSignal, deviceSignal } from '@/lib/design/tokens';
+import { exportToExcel, exportToPdf } from '@/lib/export';
 import { formatDateTime } from '@/lib/utils';
+import type { Company, Device } from '@/types/domain';
+import { FileSpreadsheet, FileText } from 'lucide-react';
+import * as React from 'react';
+import { DeviceCategoryEditor } from './device-category-editor';
 
 /**
  * Dense device table — the operator's primary fleet view. Serials/keys in mono,
@@ -41,15 +40,15 @@ export function DeviceTable({
 	const [company, setCompany] = React.useState<string>('all');
 
 	const companyName = (id: string | null) =>
-		!id ? 'Sem empresa' : companies.find((c) => c.id === id)?.name ?? id.slice(0, 8);
+		!id ? 'Sem empresa' : (companies.find((c) => c.id === id)?.name ?? id.slice(0, 8));
 
 	const filtered = React.useMemo(() => {
 		const term = search.trim().toLowerCase();
 		return devices.filter((d) => {
 			if (company !== 'all' && d.companyId !== company) return false;
 			if (!term) return true;
-			return [d.serialNumber, d.serialDisplay, d.name, d.hawkbitTargetId].some(
-				(v) => (v ?? '').toLowerCase().includes(term),
+			return [d.serialNumber, d.serialDisplay, d.name, d.hawkbitTargetId].some((v) =>
+				(v ?? '').toLowerCase().includes(term),
 			);
 		});
 	}, [devices, search, company]);
@@ -61,12 +60,7 @@ export function DeviceTable({
 			sortValue: (d) => d.serialDisplay ?? d.serialNumber ?? '',
 			render: (d) => (
 				<div className="flex flex-col">
-					<Link
-						href={`/devices/${d.id}`}
-						className="font-mono text-xs text-foreground hover:text-primary hover:underline"
-					>
-						{d.serialDisplay ?? d.serialNumber ?? '—'}
-					</Link>
+					<Id value={d.serialDisplay ?? d.serialNumber ?? '—'} copy />
 					{d.name && <span className="text-xs text-muted-foreground">{d.name}</span>}
 				</div>
 			),
@@ -75,20 +69,7 @@ export function DeviceTable({
 			key: 'company',
 			header: 'Empresa',
 			sortValue: (d) => companyName(d.companyId),
-			render: (d) => (
-				<span className="text-sm">
-					{d.companyId ? (
-						<Link
-							href={`/companies/${d.companyId}`}
-							className="text-foreground hover:text-primary hover:underline"
-						>
-							{companyName(d.companyId)}
-						</Link>
-					) : (
-						companyName(d.companyId)
-					)}
-				</span>
-			),
+			render: (d) => <span className="text-sm">{companyName(d.companyId)}</span>,
 		},
 		{
 			key: 'status',
@@ -113,6 +94,16 @@ export function DeviceTable({
 			header: 'Adicionado',
 			sortValue: (d) => d.createdAt,
 			render: (d) => <Time value={d.createdAt} />,
+		},
+		{
+			key: 'groups',
+			header: 'Grupos',
+			render: (d) =>
+				d.companyId ? (
+					<DeviceCategoryEditor companyId={d.companyId} deviceId={d.id} deviceName={d.name} />
+				) : (
+					<span className="text-muted-foreground">—</span>
+				),
 		},
 	];
 
@@ -162,9 +153,9 @@ export function DeviceTable({
 					</div>
 				}
 			>
-				<Input
+				<SearchField
 					value={search}
-					onChange={(e) => setSearch(e.target.value)}
+					onChange={setSearch}
 					placeholder="Buscar por serial, nome, target ID…"
 					className="max-w-xs"
 				/>

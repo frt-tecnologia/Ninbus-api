@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { db } from '@common/db';
-import { artifacts, deployments } from '@common/db/schema';
+import { artifacts, deployments, user } from '@common/db/schema';
 import {
 	type NinbusArtifactType,
 	getOrCreateDistributionSetType,
@@ -227,12 +227,27 @@ export async function listDeployments(
 	companyId: string,
 	_params?: { offset?: number; limit?: number },
 ) {
-	// 1. Get local deployment records for this company
+	// 1. Get local deployment records for this company (with creator email)
 	let localDeployments: any[];
 	try {
 		localDeployments = await db
-			.select()
+			.select({
+				id: deployments.id,
+				name: deployments.name,
+				hawkbitDsId: deployments.hawkbitDsId,
+				artifactType: deployments.artifactType,
+				artifactName: deployments.artifactName,
+				artifactVersion: deployments.artifactVersion,
+				artifactOriginalFile: deployments.artifactOriginalFile,
+				targetCount: deployments.targetCount,
+				targetIds: deployments.targetIds,
+				createdBy: deployments.createdBy,
+				creatorEmail: user.email,
+				createdAt: deployments.createdAt,
+				updatedAt: deployments.updatedAt,
+			})
 			.from(deployments)
+			.leftJoin(user, eq(deployments.createdBy, user.id))
 			.where(eq(deployments.companyId, companyId));
 	} catch (dbError: any) {
 		appLogger.error('[DEPLOYMENTS] DB query failed: %s', dbError?.message ?? 'unknown');

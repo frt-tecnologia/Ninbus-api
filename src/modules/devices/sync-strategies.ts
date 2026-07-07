@@ -1,22 +1,22 @@
+import { hawkbitConfig } from '@common/config/hawkbit';
 /**
  * Sync Engine — Strategies (periodic, hybrid) and SSE helpers.
  */
 import { db } from '@common/db';
-import { devices, session, companyMembers } from '@common/db/schema';
-import { hawkbitConfig } from '@common/config/hawkbit';
+import { companyMembers, devices, session } from '@common/db/schema';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
+import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
 import {
-	batchUpdateDevicesFromTargets,
 	type ChangedDevice,
+	batchUpdateDevicesFromTargets,
 	fetchAllHawkBitTargets,
 	fetchModifiedTargets,
 	fetchTargetsByIds,
 	syncNewTargets,
 	syncPendingDevices,
 } from './sync-helpers';
-import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 
 // ---------------------------------------------------------------------------
 // Active company detection (hybrid mode)
@@ -39,11 +39,19 @@ export async function getActiveCompanyIds(): Promise<Set<string>> {
 	}
 }
 
-/** Get hawkbit target IDs for a set of companies (with companyId field). */
+/** Get hawkbit target IDs for a set of companies (with companyId field).
+ *  Also selects the PREVIOUS connectionStatus + name so the sync can detect
+ *  online↔offline transitions (telemetry capture) without an extra query. */
 export async function getTargetIdsForCompanies(companyIds: Set<string>) {
 	if (companyIds.size === 0) return [];
 	return db
-		.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId, companyId: devices.companyId })
+		.select({
+			id: devices.id,
+			hawkbitTargetId: devices.hawkbitTargetId,
+			companyId: devices.companyId,
+			name: devices.name,
+			previousConnectionStatus: devices.connectionStatus,
+		})
 		.from(devices)
 		.where(
 			and(
@@ -108,7 +116,11 @@ export async function syncPeriodic() {
 	await syncNewTargets(targetMap);
 
 	const allAccepted = await db
-		.select({ id: devices.id, hawkbitTargetId: devices.hawkbitTargetId, companyId: devices.companyId })
+		.select({
+			id: devices.id,
+			hawkbitTargetId: devices.hawkbitTargetId,
+			companyId: devices.companyId,
+		})
 		.from(devices)
 		.where(eq(devices.status, 'accepted'));
 
@@ -116,7 +128,10 @@ export async function syncPeriodic() {
 		(d): d is { id: string; hawkbitTargetId: string; companyId: string | null } =>
 			d.hawkbitTargetId !== null,
 	);
-	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(withTargetId, targetMap);
+	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(
+		withTargetId,
+		targetMap,
+	);
 	await syncPendingDevices(targetMap);
 	emitSseBatchUpdates(companyUpdates, changedDevices);
 
@@ -154,7 +169,10 @@ export async function syncHybrid() {
 		targetMap = await fetchTargetsByIds(controllerIds);
 	}
 
-	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(companyDevices, targetMap);
+	const { companyUpdates, changedDevices } = await batchUpdateDevicesFromTargets(
+		companyDevices,
+		targetMap,
+	);
 	emitSseBatchUpdates(companyUpdates, changedDevices);
 
 	(globalThis as any).__syncLastIncrementalTs = Date.now();
@@ -163,7 +181,11 @@ export async function syncHybrid() {
 	for (const count of companyUpdates.values()) total += count;
 
 	if (total > 0) {
-		appLogger.info('[SYNC] Hybrid: %d devices updated for %d companies', total, activeCompanyIds.size);
+		appLogger.info(
+			'[SYNC] Hybrid: %d devices updated for %d companies',
+			total,
+			activeCompanyIds.size,
+		);
 	}
 	return total;
 }

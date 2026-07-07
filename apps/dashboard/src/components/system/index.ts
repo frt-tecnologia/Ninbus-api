@@ -14,3 +14,12 @@ export { BarMeter } from './bar-meter';
 export { Toolbar } from './toolbar';
 export { Empty, ErrorState, TableLoading } from './state';
 export { Time, Relative } from './time';
+export { SearchField } from './search-field';
+export {
+	TimeRangePicker,
+	RangeProvider,
+	useRange,
+	last24h,
+	last7d,
+	type TimeRange,
+} from './time-range-picker';

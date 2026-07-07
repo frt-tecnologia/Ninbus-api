@@ -1,17 +1,16 @@
 'use client';
 
-import { useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { toast } from 'sonner';
-import { X } from 'lucide-react';
-import type { PendingDesignation } from '@/types/domain';
-import { DataTable, type Column } from '@/components/data/data-table';
+import { type Column, DataTable } from '@/components/data/data-table';
 import { Id, Time } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { designationService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
+import type { PendingDesignation } from '@/types/domain';
+import { X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback } from 'react';
+import { toast } from 'sonner';
 
 export function DesignationTable() {
 	const router = useRouter();
@@ -40,32 +39,32 @@ export function DesignationTable() {
 			key: 'company',
 			header: 'Empresa',
 			sortValue: (d) => d.companyName,
-			render: (d) => (
-				<Link
-					href={`/companies/${d.companyId}`}
-					className="text-sm text-foreground hover:text-primary hover:underline"
-				>
-					{d.companyName}
-				</Link>
-			),
+			render: (d) => <span className="text-sm">{d.companyName}</span>,
 		},
 		{
 			key: 'role',
 			header: 'Role',
 			sortValue: (d) => d.role,
-			render: (d) => <span className="font-mono text-xs uppercase text-muted-foreground">{d.role}</span>,
+			render: (d) => (
+				<span className="font-mono text-xs uppercase text-muted-foreground">{d.role}</span>
+			),
 		},
 		{
 			key: 'claimed',
-			header: 'Registro',
+			header: 'Status',
 			render: (d) =>
 				d.claimedAt ? (
-					<span className="text-signal-ok">claimado</span>
+					<span className="text-signal-ok">convite ativado</span>
 				) : (
-					<span className="text-signal-busy">aguardando</span>
+					<span className="text-signal-busy">aguardando cadastro</span>
 				),
 		},
-		{ key: 'createdAt', header: 'Criada', sortValue: (d) => d.createdAt, render: (d) => <Time value={d.createdAt} /> },
+		{
+			key: 'createdAt',
+			header: 'Criada',
+			sortValue: (d) => d.createdAt,
+			render: (d) => <Time value={d.createdAt} />,
+		},
 	];
 
 	return (
@@ -76,7 +75,11 @@ export function DesignationTable() {
 			loading={designations.loading}
 			error={designations.error}
 			onRetry={designations.refetch}
-			empty={<div className="py-12 text-center text-sm text-muted-foreground">Nenhuma designação pendente.</div>}
+			empty={
+				<div className="py-12 text-center text-sm text-muted-foreground">
+					Nenhuma designação pendente.
+				</div>
+			}
 			actions={(d) =>
 				!d.claimedAt && (
 					<Button

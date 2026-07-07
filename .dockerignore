@@ -35,12 +35,20 @@ tests
 __tests__
 coverage
 
-# ── Harness (dev tooling) ──────────────────────────────────
+# ── Harness / tooling configs (dev tooling) ───────────────
 .harness
+drizzle.gen.config.ts
+drizzle.bak
+drizzle-tmp*
 
 # ── OS ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+# Windows reserved device-name paths break the build context sender
+nul
+nul/**
+certbot
+apps
 
 # ── Docker (prevent recursion) ─────────────────────────────
 docker-compose*.yml

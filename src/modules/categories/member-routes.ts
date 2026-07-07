@@ -7,6 +7,7 @@ import {
 	addDevicesToCategorySchema,
 } from '@modules/categories/schemas';
 import * as categoryService from '@modules/categories/service';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 
 /**
@@ -36,18 +37,12 @@ export const categoryMemberRoutes = withAuth(
 		'/:categoryId/devices',
 		async ({ params, set }) => {
 			// Verify category exists & belongs to company (404 otherwise).
-			const category = await categoryService.getCategoryById(
-				params.categoryId,
-				params.companyId,
-			);
+			const category = await categoryService.getCategoryById(params.categoryId, params.companyId);
 			if (!category) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Category not found' };
 			}
-			const members = await categoryService.getCategoryDevices(
-				params.categoryId,
-				params.companyId,
-			);
+			const members = await categoryService.getCategoryDevices(params.categoryId, params.companyId);
 			return { data: members, total: members.length };
 		},
 		{
@@ -74,11 +69,8 @@ export const categoryMemberRoutes = withAuth(
 	// POST /:categoryId/devices — add members (idempotent bulk)
 	.post(
 		'/:categoryId/devices',
-		async ({ params, body, set }) => {
-			const category = await categoryService.getCategoryById(
-				params.categoryId,
-				params.companyId,
-			);
+		async ({ params, body, user, set }) => {
+			const category = await categoryService.getCategoryById(params.categoryId, params.companyId);
 			if (!category) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Category not found' };
@@ -88,6 +80,16 @@ export const categoryMemberRoutes = withAuth(
 				params.companyId,
 				body.deviceIds,
 			);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'category.updated',
+				entityType: 'category',
+				entityId: params.categoryId,
+				entityLabel: category.name,
+				metadata: { added: body.deviceIds, count: result.assigned },
+			});
 			return {
 				message: 'Devices added to category successfully',
 				data: result,
@@ -121,11 +123,8 @@ export const categoryMemberRoutes = withAuth(
 	// PUT /:categoryId/devices — replace ALL members
 	.put(
 		'/:categoryId/devices',
-		async ({ params, body, set }) => {
-			const category = await categoryService.getCategoryById(
-				params.categoryId,
-				params.companyId,
-			);
+		async ({ params, body, user, set }) => {
+			const category = await categoryService.getCategoryById(params.categoryId, params.companyId);
 			if (!category) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Category not found' };
@@ -135,6 +134,16 @@ export const categoryMemberRoutes = withAuth(
 				params.companyId,
 				body.deviceIds,
 			);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'category.updated',
+				entityType: 'category',
+				entityId: params.categoryId,
+				entityLabel: category.name,
+				metadata: { replacedWith: body.deviceIds, count: result.assigned },
+			});
 			return {
 				message: 'Category members updated successfully',
 				data: result,
@@ -167,12 +176,9 @@ export const categoryMemberRoutes = withAuth(
 	// DELETE /:categoryId/devices/:deviceId — remove a single member
 	.delete(
 		'/:categoryId/devices/:deviceId',
-		async ({ params, set }) => {
+		async ({ params, user, set }) => {
 			// Verify category exists & belongs to company (404 otherwise).
-			const category = await categoryService.getCategoryById(
-				params.categoryId,
-				params.companyId,
-			);
+			const category = await categoryService.getCategoryById(params.categoryId, params.companyId);
 			if (!category) {
 				set.status = 404;
 				return { error: 'Not Found', message: 'Category not found' };
@@ -182,6 +188,15 @@ export const categoryMemberRoutes = withAuth(
 				params.companyId,
 				params.deviceId,
 			);
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: 'device.category_changed',
+				entityType: 'device',
+				entityId: params.deviceId,
+				metadata: { removedFrom: params.categoryId, categoryLabel: category.name },
+			});
 			return {
 				message: 'Device removed from category successfully',
 				data: result,

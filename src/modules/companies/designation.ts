@@ -211,7 +211,7 @@ export async function getPendingDesignations(companyId: string) {
 export async function revokePendingDesignation(
 	companyId: string,
 	designationId: string,
-): Promise<boolean> {
+): Promise<{ id: string; email: string; role: string } | null> {
 	const result = await db
 		.delete(pendingCompanyMembers)
 		.where(
@@ -221,8 +221,13 @@ export async function revokePendingDesignation(
 				isNull(pendingCompanyMembers.claimedAt),
 			),
 		)
-		.returning({ id: pendingCompanyMembers.id });
-	return result.length > 0;
+		.returning({
+			id: pendingCompanyMembers.id,
+			email: pendingCompanyMembers.email,
+			role: pendingCompanyMembers.role,
+		});
+	// `result[0]` is typed as `T | undefined` (array access) — coalesce to null.
+	return result.length > 0 ? (result[0] ?? null) : null;
 }
 
 /**

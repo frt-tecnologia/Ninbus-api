@@ -1,5 +1,5 @@
-import { withAuth } from '@common/middleware/auth-guard';
 import { appLogger } from '@common/logger';
+import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ArtifactDeleteResponseSchema,
 	ArtifactListResponseSchema,
@@ -9,6 +9,7 @@ import {
 	GenericActionResponseSchema,
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './service';
 import * as service from './service';
@@ -39,7 +40,10 @@ export const artifactManageRoutes = withAuth(
 			} catch (error: any) {
 				appLogger.error('[ARTIFACTS] Failed to list artifacts: %s', error?.message ?? 'unknown');
 				set.status = 503;
-				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
 			}
 		},
 		{
@@ -53,7 +57,8 @@ export const artifactManageRoutes = withAuth(
 			detail: {
 				tags: ['Artifacts'],
 				summary: 'List OTA artifacts (Software Modules)',
-				description: 'Lists software modules belonging to this company from hawkBit enriched with Ninbus type metadata',
+				description:
+					'Lists software modules belonging to this company from hawkBit enriched with Ninbus type metadata',
 			},
 			response: {
 				200: ArtifactListResponseSchema,
@@ -79,9 +84,15 @@ export const artifactManageRoutes = withAuth(
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
-				appLogger.warn('[ARTIFACTS] Failed to get artifact:', error);
+				appLogger.warn(
+					'[ARTIFACTS] Failed to get artifact: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
-				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
 			}
 		},
 		{
@@ -107,9 +118,18 @@ export const artifactManageRoutes = withAuth(
 	// DELETE /:artifactId — Delete artifact
 	.delete(
 		'/:artifactId',
-		async ({ params, set }) => {
+		async ({ params, user, set }) => {
 			try {
 				const result = await service.deleteArtifact(params.companyId, Number(params.artifactId));
+				await logActivity({
+					actorUserId: user.id,
+					actorEmail: user.email,
+					companyId: params.companyId,
+					action: 'artifact.deleted',
+					entityType: 'artifact',
+					entityId: params.artifactId,
+					metadata: { cleanedUp: result.cleanedUp },
+				});
 				return { message: result.message, cleanedUp: result.cleanedUp };
 			} catch (error) {
 				if (error instanceof ArtifactNotFoundError) {
@@ -124,9 +144,15 @@ export const artifactManageRoutes = withAuth(
 					set.status = 409;
 					return { error: 'Locked', message: error.message, blockingDS: error.blockingDS };
 				}
-				appLogger.warn('[ARTIFACTS] Failed to delete artifact:', error);
+				appLogger.warn(
+					'[ARTIFACTS] Failed to delete artifact: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
-				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
 			}
 		},
 		{
@@ -166,9 +192,15 @@ export const artifactManageRoutes = withAuth(
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
-				appLogger.warn('[ARTIFACTS] Failed to update artifact:', error);
+				appLogger.warn(
+					'[ARTIFACTS] Failed to update artifact: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
-				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
 			}
 		},
 		{
@@ -212,9 +244,15 @@ export const artifactManageRoutes = withAuth(
 					set.status = 400;
 					return { error: 'Bad Request', message: error.message };
 				}
-				appLogger.warn('[ARTIFACTS] Failed to get download info:', error);
+				appLogger.warn(
+					'[ARTIFACTS] Failed to get download info: %s',
+					error instanceof Error ? error.message : String(error),
+				);
 				set.status = 503;
-				return { error: 'Service Unavailable', message: 'Artifact service (hawkBit) is currently unavailable' };
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
 			}
 		},
 		{

@@ -1,18 +1,11 @@
 'use client';
 
-import * as React from 'react';
+import { ROUTES } from '@/lib/routes';
+import { cn } from '@/lib/utils';
+import { Building2, HardDrive, LayoutDashboard, Package, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-	LayoutDashboard,
-	HardDrive,
-	Building2,
-	Users,
-	Package,
-	FileText,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { ROUTES } from '@/lib/routes';
+import type * as React from 'react';
 
 /**
  * Primary navigation. Routes come from the typed route map (lib/routes.ts) so
@@ -37,7 +30,6 @@ const NAV: NavItem[] = [
 	{ key: 'companies', label: 'Empresas', icon: Building2 },
 	{ key: 'users', label: 'Usuários', icon: Users },
 	{ key: 'deployments', label: 'Deployments', icon: Package },
-	{ key: 'designations', label: 'Designações', icon: FileText },
 ];
 
 export function SidebarNav({
@@ -52,9 +44,7 @@ export function SidebarNav({
 		<nav className={cn('flex flex-col gap-0.5', className)} aria-label="Navegação">
 			{NAV.map((item) => {
 				const href = ROUTES[item.key];
-				const active = item.exact
-					? pathname === href
-					: pathname.startsWith(href);
+				const active = item.exact ? pathname === href : pathname.startsWith(href);
 				const Icon = item.icon;
 				return (
 					<Link
@@ -74,9 +64,7 @@ export function SidebarNav({
 					>
 						<Icon className="h-[1.05rem] w-[1.05rem] shrink-0" />
 						<span className="flex-1">{item.label}</span>
-						{active && (
-							<span className="h-1 w-1 rounded-full bg-primary" aria-hidden />
-						)}
+						{active && <span className="h-1 w-1 rounded-full bg-primary" aria-hidden />}
 					</Link>
 				);
 			})}

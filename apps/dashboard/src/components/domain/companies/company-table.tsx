@@ -77,10 +77,7 @@ export function CompanyTable({
 			sortValue: (c) => c.name,
 			render: (c) => (
 				<div className="flex flex-col">
-					<Link
-						href={`/companies/${c.id}`}
-						className="text-sm font-medium text-foreground hover:text-primary hover:underline"
-					>
+					<Link href={`/companies/${c.id}`} className="text-sm font-medium text-foreground hover:text-primary hover:underline">
 						{c.name}
 					</Link>
 					<Id value={c.id} truncate className="text-xs text-muted-foreground" />

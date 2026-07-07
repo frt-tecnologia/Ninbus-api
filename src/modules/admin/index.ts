@@ -19,6 +19,7 @@ import { getAllPendingDesignations } from '@modules/companies/designation';
 import { getCompanyMembers } from '@modules/companies/service';
 import * as companyService from '@modules/companies/service';
 import { getCompanyDevices } from '@modules/devices/service';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 
 /**
@@ -127,7 +128,7 @@ export const adminModule = withAuth(new Elysia({ prefix: '/api/admin' }))
 	// PUT /companies/:companyId/status — Suspend or activate ANY company
 	.put(
 		'/companies/:companyId/status',
-		async ({ params, body, set }) => {
+		async ({ params, body, user, set }) => {
 			const company = await companyService.updateCompany(params.companyId, {
 				status: body.status,
 			});
@@ -135,6 +136,15 @@ export const adminModule = withAuth(new Elysia({ prefix: '/api/admin' }))
 				set.status = 404;
 				return { error: 'Not Found', message: 'Company not found' };
 			}
+			await logActivity({
+				actorUserId: user.id,
+				actorEmail: user.email,
+				companyId: params.companyId,
+				action: body.status === 'suspended' ? 'company.suspended' : 'company.activated',
+				entityType: 'company',
+				entityId: params.companyId,
+				entityLabel: company.name,
+			});
 			return {
 				message: `Company ${body.status === 'suspended' ? 'suspended' : 'activated'} successfully`,
 			};

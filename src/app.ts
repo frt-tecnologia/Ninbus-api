@@ -21,6 +21,8 @@ import { sseModule, sseGlobalModule } from '@modules/sse';
 import { sseTestModule } from '@modules/sse/test-routes';
 import { healthModule } from '@modules/health';
 import { postsModule } from '@modules/posts';
+import { observabilityModule } from '@modules/observability';
+import { startTelemetryRetention } from '@modules/observability/retention';
 import { Elysia } from 'elysia';
 import { HawkbitApiError } from '@common/hawkbit/client';
 import { appLogger } from './common/logger';
@@ -141,6 +143,7 @@ export const createApp = () => {
 		.use(healthModule)
 		.use(postsModule)
 		.use(adminModule)
+		.use(observabilityModule)
 		.use(companiesModule)
 		.use(companyMemberRoutes)
 		.use(designationRoutes)
@@ -168,6 +171,9 @@ export const createApp = () => {
 
 	// Start hawkBit background sync worker
 	DeviceSyncEngine.startBackgroundSync();
+
+	// Start telemetry retention worker (hourly prune of old device_connections)
+	startTelemetryRetention();
 
 	return app;
 };

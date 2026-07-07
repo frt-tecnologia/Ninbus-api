@@ -6,6 +6,7 @@ import {
 	ErrorResponseSchema,
 	UploadArtifactBodySchema,
 } from '@modules/artifacts/schemas';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { ArtifactValidationError, uploadArtifact } from './service';
 
@@ -47,6 +48,21 @@ export const artifactsModule = withAuth(
 					body?.description,
 				);
 				set.status = 201;
+				await logActivity({
+					actorUserId: user.id,
+					actorEmail: user.email,
+					companyId: params.companyId,
+					action: 'artifact.uploaded',
+					entityType: 'artifact',
+					entityId: String(result?.smId ?? ''),
+					entityLabel: body.artifactName,
+					metadata: {
+						artifactType: body.artifactType,
+						version: body?.version ?? null,
+						filename: artifactFile?.name ?? null,
+						size: artifactFile?.size ?? null,
+					},
+				});
 				return { message: 'Artifact uploaded successfully', data: result };
 			} catch (error) {
 				if (error instanceof ArtifactValidationError) {

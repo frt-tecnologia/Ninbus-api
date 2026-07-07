@@ -7,13 +7,13 @@
  * - H2 (inconsistent version) — `version` must equal the artifact version, not hawkBit's
  *   internal DS timestamp.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { hawkbitDistributionSets } from '@common/hawkbit/client';
 import {
+	type LocalDeploymentRecord,
 	enrichDeployment,
 	enrichOrphanedDeployment,
-	type LocalDeploymentRecord,
 } from '@modules/deployments/enrichment';
-import { hawkbitDistributionSets } from '@common/hawkbit/client';
 
 // Monkey-patch the shared client object (stable across Bun versions, unlike mock.module).
 const realGetStatistics = hawkbitDistributionSets.getStatistics;
@@ -44,6 +44,8 @@ function makeLocal(overrides: Partial<LocalDeploymentRecord> = {}): LocalDeploym
 		artifactOriginalFile: 'firmware-v2.1.0.bin',
 		targetCount: 3,
 		targetIds: JSON.stringify(['DEV1', 'DEV2', 'DEV3']),
+		createdBy: null,
+		creatorEmail: null,
 		createdAt: new Date('2026-01-01T00:00:00Z'),
 		updatedAt: new Date('2026-01-02T00:00:00Z'),
 		...overrides,
@@ -107,7 +109,9 @@ describe('enrichOrphanedDeployment', () => {
 	});
 
 	test('handles non-array targetIds payload', () => {
-		const result = enrichOrphanedDeployment(makeLocal({ targetIds: JSON.stringify({ not: 'array' }) }));
+		const result = enrichOrphanedDeployment(
+			makeLocal({ targetIds: JSON.stringify({ not: 'array' }) }),
+		);
 		expect(result.targetIds).toBeUndefined();
 	});
 

@@ -73,6 +73,16 @@ export interface ProvisionDeviceInput {
 	name?: string;
 }
 
+export interface DeviceCategory {
+	id: string;
+	companyId: string;
+	name: string;
+	type: string;
+	description: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
 // ── Designation (pending company member) ───────────────────────────────
 
 export interface PendingDesignation {
@@ -125,6 +135,9 @@ export interface EnrichedDeployment {
 	artifactOriginalFile?: string;
 	targetCount?: number;
 	targetIds?: string[];
+	/** Who created the deployment (super-admin observability). */
+	createdBy?: string | null;
+	creatorEmail?: string | null;
 }
 
 // ── Target status (per-device deployment outcome) ────────────────────

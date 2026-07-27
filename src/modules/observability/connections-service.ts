@@ -169,6 +169,56 @@ export async function aggregateOnlineEvents(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// Read — raw transition events (company-scoped timeline for device reports)
+// ---------------------------------------------------------------------------
+
+export interface ConnectionEvent {
+	deviceId: string;
+	deviceName: string | null;
+	hawkbitTargetId: string | null;
+	event: 'online' | 'offline';
+	occurredAt: Date;
+	ipAddress: string | null;
+}
+
+export interface ListConnectionEventsOptions {
+	companyId: string;
+	deviceId?: string;
+	from: Date;
+	to: Date;
+}
+
+/**
+ * Raw connection transition events for a company within [from, to], ordered
+ * oldest-first. The UI computes the timeline diff (online↔offline bands) from
+ * these events — the server does NOT pre-compute sessions here. Tenant-isolated
+ * by companyId (filtered at the DB).
+ */
+export async function listConnectionEvents(
+	opts: ListConnectionEventsOptions,
+): Promise<ConnectionEvent[]> {
+	const conditions = [
+		eq(deviceConnections.companyId, opts.companyId),
+		gte(deviceConnections.occurredAt, opts.from),
+		lte(deviceConnections.occurredAt, opts.to),
+	];
+	if (opts.deviceId) conditions.push(eq(deviceConnections.deviceId, opts.deviceId));
+
+	return await db
+		.select({
+			deviceId: deviceConnections.deviceId,
+			deviceName: deviceConnections.deviceName,
+			hawkbitTargetId: deviceConnections.hawkbitTargetId,
+			event: deviceConnections.event,
+			occurredAt: deviceConnections.occurredAt,
+			ipAddress: deviceConnections.ipAddress,
+		})
+		.from(deviceConnections)
+		.where(and(...conditions))
+		.orderBy(deviceConnections.occurredAt);
+}
+
+// ---------------------------------------------------------------------------
 // Count helpers
 // ---------------------------------------------------------------------------
 

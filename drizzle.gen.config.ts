@@ -18,7 +18,7 @@ export default defineConfig({
 		'user', 'session', 'account', 'verification',
 		'companies', 'company_members', 'pending_company_members',
 		'categories', 'devices', 'device_category_assignments',
-		'posts', 'artifacts', 'deployments',
+		'posts', 'artifacts', 'artifact_category_assignments', 'deployments',
 		'activity_log', 'device_connections',
 	],
 	verbose: true,

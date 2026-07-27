@@ -1,6 +1,6 @@
+import fs from 'node:fs';
 import { appLogger } from '@common/logger';
 import postgres from 'postgres';
-import fs from 'fs';
 
 /**
  * Database Migration
@@ -50,7 +50,11 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
 				continue;
 			}
-			if (entry.tag === '0008_artifacts_deployments_isolation' && tableSet.has('artifacts') && tableSet.has('deployments')) {
+			if (
+				entry.tag === '0008_artifacts_deployments_isolation' &&
+				tableSet.has('artifacts') &&
+				tableSet.has('deployments')
+			) {
 				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
 				continue;
 			}
@@ -69,9 +73,41 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
-			if (entry.tag === '0012_observability' && tableSet.has('activity_log') && tableSet.has('device_connections')) {
+			if (
+				entry.tag === '0012_observability' &&
+				tableSet.has('activity_log') &&
+				tableSet.has('device_connections')
+			) {
 				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
 				continue;
+			}
+			if (entry.tag === '0013_device_description') {
+				// Column-level check — ALTER ADD COLUMN is not idempotent, skip if present.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema='public' AND table_name='devices'
+					AND column_name='description'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0014_description_length_check') {
+				// Constraint-level check — ADD CONSTRAINT is not idempotent, skip if present.
+				const constraints =
+					await client`SELECT conname FROM pg_constraint WHERE conname = 'devices_description_length_check'`;
+				if (constraints.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0015_artifact_category_assignments') {
+				// Table-level check — CREATE TABLE is not idempotent, skip if present.
+				const tables =
+					await client`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='artifact_category_assignments'`;
+				if (tables.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
 			}
 
 			// Apply the migration

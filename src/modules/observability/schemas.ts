@@ -71,6 +71,31 @@ export const ConnectionsQuerySchema = t.Object({
 	view: t.Optional(t.Union([t.Literal('session'), t.Literal('aggregate'), t.Literal('auto')])),
 });
 
+/**
+ * Company-scoped device connection timeline (member-facing device reports).
+ * `from`/`to` are optional (default: last 24h). Capped at OBS_CONNECTIONS_RETENTION_DAYS.
+ */
+export const CompanyConnectionsQuerySchema = t.Object({
+	from: t.Optional(t.Date({ description: 'ISO 8601. Defaults to now - 24h.' })),
+	to: t.Optional(t.Date({ description: 'ISO 8601. Defaults to now.' })),
+	deviceId: t.Optional(t.String({ format: 'uuid', description: 'Filter a single device.' })),
+});
+
+export const ConnectionEventSchema = t.Object({
+	deviceId: t.String({ format: 'uuid' }),
+	deviceName: t.Union([t.String(), t.Null()]),
+	hawkbitTargetId: t.Union([t.String(), t.Null()]),
+	event: t.Union([t.Literal('online'), t.Literal('offline')]),
+	occurredAt: dateTimeString,
+	ipAddress: t.Union([t.String(), t.Null()]),
+});
+
+export const CompanyConnectionsResponseSchema = t.Object({
+	range: t.Object({ from: dateTimeString, to: dateTimeString }),
+	data: t.Array(ConnectionEventSchema),
+	total: t.Number(),
+});
+
 export const SessionsResponseSchema = t.Object({
 	view: t.String(),
 	range: t.Object({ from: dateTimeString, to: dateTimeString }),

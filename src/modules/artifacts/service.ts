@@ -1,3 +1,4 @@
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { artifacts } from '@common/db/schema';
 import {
@@ -7,7 +8,6 @@ import {
 	hawkbitSoftwareModules,
 	resolveArtifactType,
 } from '@common/hawkbit/client';
-import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
 // Re-exports from split files
@@ -23,13 +23,16 @@ import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas'
 export type { ArtifactUploadResult, ArtifactBinary, EnrichedSoftwareModule } from './types';
 export { ArtifactValidationError, ArtifactNotFoundError, ArtifactLockedError } from './types';
 import type { EnrichedSoftwareModule } from './types';
-import { ArtifactValidationError, ArtifactNotFoundError } from './types';
+import { ArtifactNotFoundError, ArtifactValidationError } from './types';
 
 // Guards
 
 function requireHawkbit(): void {
 	if (!hawkbitConfig.enabled) {
-		throw new ArtifactValidationError('Artifact operations require hawkBit to be enabled', 'HAWKBIT_NOT_ENABLED');
+		throw new ArtifactValidationError(
+			'Artifact operations require hawkBit to be enabled',
+			'HAWKBIT_NOT_ENABLED',
+		);
 	}
 }
 
@@ -50,6 +53,24 @@ export async function requireOwnership(companyId: string, hawkbitSmId: number): 
 
 // Helpers
 
+/** Local artifact record fields used as the canonical source for display metadata. */
+type ArtifactDisplayMeta = Pick<typeof artifacts.$inferSelect, 'name' | 'description'>;
+
+/**
+ * Fetch a single SM enriched with the canonical local name/description.
+ * (Local DB is the source of truth for display metadata; hawkBit holds the binary.)
+ */
+async function getEnrichedArtifact(
+	companyId: string,
+	smId: number,
+): Promise<EnrichedSoftwareModule> {
+	const [local] = await db
+		.select({ name: artifacts.name, description: artifacts.description })
+		.from(artifacts)
+		.where(eq(artifacts.hawkbitSmId, smId));
+	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId), companyId, local);
+}
+
 /** Extract user-visible artifactName from SM description (stored as "artifactName: X"). */
 function extractDisplayName(sm: HawkbitSoftwareModule): string {
 	const desc = sm.description ?? '';
@@ -57,11 +78,26 @@ function extractDisplayName(sm: HawkbitSoftwareModule): string {
 	return match ? match[1]!.trim() : sm.name;
 }
 
-/** Enrich SM with Ninbus metadata + artifact binaries + lock status. */
-export async function enrichSoftwareModule(sm: HawkbitSoftwareModule, companyId?: string): Promise<EnrichedSoftwareModule> {
+/**
+ * Enrich SM with Ninbus metadata + artifact binaries + lock status.
+ *
+ * The LOCAL DB is the canonical source for display `name`/`description`
+ * (matching the devices pattern). When a `local` record is provided, it takes
+ * priority over the hawkBit SM compound-description parse; `extractDisplayName`
+ * is only a fallback for SMs without a local record (legacy / out-of-band).
+ */
+export async function enrichSoftwareModule(
+	sm: HawkbitSoftwareModule,
+	companyId?: string,
+	local?: ArtifactDisplayMeta,
+): Promise<EnrichedSoftwareModule> {
 	const artifactType = resolveArtifactType(sm);
 	let smArtifacts: HawkbitArtifact[] = [];
-	try { smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id); } catch { /* OK */ }
+	try {
+		smArtifacts = await hawkbitSoftwareModules.listArtifacts(sm.id);
+	} catch {
+		/* OK */
+	}
 	const totalSize = smArtifacts.reduce((s, a) => s + (a.size ?? 0), 0);
 
 	// Only resolve lock status if companyId provided and SM is locked (avoids unnecessary API calls)
@@ -71,12 +107,20 @@ export async function enrichSoftwareModule(sm: HawkbitSoftwareModule, companyId?
 
 	return {
 		...sm,
-		name: extractDisplayName(sm),
-		createdAt: sm.createdAt ? new Date(sm.createdAt).toISOString() as any : undefined,
-		lastModifiedAt: sm.lastModifiedAt ? new Date(sm.lastModifiedAt).toISOString() as any : undefined,
+		name: local?.name ?? extractDisplayName(sm),
+		description: local?.description ?? sm.description,
+		createdAt: sm.createdAt ? (new Date(sm.createdAt).toISOString() as any) : undefined,
+		lastModifiedAt: sm.lastModifiedAt
+			? (new Date(sm.lastModifiedAt).toISOString() as any)
+			: undefined,
 		ninbusType: artifactType,
 		ninbusMeta: artifactType ? NINBUS_ARTIFACT_TYPE_META[artifactType] : null,
-		artifacts: smArtifacts.map((a) => ({ id: a.id, filename: a.providedFilename ?? undefined, size: a.size ?? undefined, hashes: a.hashes ?? undefined })),
+		artifacts: smArtifacts.map((a) => ({
+			id: a.id,
+			filename: a.providedFilename ?? undefined,
+			size: a.size ?? undefined,
+			hashes: a.hashes ?? undefined,
+		})),
 		size: totalSize || undefined,
 		lockedByDistributionSets: lockInfo.lockedByDistributionSets,
 		deletable: lockInfo.deletable,
@@ -121,17 +165,17 @@ export function validateFileSize(
  * Write-through: creates SM in hawkBit AND inserts local artifact record.
  */
 
-export async function listArtifacts(companyId: string, _params?: {
-	offset?: number;
-	limit?: number;
-}): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
+export async function listArtifacts(
+	companyId: string,
+	_params?: {
+		offset?: number;
+		limit?: number;
+	},
+): Promise<{ data: EnrichedSoftwareModule[]; total: number }> {
 	// 1. Get local artifact records for this company
 	let localArtifacts: any[];
 	try {
-		localArtifacts = await db
-			.select()
-			.from(artifacts)
-			.where(eq(artifacts.companyId, companyId));
+		localArtifacts = await db.select().from(artifacts).where(eq(artifacts.companyId, companyId));
 	} catch (dbError: any) {
 		appLogger.error('[ARTIFACTS] DB query failed: %s', dbError?.message ?? 'unknown');
 		return { data: [], total: 0 };
@@ -145,8 +189,16 @@ export async function listArtifacts(companyId: string, _params?: {
 	const smIds = localArtifacts.map((a: any) => a.hawkbitSmId);
 	try {
 		const hawkbitSMs = await hawkbitSoftwareModules.listByIds(smIds);
-		// 3. Build lookup by hawkbitSmId for enrichment
-		const enriched = await Promise.all(hawkbitSMs.map((sm) => enrichSoftwareModule(sm, companyId)));
+		// 3. Build lookup by hawkbitSmId — local DB is canonical for name/description
+		const localById = new Map<number, ArtifactDisplayMeta>(
+			localArtifacts.map((a: any) => [
+				a.hawkbitSmId as number,
+				{ name: a.name, description: a.description },
+			]),
+		);
+		const enriched = await Promise.all(
+			hawkbitSMs.map((sm) => enrichSoftwareModule(sm, companyId, localById.get(sm.id))),
+		);
 		return { data: enriched, total: enriched.length };
 	} catch (hbError: any) {
 		appLogger.warn('[ARTIFACTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
@@ -155,14 +207,21 @@ export async function listArtifacts(companyId: string, _params?: {
 }
 
 /** Get single artifact — verify ownership first (like getDeviceById). */
-export async function getArtifact(companyId: string, smId: number): Promise<EnrichedSoftwareModule> {
+export async function getArtifact(
+	companyId: string,
+	smId: number,
+): Promise<EnrichedSoftwareModule> {
 	await requireOwnership(companyId, smId);
 	requireHawkbit();
-	return enrichSoftwareModule(await hawkbitSoftwareModules.get(smId), companyId);
+	return getEnrichedArtifact(companyId, smId);
 }
 
 /** Update artifact description — verify ownership first. */
-export async function updateArtifact(companyId: string, smId: number, description: string): Promise<void> {
+export async function updateArtifact(
+	companyId: string,
+	smId: number,
+	description: string,
+): Promise<void> {
 	await requireOwnership(companyId, smId);
 	requireHawkbit();
 
@@ -174,6 +233,34 @@ export async function updateArtifact(companyId: string, smId: number, descriptio
 		.update(artifacts)
 		.set({ description, updatedAt: new Date() })
 		.where(eq(artifacts.hawkbitSmId, smId));
+}
+
+/**
+ * Partially update editable artifact metadata (name and/or description).
+ *
+ * The LOCAL DB is the canonical source (matching the devices pattern). The
+ * hawkBit SM `description` compound string is intentionally NOT touched here —
+ * it is set once at upload and is non-authoritative; hawkBit holds only the
+ * binary (S3) plus operational metadata. This keeps PATCH fully isolated from
+ * hawkBit's flow (zero interference) — only the local record changes.
+ *
+ * PATCH semantics: only provided fields change. `description` of null/"" clears.
+ */
+export async function patchArtifact(
+	companyId: string,
+	smId: number,
+	updates: { name?: string; description?: string },
+): Promise<EnrichedSoftwareModule> {
+	await requireOwnership(companyId, smId);
+	requireHawkbit();
+
+	const set: Record<string, unknown> = { updatedAt: new Date() };
+	if (updates.name !== undefined) set.name = updates.name;
+	if (updates.description !== undefined) {
+		set.description = updates.description === '' ? null : updates.description;
+	}
+	await db.update(artifacts).set(set).where(eq(artifacts.hawkbitSmId, smId));
+	return getEnrichedArtifact(companyId, smId);
 }
 
 /** Get download URL — verify ownership first. */

@@ -8,6 +8,13 @@ import {
 import { createSelectSchema } from 'drizzle-typebox';
 import { t } from 'elysia';
 
+/**
+ * Rejects ASCII control chars (0x00–0x1F) and DEL (0x7F) in display names.
+ * Defense-in-depth against log injection, null-byte tricks, and stored-XSS surfaces.
+ * Legitimate device/artifact names never contain control chars.
+ */
+const NO_CONTROL_CHARS = '^[^\\x00-\\x1F\\x7F]*$';
+
 export const provisionDeviceSchema = t.Object(
 	{
 		serialNumber: t.String({
@@ -16,7 +23,7 @@ export const provisionDeviceSchema = t.Object(
 			description:
 				'Device serial number. Accepts display format (26.6.15.001.00031) or HEX format (1A61500100031FFF). ' +
 				'Month field accepts 0-9 and A(B=Nov, C=Dec). Display is converted to 16-char uppercase HEX ' +
-				'using BCD packing (each digit = 1 nibble). Stored as uppercase HEX in the database.'
+				'using BCD packing (each digit = 1 nibble). Stored as uppercase HEX in the database.',
 		}),
 		deviceKey: t.String({
 			minLength: 8,
@@ -28,7 +35,9 @@ export const provisionDeviceSchema = t.Object(
 		name: t.Optional(
 			t.String({
 				maxLength: 255,
-				description: 'Optional display name. Defaults to serial display format (e.g. 26.6.15.001.00031) if not provided.',
+				pattern: NO_CONTROL_CHARS,
+				description:
+					'Optional display name. Defaults to serial display format (e.g. 26.6.15.001.00031) if not provided.',
 			}),
 		),
 	},
@@ -43,13 +52,20 @@ export const provisionDeviceSchema = t.Object(
 
 export const registerDeviceSchema = t.Object(
 	{
-		name: t.Optional(t.String({ minLength: 1, maxLength: 255, description: 'Display name for the device' })),
+		name: t.Optional(
+			t.String({
+				minLength: 1,
+				maxLength: 255,
+				pattern: NO_CONTROL_CHARS,
+				description: 'Display name for the device',
+			}),
+		),
 		serialNumber: t.String({
 			minLength: 1,
 			maxLength: 255,
 			description:
 				'Device serial number. Accepts display (26.6.15.001.00031) or HEX (1A61500100031FFF) format. ' +
-				'Month accepts 0-9 and A/B/C. Used to match with a pre-provisioned device in hawkBit.'
+				'Month accepts 0-9 and A/B/C. Used to match with a pre-provisioned device in hawkBit.',
 		}),
 	},
 	{ default: { serialNumber: '26.6.15.001.00031' } },
@@ -73,10 +89,32 @@ export const linkDeviceSchema = t.Object(
 
 export const updateDeviceSchema = t.Object(
 	{
-		name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
-		serialNumber: t.Optional(t.String({ maxLength: 255 })),
+		// serialNumber is intentionally NOT editable: it maps the hawkBit controllerId.
+		// Changing it would desync the device from hawkBit. Name only.
+		name: t.Optional(t.String({ minLength: 1, maxLength: 255, pattern: NO_CONTROL_CHARS })),
 	},
-	{ default: { name: 'Dispositivo Principal 01 (Atualizado)', serialNumber: '26.6.15.001.00031' } },
+	{ default: { name: 'Dispositivo Principal 01 (Atualizado)' } },
+);
+
+/** PATCH body — partial update of editable device metadata (name + description). */
+export const patchDeviceSchema = t.Object(
+	{
+		name: t.Optional(
+			t.String({
+				minLength: 1,
+				maxLength: 255,
+				pattern: NO_CONTROL_CHARS,
+				description: 'Device display name (etiqueta)',
+			}),
+		),
+		description: t.Optional(
+			t.String({
+				maxLength: 1000,
+				description: 'Free-form description. Send null or "" to clear.',
+			}),
+		),
+	},
+	{ default: { name: 'Ônibus Central 01', description: 'Ativo na linha central' } },
 );
 
 export const assignCategoriesSchema = t.Object(

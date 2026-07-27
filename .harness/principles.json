@@ -967,6 +967,46 @@
       "category": "architecture",
       "learnedAt": "2026-07-07T04:07:45.092Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-artifact-local-db-canonical-metadata",
+      "rule": "The hawkBit Software Module `description` field is a COMPOUND metadata string (\"{userDesc} | artifactName: {name} | originalFile: {file} | payloadBytes: {size}\"), NOT an authoritative source. The local `artifacts` table already has proper columns (name, description, original_filename, payload_size, package_size) — treat the LOCAL DB as the canonical source for display metadata. enrichSoftwareModule() MUST prefer the local record (name/description) over parsing the hawkBit compound string; keep extractDisplayName() only as a defensive fallback for SMs without a local record. Editing artifact name/description = update local DB columns only; do NOT touch the hawkBit SM (zero interference — hawkBit holds only the binary in S3). This matches the devices pattern (devices.name canonical + name-sync best-effort).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-24T13:39:44.989Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-test-company-creation-requires-superadmin",
+      "rule": "POST /api/companies requires the superAdmin macro (superAdmin: true) + an ownerEmail field. Integration tests that create a company MUST sign in a SUPER_ADMIN_EMAILS user and pass ownerEmail — NOT use a regular member's cookie with just { name }. A test setup that calls setupCompany(regularCookie) silently fails (companyId undefined) and cascades into dozens of unrelated failures. Mirror devices.test.ts: signIn(superAdminEmail) → setupCompany(ownerEmail) with superAdminCookie. When debugging a cascade of test failures, FIRST check whether the Setup/creates-company test passed — a failed company setup is the root cause of most cascades.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-07-24T13:39:44.994Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migration-rename-verify-generate",
+      "rule": "When manually renaming a drizzle-kit generated migration (the .sql file, its meta/*_snapshot.json, and the _journal.json tag) — e.g. to fix a numeric-prefix collision like 0012_yummy_mandroid vs 0012_observability — you MUST re-run `bun drizzle-kit generate --config drizzle.gen.config.ts` afterward. If it reports \"No schema changes, nothing to migrate\", the snapshot↔schema linkage is intact (no drift). If it generates a DUPLICATE migration, the rename broke drizzle-kit's tracking and must be reverted. The migrator (src/scripts/migrate.ts) keys .sql files by exact journal tag, so the filename MUST match the tag exactly, and every new migration needs an idempotency skip-check (column/table existence via information_schema) following the existing pattern.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-24T13:39:44.997Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-onerror-must-handle-parse-code",
+      "rule": "Elysia's onError MUST handle `code === 'PARSE'` (malformed JSON body) → 400. Without it, a client sending invalid JSON gets a 500 (treated as a server error) instead of 400, which is wrong semantically and leaks that it's a parse failure. Place the PARSE branch alongside VALIDATION: `if (code === 'PARSE') { set.status = 400; return { error: 'Bad Request', message: 'Malformed request body' }; }`. Validate end-to-end: a body with a raw control byte (unescaped newline) hits PARSE → confirm 400 not 500.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-07-27T01:32:14.231Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-upload-max-size-env-memory-dos",
+      "rule": "File upload max size MUST be env-configurable (e.g. ARTIFACT_MAX_SIZE_MB in env.ts) and kept LOW relative to the container memory limit. The tar-packager reads the whole file into RAM via file.arrayBuffer() then Buffer.concat (≈2× file size). A 500MB hardcoded max with a 256m container = OOM-kill on a single upload. Default 50MB; add to env.ts schema + .env.example + .env.test. Also add a DB CHECK constraint (defense-in-depth) for any maxLength the API schema enforces, so direct DB writes (jobs/scripts) can't bypass it — Drizzle: `check('name', sql\\`${col} IS NULL OR char_length(${col}) <= N\\`)` with `sql` imported from 'drizzle-orm' ROOT (not pg-core) and `check` from pg-core.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-07-27T01:32:14.571Z",
+      "reinforcementCount": 1
     }
   ]
 }

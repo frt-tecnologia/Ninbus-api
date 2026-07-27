@@ -1,34 +1,36 @@
 import { env } from '@common/config/env';
+import { HawkbitApiError } from '@common/hawkbit/client';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
+import { adminModule } from '@modules/admin';
 import { artifactsModule } from '@modules/artifacts';
 import { artifactManageRoutes } from '@modules/artifacts/manage-routes';
-import { adminModule } from '@modules/admin';
+import { artifactCategoryRoutes } from '@modules/artifacts/category-routes';
 import { authModule } from '@modules/auth';
 import { categoriesModule } from '@modules/categories';
 import { categoryMemberRoutes } from '@modules/categories/member-routes';
 import { companiesModule } from '@modules/companies';
-import { companyMemberRoutes } from '@modules/companies/member-routes';
 import { designationRoutes } from '@modules/companies/designation-routes';
+import { companyMemberRoutes } from '@modules/companies/member-routes';
 import { deploymentsModule } from '@modules/deployments';
 import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
 import { devicesModule } from '@modules/devices';
-import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { deviceCategoryRoutes } from '@modules/devices/category-routes';
+import { deviceConnectionsRoutes } from '@modules/devices/connections-routes';
+import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { provisioningRoutes } from '@modules/devices/provision-routes';
-import { observabilityModule } from '@modules/observability';
 import { DeviceSyncEngine } from '@modules/devices/sync';
-import { sseModule, sseGlobalModule } from '@modules/sse';
-import { sseTestModule } from '@modules/sse/test-routes';
 import { healthModule } from '@modules/health';
-import { postsModule } from '@modules/posts';
+import { observabilityModule } from '@modules/observability';
 import { startTelemetryRetention } from '@modules/observability/retention';
+import { postsModule } from '@modules/posts';
+import { sseGlobalModule, sseModule } from '@modules/sse';
+import { sseTestModule } from '@modules/sse/test-routes';
 import { Elysia } from 'elysia';
-import { HawkbitApiError } from '@common/hawkbit/client';
 import { appLogger } from './common/logger';
-import { swaggerConfig } from './common/swagger-config';
 import { authRateLimit, globalRateLimit } from './common/middleware/rate-limiter';
 import { requestLogger } from './common/middleware/request-logger';
+import { swaggerConfig } from './common/swagger-config';
 
 /**
  * Application composition root.
@@ -54,7 +56,12 @@ export const createApp = () => {
 
 			// Handle hawkBit API errors globally
 			if (error instanceof HawkbitApiError) {
-				appLogger.warn('[HAWKBIT] API error %d on %s: %j', error.status, error.endpoint, error.body);
+				appLogger.warn(
+					'[HAWKBIT] API error %d on %s: %j',
+					error.status,
+					error.endpoint,
+					error.body,
+				);
 
 				if (error.status === 409) {
 					set.status = 409;
@@ -99,8 +106,7 @@ export const createApp = () => {
 				const hasFileError =
 					parsedMessage?.errors?.some(
 						(e: any) => e?.schema?.format === 'binary' || e?.message?.includes('Expected kind'),
-					) ??
-					parsedMessage?.message?.includes?.("Expected kind 'File'");
+					) ?? parsedMessage?.message?.includes?.("Expected kind 'File'");
 
 				if (hasFileError) {
 					return {
@@ -116,6 +122,13 @@ export const createApp = () => {
 					error: 'Validation error',
 					message: parsedMessage,
 				};
+			}
+
+			// Malformed request body (e.g. invalid JSON) → 400, not 500.
+			if (code === 'PARSE') {
+				set.status = 400;
+				appLogger.warn('[APP] Malformed request body: %s', errorMessage);
+				return { error: 'Bad Request', message: 'Malformed request body' };
 			}
 
 			appLogger.error({
@@ -151,12 +164,14 @@ export const createApp = () => {
 		.use(categoryMemberRoutes)
 		.use(devicesModule)
 		.use(deviceCategoryRoutes)
+		.use(deviceConnectionsRoutes)
 		.use(provisioningRoutes)
 		.use(deviceHawkbitRoutes)
 		.use(deploymentsModule)
 		.use(deploymentDeviceRoutes)
 		.use(artifactsModule)
 		.use(artifactManageRoutes)
+		.use(artifactCategoryRoutes)
 		.use(sseModule)
 		.use(sseGlobalModule)
 		.use(sseTestModule);

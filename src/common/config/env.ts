@@ -97,10 +97,16 @@ const EnvSchema = Type.Object({
 	// body server-side at Resend; the API passes only the variables. Template
 	// must be PUBLISHED in the Resend dashboard before it can be used for sending.
 	RESEND_TEMPLATE_PASSWORD_RESET: Type.Optional(
-		Type.String({ description: 'Resend template alias/ID for password reset emails. Template variables: first_name, reset_password_url' }),
+		Type.String({
+			description:
+				'Resend template alias/ID for password reset emails. Template variables: first_name, reset_password_url',
+		}),
 	),
 	RESEND_TEMPLATE_EMAIL_VERIFICATION: Type.Optional(
-		Type.String({ description: 'Resend template alias/ID for email verification emails. Template variables: first_name, verify_email_url' }),
+		Type.String({
+			description:
+				'Resend template alias/ID for email verification emails. Template variables: first_name, verify_email_url',
+		}),
 	),
 
 	// ── hawkBit Update Server Integration ──────────────────────
@@ -173,6 +179,15 @@ const EnvSchema = Type.Object({
 		}),
 	),
 
+	// ── Artifacts (upload limits) ─────────────────────────────
+	ARTIFACT_MAX_SIZE_MB: Type.Integer({
+		default: 50,
+		minimum: 1,
+		maximum: 1024,
+		description:
+			'Max firmware upload size in MB. Defends against memory DoS (the tar packager buffers the file in RAM).',
+	}),
+
 	// ── SSE (Server-Sent Events) ──────────────────────────────
 	SSE_ENABLED: Type.Boolean({
 		default: true,
@@ -182,7 +197,8 @@ const EnvSchema = Type.Object({
 		Type.Number({
 			default: 30,
 			minimum: 10,
-			description: 'Heartbeat interval in seconds for SSE connections. Keeps connections alive through proxies.',
+			description:
+				'Heartbeat interval in seconds for SSE connections. Keeps connections alive through proxies.',
 		}),
 	),
 	SSE_MAX_CONNECTIONS_PER_COMPANY: Type.Optional(
@@ -268,7 +284,8 @@ export function validateEnv(): Env {
 			: undefined,
 		HAWKBIT_SKIP_TLS: process.env['HAWKBIT_SKIP_TLS'] === 'true',
 		HAWKBIT_AUTOPROVISIONING: process.env['HAWKBIT_AUTOPROVISIONING'] === 'true',
-		HAWKBIT_SYNC_MODE: (process.env['HAWKBIT_SYNC_MODE'] as 'periodic' | 'on_demand' | 'hybrid') || 'hybrid',
+		HAWKBIT_SYNC_MODE:
+			(process.env['HAWKBIT_SYNC_MODE'] as 'periodic' | 'on_demand' | 'hybrid') || 'hybrid',
 		HAWKBIT_SYNC_INTERVAL_SEC: process.env['HAWKBIT_SYNC_INTERVAL_SEC']
 			? Number(process.env['HAWKBIT_SYNC_INTERVAL_SEC'])
 			: undefined,
@@ -278,6 +295,9 @@ export function validateEnv(): Env {
 		HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC']
 			? Number(process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC'])
 			: undefined,
+		ARTIFACT_MAX_SIZE_MB: process.env['ARTIFACT_MAX_SIZE_MB']
+			? Number(process.env['ARTIFACT_MAX_SIZE_MB'])
+			: 50,
 		SUPER_ADMIN_EMAILS: parseStringArray(process.env['SUPER_ADMIN_EMAILS']),
 		SSE_ENABLED: process.env['SSE_ENABLED'] !== 'false',
 		SSE_HEARTBEAT_SEC: process.env['SSE_HEARTBEAT_SEC']

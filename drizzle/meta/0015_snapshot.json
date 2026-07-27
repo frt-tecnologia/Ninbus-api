@@ -1,6 +1,6 @@
 {
-  "id": "095a394f-bcfa-44c0-bd2a-d28ad86a4e08",
-  "prevId": "a8296345-9a35-48bd-a10d-55382c74d0af",
+  "id": "d8898571-be99-4543-b4b7-2c8f918cd357",
+  "prevId": "2150bdaa-0245-4c88-8644-01b691cec781",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -782,6 +782,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "serial_number": {
           "name": "serial_number",
           "type": "text",
@@ -894,7 +900,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "devices_description_length_check": {
+          "name": "devices_description_length_check",
+          "value": "\"devices\".\"description\" IS NULL OR char_length(\"devices\".\"description\") <= 1000"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.posts": {
@@ -958,6 +969,89 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.artifact_category_assignments": {
+      "name": "artifact_category_assignments",
+      "schema": "",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_artifact_category_category": {
+          "name": "idx_artifact_category_category",
+          "columns": [
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "artifact_category_assignments_artifact_id_artifacts_id_fk": {
+          "name": "artifact_category_assignments_artifact_id_artifacts_id_fk",
+          "tableFrom": "artifact_category_assignments",
+          "tableTo": "artifacts",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifact_category_assignments_category_id_categories_id_fk": {
+          "name": "artifact_category_assignments_category_id_categories_id_fk",
+          "tableFrom": "artifact_category_assignments",
+          "tableTo": "categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "artifact_category_assignments_artifact_id_category_id_pk": {
+          "name": "artifact_category_assignments_artifact_id_category_id_pk",
+          "columns": [
+            "artifact_id",
+            "category_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -1098,7 +1192,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "artifacts_description_length_check": {
+          "name": "artifacts_description_length_check",
+          "value": "\"artifacts\".\"description\" IS NULL OR char_length(\"artifacts\".\"description\") <= 1000"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.deployments": {

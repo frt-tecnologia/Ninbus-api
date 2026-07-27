@@ -1,0 +1,2 @@
+ALTER TABLE "devices" ADD CONSTRAINT "devices_description_length_check" CHECK ("devices"."description" IS NULL OR char_length("devices"."description") <= 1000);--> statement-breakpoint
+ALTER TABLE "artifacts" ADD CONSTRAINT "artifacts_description_length_check" CHECK ("artifacts"."description" IS NULL OR char_length("artifacts"."description") <= 1000);

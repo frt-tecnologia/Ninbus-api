@@ -3,8 +3,8 @@ import { categories, deviceCategoryAssignments, devices } from '@common/db/schem
 import { type HawkbitTarget, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { claimDevice } from './provisioning';
 import { syncDeviceNameToHawkbit } from './name-sync';
+import { claimDevice } from './provisioning';
 
 // ---------------------------------------------------------------------------
 // Device CRUD (local DB)
@@ -44,11 +44,16 @@ export async function registerDevice(data: {
 export async function updateDevice(
 	deviceId: string,
 	companyId: string,
-	data: { name?: string; serialNumber?: string },
+	data: { name?: string; serialNumber?: string; description?: string | null },
 ) {
+	const { description, ...rest } = data;
+	const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+	// PATCH semantics: null or empty string clears the description (stays NULL).
+	if (description !== undefined) patch.description = description === '' ? null : description;
+
 	const [device] = await db
 		.update(devices)
-		.set({ ...data, updatedAt: new Date() })
+		.set(patch)
 		.where(and(eq(devices.id, deviceId), eq(devices.companyId, companyId)))
 		.returning();
 
@@ -83,7 +88,7 @@ export async function deleteDevice(deviceId: string, companyId: string) {
 
 	appLogger.info(
 		`[DEVICES] Device ${deviceId} (${device.serialNumber}) unclaimed from company ${companyId}. ` +
-		`hawkBit target ${device.hawkbitTargetId ?? 'none'} preserved.`,
+			`hawkBit target ${device.hawkbitTargetId ?? 'none'} preserved.`,
 	);
 }
 

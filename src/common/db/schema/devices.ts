@@ -1,4 +1,14 @@
-import { pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+	check,
+	pgEnum,
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
+	uuid,
+	varchar,
+} from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { categories } from './categories';
 import { companies } from './companies';
@@ -25,32 +35,44 @@ export const hawkbitUpdateStatusEnum = pgEnum('hawkbit_update_status', [
 	'error',
 ]);
 
-export const devices = pgTable('devices', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	companyId: uuid('company_id')
-		.references(() => companies.id, { onDelete: 'cascade' }),
-	hawkbitTargetId: text('hawkbit_target_id'),
-	name: text('name').notNull(),
-	/** hawkBit controllerId — 16-char uppercase HEX (e.g. "1A50F00100309FFF"). Converted from decimal input via nibble packing. */
-	serialNumber: text('serial_number'),
-	/** User-visible display format (e.g. "26.6.15.001.00031"). Month uses hex: 0-9, A=Oct, B=Nov, C=Dec. Auto-derived from serialNumber HEX. */
-	serialDisplay: text('serial_display'),
-	status: deviceStatusEnum('status').notNull().default('pending'),
-	lastSeenAt: timestamp('last_seen_at'),
-	/** hawkBit connection status — derived from pollStatus.overdue. */
-	connectionStatus: varchar('connection_status', { length: 20 }).default('unknown'),
-	/** hawkBit update status — from target.updateStatus. */
-	hawkbitUpdateStatus: hawkbitUpdateStatusEnum('hawkbit_update_status').default('unknown'),
-	/** hawkBit IP address — from target.ipAddress. */
-	ipAddress: text('ip_address'),
-	/** hawkBit last poll time — from target.pollStatus.lastRequestAt. */
-	lastPollAt: timestamp('last_poll_at'),
-	/** hawkBit next expected poll — from target.pollStatus.nextExpectedRequestAt. */
-	nextExpectedPollAt: timestamp('next_expected_poll_at'),
-	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
-	createdAt: timestamp('created_at').notNull().defaultNow(),
-	updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const devices = pgTable(
+	'devices',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		companyId: uuid('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+		hawkbitTargetId: text('hawkbit_target_id'),
+		name: text('name').notNull(),
+		/** User-visible description (editable via PATCH). null when unset. */
+		description: text('description'),
+		/** hawkBit controllerId — 16-char uppercase HEX (e.g. "1A50F00100309FFF"). Converted from decimal input via nibble packing. */
+		serialNumber: text('serial_number'),
+		/** User-visible display format (e.g. "26.6.15.001.00031"). Month uses hex: 0-9, A=Oct, B=Nov, C=Dec. Auto-derived from serialNumber HEX. */
+		serialDisplay: text('serial_display'),
+		status: deviceStatusEnum('status').notNull().default('pending'),
+		lastSeenAt: timestamp('last_seen_at'),
+		/** hawkBit connection status — derived from pollStatus.overdue. */
+		connectionStatus: varchar('connection_status', { length: 20 }).default('unknown'),
+		/** hawkBit update status — from target.updateStatus. */
+		hawkbitUpdateStatus: hawkbitUpdateStatusEnum('hawkbit_update_status').default('unknown'),
+		/** hawkBit IP address — from target.ipAddress. */
+		ipAddress: text('ip_address'),
+		/** hawkBit last poll time — from target.pollStatus.lastRequestAt. */
+		lastPollAt: timestamp('last_poll_at'),
+		/** hawkBit next expected poll — from target.pollStatus.nextExpectedRequestAt. */
+		nextExpectedPollAt: timestamp('next_expected_poll_at'),
+		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at').notNull().defaultNow(),
+		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+	},
+	(table) => [
+		// Defense-in-depth: the API schema caps description at 1000 chars; enforce at the DB too
+		// so direct writes (jobs/scripts) can't bypass it.
+		check(
+			'devices_description_length_check',
+			sql`${table.description} IS NULL OR char_length(${table.description}) <= 1000`,
+		),
+	],
+);
 
 export const deviceCategoryAssignments = pgTable(
 	'device_category_assignments',

@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
+import { db } from '../src/common/db';
+import { companies, deviceConnections } from '../src/common/db/schema';
 import { cleanAll } from './test-helpers';
 
 afterAll(async () => {
@@ -168,6 +170,94 @@ describe('Devices Module', () => {
 			);
 			expect(response.status).toBe(200);
 			expect((await response.json()).data.name).toBe('Updated');
+		});
+
+		describe('Device PATCH (metadata edit)', () => {
+			it('GET device response includes the description field (nullable)', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						headers: { Cookie: ownerCookie },
+					}),
+				);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				expect(body.data).toHaveProperty('description');
+				expect(body.data.description).toBeNull(); // never set yet
+			});
+
+			it('PATCH updates name and description, returns updated device', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ name: 'Ônibus Central 01', description: 'Ativo na linha central' }),
+					}),
+				);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				expect(body.data.name).toBe('Ônibus Central 01');
+				expect(body.data.description).toBe('Ativo na linha central');
+			});
+
+			it('PATCH only changes provided fields (partial)', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ description: 'Nova descrição only' }),
+					}),
+				);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				expect(body.data.name).toBe('Ônibus Central 01'); // unchanged
+				expect(body.data.description).toBe('Nova descrição only');
+			});
+
+			it('PATCH clears description with empty string (→ null)', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ description: '' }),
+					}),
+				);
+				expect(response.status).toBe(200);
+				expect((await response.json()).data.description).toBeNull();
+			});
+
+			it('PATCH returns 400 when name is empty', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ name: '' }),
+					}),
+				);
+				expect(response.status).toBe(400);
+			});
+
+			it('PATCH returns 404 for non-existent device', async () => {
+				const fakeId = '00000000-0000-0000-0000-000000000000';
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${fakeId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+						body: JSON.stringify({ description: 'x' }),
+					}),
+				);
+				expect(response.status).toBe(404);
+			});
+
+			it('PATCH returns 403 for non-member', async () => {
+				const response = await app.handle(
+					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json', Cookie: otherCookie },
+						body: JSON.stringify({ description: 'x' }),
+					}),
+				);
+				expect(response.status).toBe(403);
+			});
 		});
 
 		it('DELETE /:deviceId removes device', async () => {
@@ -462,6 +552,135 @@ describe('Devices Module', () => {
 			expect(response.status).toBe(201);
 			const body = await response.json();
 			expect(body.data.serialNumber).toBe(hexPart.toUpperCase());
+		});
+	});
+
+	describe('Device Connections Timeline', () => {
+		const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+		let connDeviceId: string;
+
+		// Seed raw transition events: online@-3h, offline@-2h, online@-1h (within 24h)
+		it('setup: seeds connection events', async () => {
+			connDeviceId = deviceId; // the claimed device from CRUD setup
+			const rows = [-3 * 3600_000, -2 * 3600_000, -1 * 3600_000].map((ms) => ({
+				deviceId: connDeviceId,
+				companyId,
+				hawkbitTargetId: null,
+				deviceName: 'Conn Device',
+				event: ms === -2 * 3600_000 ? ('offline' as const) : ('online' as const),
+				occurredAt: new Date(Date.now() + ms),
+			}));
+			await db.insert(deviceConnections).values(rows);
+			expect(true).toBe(true);
+		});
+
+		it('GET /connections (default 24h) returns the events oldest-first', async () => {
+			const r = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/connections`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(r.status).toBe(200);
+			const body = await r.json();
+			expect(body.total).toBe(3);
+			expect(body.data.map((e: any) => e.event)).toEqual(['online', 'offline', 'online']);
+			expect(body.data[0].deviceId).toBe(connDeviceId);
+			expect(body.range).toHaveProperty('from');
+			expect(body.range).toHaveProperty('to');
+		});
+
+		it('GET /connections with explicit from/to filters the window', async () => {
+			const from = iso(-150 * 60 * 1000); // -2.5h
+			const to = iso(0); // now
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(200);
+			const body = await r.json();
+			expect(body.total).toBe(2); // offline@-2h, online@-1h
+			expect(body.range.from).toBe(from);
+			expect(body.range.to).toBe(to);
+		});
+
+		it('GET /connections with deviceId filters a single device', async () => {
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?deviceId=${connDeviceId}`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(200);
+			expect((await r.json()).total).toBe(3);
+		});
+
+		it('GET /connections excludes events from another company (tenant isolation)', async () => {
+			// Insert an event for a DIFFERENT (real) company in the same window — must NOT appear.
+			const [other] = await db.insert(companies).values({ name: 'Other Co' }).returning({ id: companies.id });
+			await db.insert(deviceConnections).values({
+				deviceId: connDeviceId,
+				companyId: other!.id,
+				event: 'online',
+				occurredAt: new Date(),
+			});
+			const r = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/connections`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			const body = await r.json();
+			// still 3 (the other-company row is filtered out by companyId)
+			expect(body.total).toBe(3);
+		});
+
+		it('GET /connections from>to → 400', async () => {
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?from=${encodeURIComponent(iso(0))}&to=${encodeURIComponent(iso(-3600_000))}`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(400);
+		});
+
+		it('GET /connections range > retention → 400', async () => {
+			const from = iso(-100 * 24 * 3600_000); // 100 days ago (> 90 default)
+			const to = iso(0);
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(400);
+		});
+
+		it('GET /connections malformed from → 400', async () => {
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?from=not-a-date`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(400);
+		});
+
+		it('GET /connections non-member → 403', async () => {
+			const r = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/connections`, {
+					headers: { Cookie: otherCookie },
+				}),
+			);
+			expect(r.status).toBe(403);
+		});
+
+		it('GET /connections without auth → 401', async () => {
+			const r = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/connections`),
+			);
+			expect(r.status).toBe(401);
 		});
 	});
 });

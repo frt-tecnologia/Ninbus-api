@@ -1,3 +1,4 @@
+import { HawkbitApiError } from '@common/hawkbit/http';
 import { appLogger } from '@common/logger';
 import { withAuth } from '@common/middleware/auth-guard';
 import {
@@ -7,6 +8,7 @@ import {
 	DownloadArtifactResponseSchema,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
+	patchArtifactSchema,
 	updateArtifactSchema,
 } from '@modules/artifacts/schemas';
 import { logActivity } from '@modules/observability/activity-service';
@@ -219,6 +221,70 @@ export const artifactManageRoutes = withAuth(
 			response: {
 				200: GenericActionResponseSchema,
 				403: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
+		},
+	)
+
+	// PATCH /:artifactId — Partially update editable metadata (name and/or description)
+	.patch(
+		'/:artifactId',
+		async ({ params, body, set }) => {
+			try {
+				const artifact = await service.patchArtifact(params.companyId, Number(params.artifactId), {
+					name: body.name,
+					description: body.description,
+				});
+				return { data: artifact };
+			} catch (error) {
+				if (error instanceof ArtifactNotFoundError) {
+					set.status = 404;
+					return { error: 'Not Found', message: error.message };
+				}
+				if (error instanceof ArtifactValidationError) {
+					set.status = 400;
+					return { error: 'Bad Request', message: error.message, code: error.code };
+				}
+				if (error instanceof HawkbitApiError && error.status === 409) {
+					set.status = 409;
+					return {
+						error: 'Conflict',
+						message: 'Artifact name+version conflicts with an existing Distribution Set',
+					};
+				}
+				appLogger.warn(
+					'[ARTIFACTS] Failed to patch artifact: %s',
+					error instanceof Error ? error.message : String(error),
+				);
+				set.status = 503;
+				return {
+					error: 'Service Unavailable',
+					message: 'Artifact service (hawkBit) is currently unavailable',
+				};
+			}
+		},
+		{
+			auth: true,
+			companyRole: 'operator',
+			params: t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
+			}),
+			body: patchArtifactSchema,
+			detail: {
+				tags: ['Artifacts'],
+				summary: 'Update artifact name and/or description',
+				description:
+					'Partially updates editable artifact metadata. Only fields present in the body change. ' +
+					'Send `description` as null or "" to clear it. The local DB is canonical; the hawkBit SM ' +
+					'is not modified. Returns the updated artifact. Requires operator role or above.',
+			},
+			response: {
+				200: ArtifactResponseSchema,
+				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				409: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},

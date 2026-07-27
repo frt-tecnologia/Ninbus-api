@@ -8,13 +8,14 @@ import {
 	ErrorResponseSchema,
 	LinkDeviceResponseSchema,
 	linkDeviceSchema,
+	patchDeviceSchema,
 	registerDeviceSchema,
 	updateDeviceSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
 import { loadDevice } from './auth';
-import { DeviceSyncEngine } from './sync';
 import * as service from './service';
+import { DeviceSyncEngine } from './sync';
 
 /** Params with companyId only */
 const companyParams = t.Object({ companyId: t.String({ format: 'uuid' }) });
@@ -97,7 +98,9 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 					deviceId: result.device?.id,
 					action: 'claimed',
 				});
-			} catch { /* SSE emission failure is non-critical */ }
+			} catch {
+				/* SSE emission failure is non-critical */
+			}
 
 			return {
 				message: result.error || 'Device claimed successfully',
@@ -167,9 +170,46 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			companyRole: 'operator',
 			params: deviceParams,
 			body: updateDeviceSchema,
-			detail: { tags: ['Devices'], summary: 'Update device', description: 'Updates device metadata. Requires operator role or above.' },
+			detail: {
+				tags: ['Devices'],
+				summary: 'Update device',
+				description: 'Updates device metadata. Requires operator role or above.',
+			},
 			response: {
 				200: DeviceUpdateResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+			},
+		},
+	)
+
+	// PATCH /:deviceId — Partial update of editable metadata (name + description)
+	.patch(
+		'/:deviceId',
+		async ({ params, body, set }) => {
+			const device = await service.updateDevice(params.deviceId, params.companyId, body);
+			if (!device) {
+				set.status = 404;
+				return { error: 'Not Found', message: 'Device not found' };
+			}
+			return { message: 'Device updated successfully', data: device };
+		},
+		{
+			auth: true,
+			companyRole: 'operator',
+			params: deviceParams,
+			body: patchDeviceSchema,
+			detail: {
+				tags: ['Devices'],
+				summary: 'Update device metadata (name and/or description)',
+				description:
+					'Partially updates editable device metadata. Only fields present in the body change. ' +
+					'Send `description` as null or "" to clear it. Renaming triggers best-effort name-sync to hawkBit. ' +
+					'Requires operator role or above.',
+			},
+			response: {
+				200: DeviceUpdateResponseSchema,
+				400: ErrorResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
 			},
@@ -194,7 +234,9 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 					deviceId: params.deviceId,
 					action: 'unclaimed',
 				});
-			} catch { /* SSE emission failure is non-critical */ }
+			} catch {
+				/* SSE emission failure is non-critical */
+			}
 
 			return { message: 'Device removed successfully' };
 		},
@@ -205,7 +247,8 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 			detail: {
 				tags: ['Devices'],
 				summary: 'Remove device',
-				description: 'Removes (unclaims) a device from the company. The device stays provisioned in hawkBit and reverts to "unclaimed" status, available for re-claim by any company. To permanently remove from hawkBit, use DELETE /api/devices/deprovision/:serialNumber (super admin only).',
+				description:
+					'Removes (unclaims) a device from the company. The device stays provisioned in hawkBit and reverts to "unclaimed" status, available for re-claim by any company. To permanently remove from hawkBit, use DELETE /api/devices/deprovision/:serialNumber (super admin only).',
 			},
 			response: {
 				200: DeviceDeleteResponseSchema,
@@ -219,11 +262,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 	.put(
 		'/:deviceId/link',
 		async ({ params, body, set }) => {
-			const result = await service.linkDevice(
-				params.deviceId,
-				params.companyId,
-				body.deviceKey,
-			);
+			const result = await service.linkDevice(params.deviceId, params.companyId, body.deviceKey);
 			if (!result.success) {
 				if (result.error === 'Device not found') {
 					set.status = 404;

@@ -1007,6 +1007,14 @@
       "category": "security",
       "learnedAt": "2026-07-27T01:32:14.571Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-buildkit-stale-copy-cache",
+      "rule": "A Docker build error that does NOT match the current source on disk (e.g. \"X has already been declared\" when the file declares it once, or referencing deleted code) is a STALE BuildKit layer cache — a transient earlier state of the file got cached in a `COPY . .` layer. Before chasing a phantom code bug: (1) confirm the local source is correct (grep -c, read the file), (2) confirm `bun build`/the build command passes locally, (3) rebuild with `docker compose build --no-cache <svc>` (or `docker builder prune -f`) to bust the cached COPY layer. Docker's COPY cache checksum normally invalidates on file change, but BuildKit can retain stale layers across rapid edit→revert→edit cycles.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-27T15:15:50.198Z",
+      "reinforcementCount": 1
     }
   ]
 }

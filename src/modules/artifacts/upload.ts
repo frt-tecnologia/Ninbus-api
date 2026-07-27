@@ -21,10 +21,6 @@ import { ArtifactValidationError } from './types';
  *  at offset 1047, so anything smaller cannot be a valid post-CalcCRC image. */
 const FIRMWARE_NINBUS_MIN_BYTES = 1048;
 
-/** Minimum sane size for a firmware-ninbus .fir: must hold the bootloader CRC16
- *  at offset 1047, so anything smaller cannot be a valid post-CalcCRC image. */
-const FIRMWARE_NINBUS_MIN_BYTES = 1048;
-
 /** Upload raw firmware file to hawkBit + register in local DB. */
 export async function uploadArtifact(
 	companyId: string,

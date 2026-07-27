@@ -132,13 +132,6 @@
       "type": "evaluation",
       "summary": "Iteration 49: 8/8 criteria passed. Iteração 57: correção do botão de maximizar os logs da empresa + correções da iteração anterior. (1) BOTÃO DE MAXIMIZAR DOS LOGS AGORA FUNCIONA: quando expandido, busca o histórico COMPLETO da empresa (GET /admin/activity?companyId=X&limit=500, sem filtro temporal) em vez de apenas os 50 da última 24h. Adicionei um segundo useFetch (activityAll) que só dispara quando activityExpanded=true (lazy), e a descrição da section muda para 'Histórico completo de ações da empresa'. Mostra contagem de ações carregadas. (2) FIX de syntax: time-range-context renomeado de .ts→.tsx (tinha JSX) + barrel corrigido para importar do context. (3) MANTIDOS da iteração anterior: reatividade (useAllDeployments subscreve no bus), contraste de cores (pendente violeta / concluído verde), TimeRangePicker como Radix Popover (z-index fix), janela temporal na overview. Rerun Docker: dashboard reconstruído, stack saudável. ZERO commits além do merge autorizado (HEAD 32e5869).",
       "allTestsPassed": true
-    },
-    {
-      "id": "iteration-49-1784900366749",
-      "timestamp": 1784900366749,
-      "type": "evaluation",
-      "summary": "Iteration 49: 8/8 criteria passed. Iteração: Edição de dispositivos (name+description via PATCH) e artefatos (name+description via PATCH) + campo devices.description. IMPLEMENTAÇÃO COMPLETA E VALIDADA. (1) Migration única 0013_device_description gerada via drizzle-kit generate (sem drift confirmado) e aplicada pelo migrador no boot. (2) Device PATCH: nova rota operator, service updateDevice estendido p/ description (normaliza ''→null), name-sync best-effort mantido. (3) Artifact PATCH: nova rota operator, service patchArtifact + design DB-canônico (enrichSoftwareModule prefere registro local p/ name/description; hawkBit SM description NÃO é tocado — zero interferência). Validado E2E via docker compose com hawkBit ENABLED: device + artifact PATCH (happy: 200 com campos corretos; partial: preserva não-alterados; failure: 400 empty name, 404 não-existe/dono). GET single/list artifact confirmam nome canônico do DB local (não sm-uuid). bun test: device PATCH 7/7 + artifact PATCH 7/7. BÔNUS: corrigi setup quebrado do artifacts.test.ts (usava ownerCookie p/ criar empresa — POST /companies exige superAdmin), desbloqueando todos os tests de artifacts. NOTA HONESTA: 2 testes de upload-validation pré-existentes agora expõem um 500 latente em index.ts (NÃO modificado por mim) — bug separado, mascarado antes pelo companyId inválido. Line counts de service.ts(263)/manage-routes(≈315)/devices-index(290) acima de 250 mas consistentes com baseline do módulo. Stack docker saudável. Stack docker saudável.",
-      "allTestsPassed": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import { deviceCategoryRoutes } from '@modules/devices/category-routes';
 import { deviceConnectionsRoutes } from '@modules/devices/connections-routes';
 import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { provisioningRoutes } from '@modules/devices/provision-routes';
+import { observabilityModule } from '@modules/observability';
 import { DeviceSyncEngine } from '@modules/devices/sync';
 import { healthModule } from '@modules/health';
 import { observabilityModule } from '@modules/observability';

@@ -230,19 +230,17 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 
 	const count = companyUpdates.get(companyId) ?? 0;
 	if (count > 0) {
-		import('@common/sse').then(({ sseEmitter }) => {
+		import('@common/sse').then(({ statusCoalescer }) => {
 			for (const d of changedDevices) {
-				if (d.companyId === companyId) {
-					sseEmitter.emit(companyId, 'device.status', {
-						deviceId: d.deviceId,
-						connectionStatus: d.connectionStatus,
-						hawkbitUpdateStatus: d.hawkbitUpdateStatus,
-						lastPollAt: d.lastPollAt?.toISOString() ?? null,
-						ipAddress: d.ipAddress,
-					});
-				}
+				if (d.companyId !== companyId) continue;
+				// Buffer the status delta — coalescer flushes as a single batch.
+				statusCoalescer.record(companyId, {
+					id: d.deviceId,
+					s: d.connectionStatus,
+					u: d.hawkbitUpdateStatus,
+					t: d.lastPollAt?.toISOString() ?? null,
+				});
 			}
-			sseEmitter.emit(companyId, 'devices.batch', { count });
 		});
 
 		// Also poll detailed action progress for pending devices
@@ -290,6 +288,20 @@ export async function markOverdueDevicesOffline(): Promise<number> {
 				'[SYNC] Staleness sweep: marked %d overdue device(s) offline',
 				corrected.length,
 			);
+			// SSE: push the offline transition to connected clients via the coalescer.
+			// This closes the gap where staleness-sweep updates the DB but clients
+			// never learn about it until their next GET (the root cause of the
+			// online↔offline flicker reported by the Flutter team).
+			import('@common/sse').then(({ statusCoalescer }) => {
+				for (const d of corrected) {
+					if (!d.companyId) continue;
+					statusCoalescer.record(d.companyId, {
+						id: d.id,
+						s: 'disconnected',
+						t: new Date().toISOString(),
+					});
+				}
+			});
 			// Capture transition telemetry (connected→offline) for each.
 			for (const d of corrected) {
 				void recordConnectionTransition({

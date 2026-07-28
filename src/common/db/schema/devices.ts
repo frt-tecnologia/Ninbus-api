@@ -49,7 +49,7 @@ export const devices = pgTable(
 		/** User-visible display format (e.g. "26.6.15.001.00031"). Month uses hex: 0-9, A=Oct, B=Nov, C=Dec. Auto-derived from serialNumber HEX. */
 		serialDisplay: text('serial_display'),
 		status: deviceStatusEnum('status').notNull().default('pending'),
-		lastSeenAt: timestamp('last_seen_at'),
+		lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 		/** hawkBit connection status — derived from pollStatus.overdue. */
 		connectionStatus: varchar('connection_status', { length: 20 }).default('unknown'),
 		/** hawkBit update status — from target.updateStatus. */
@@ -57,12 +57,12 @@ export const devices = pgTable(
 		/** hawkBit IP address — from target.ipAddress. */
 		ipAddress: text('ip_address'),
 		/** hawkBit last poll time — from target.pollStatus.lastRequestAt. */
-		lastPollAt: timestamp('last_poll_at'),
+		lastPollAt: timestamp('last_poll_at', { withTimezone: true }),
 		/** hawkBit next expected poll — from target.pollStatus.nextExpectedRequestAt. */
-		nextExpectedPollAt: timestamp('next_expected_poll_at'),
+		nextExpectedPollAt: timestamp('next_expected_poll_at', { withTimezone: true }),
 		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => [
 		// Defense-in-depth: the API schema caps description at 1000 chars; enforce at the DB too
@@ -83,7 +83,7 @@ export const deviceCategoryAssignments = pgTable(
 		categoryId: uuid('category_id')
 			.notNull()
 			.references(() => categories.id, { onDelete: 'cascade' }),
-		assignedAt: timestamp('assigned_at').notNull().defaultNow(),
+		assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => ({
 		pk: primaryKey({ columns: [table.deviceId, table.categoryId] }),

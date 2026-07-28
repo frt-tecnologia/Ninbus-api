@@ -166,6 +166,11 @@ services:
     # ports:
     #   - "${HAWKBIT_PORT:-8080}:8080"
     environment:
+      # ── Timezone: UTC (hawkBit always operates in UTC internally) ──
+      # Explicit even though it's the JVM default — guarantees log timestamps
+      # and any date formatting are UTC-absolute, independent of the host OS.
+      TZ: UTC
+
       # ── Database: Neon PostgreSQL ──
       PROFILES: postgresql
       # currentSchema guarantees 'public' is in search_path for every physical

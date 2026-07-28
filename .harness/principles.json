@@ -1015,6 +1015,54 @@
       "category": "process",
       "learnedAt": "2026-07-27T15:15:50.198Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-merge-autoresolve-can-duplicate-content",
+      "rule": "A git merge/pull can AUTO-RESOLVE without conflict markers yet still DUPLICATE a block (e.g. when both branches added the same const/function, git keeps both copies concatenated). This produces \"X has already been declared\" build errors that appear on a DIFFERENT machine (CI/EC2) than where you developed — because the merge happened on the deploy branch after your commit. Diagnose with: `git show HEAD:<file> | grep -n \"<symbol>\"` and `grep -c` on disk (don't trust a single read — check the COMMITTED bytes). After ANY merge: (1) `bun build` / typecheck, (2) `grep -rohnE \"^(export )?(async )?(function|const|class) \\w+\" src/ | sort | uniq -d` to find duplicated top-level declarations, (3) scan for duplicate `.use()` mounts and duplicate routes. Always rebuild + boot-test after a merge before pushing to deploy.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-27T15:29:27.428Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migrate-ts-comment-filter",
+      "rule": "O script migrate.ts customizado faz split por `--> statement-breakpoint` e DESCARTA qualquer chunk que comece com `--` (após trim). Migrations SQL com comentários de seção inline (`-- ── auth.ts ──`) entre statements fazem o PRIMEIRO ALTER de cada seção ser silenciosamente descartado, causando aplicação PARCIAL da migration (algumas colunas convertidas, outras não) sem erro. Regras para migrations SQL neste projeto: (1) apenas o cabeçalho comentado no TOPO (acima do primeiro breakpoint), (2) NUNCA usar a string literal `--> statement-breakpoint` dentro de comentários (o split quebra ali), (3) statements SQL puros sem comentários `--` entre eles. Valide sempre quantos statements passam pelo filter ANTES de aplicar.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-28T15:35:13.086Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-timestamptz-always",
+      "rule": "Sempre declarar timestamps Drizzle como `timestamp('col', { withTimezone: true })` (gera `timestamptz` no Postgres). Colunas `timestamp without time zone` (naive) são ambíguas: o valor é armazenado SEM offset e sua interpretação depende da timezone da sessão do Postgres (que varia entre Neon pooler, AWS RDS, e dev local). Para converter colunas naive existentes para timestamptz preservando o instante: `ALTER TABLE x ALTER COLUMN c SET DATA TYPE timestamp with time zone USING c AT TIME ZONE 'UTC'` — o `AT TIME ZONE 'UTC'` é explícito e independente da sessão. Validar pós-migration comparando `Date.toISOString()` de registros conhecidos ANTES vs DEPOIS. O driver postgres-js é ASSIMÉTRICO com naive: grava Date em UTC mas LÊ naive interpretando como TZ local do processo Node (causa deslocamento de horas na leitura). Com timestamptz o ciclo é simétrico e correto.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-28T15:35:13.130Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migration-idempotency-check-late-column",
+      "rule": "Checks idempotentes no migrate.ts (skipar migration já aplicada) devem verificar uma coluna convertida no FINAL do SQL, não no início. Se a migration aplicar parcialmente (bug de comentário, erro no meio), checar a primeira coluna causa falso \"Already applied\" — as colunas do início viram o tipo alvo mas as do fim continuam naive, e a migration nunca mais roda. Checar uma coluna convertida por ÚLTIMO (ex: `deployments.created_at` na última seção) garante que, se o check passa, a migration inteira completou. Para colunas nullable/criadas por migration, o check deve ser `cols.length > 0 && cols[0].data_type === 'tipo esperado'` (a coluna pode não existir em bancos onde a migration anterior à criação da tabela ainda não rodou).",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-07-28T15:35:13.134Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-coalescing-for-scale",
+      "rule": "Para SSE com frotas grandes (50k+ dispositivos), NUNCA emitir 1 evento SSE por device. Usar um StatusCoalescer: buffer per-company de deltas (Map<companyId, Map<deviceId, Delta>>) com flush periódico (default 1500ms) que emite UM evento `devices.batch` com array de deltas. De-duplicar por deviceId (last state wins — oscilações dentro da janela colapsam para o estado final). Cap de tamanho (SSE_BATCH_MAX=500) força flush antecipado em quedas de rede gerais. Reduz custo de O(devices × connections) para O(connections) por janela — benchmark: 5000 devices × 1000 conns passou de 2026ms para 52ms (39×). O coalescer faz short-circuit em `hasCompanyConnections()` — empresa sem dashboard aberto custa ZERO CPU (principal alavanca de custo AWS).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-28T23:24:42.837Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-emitbulk-presealize",
+      "rule": "Ao fan-out do mesmo payload SSE para múltiplas conexões (ex: 1000 clientes de uma empresa), NUNCA serializar JSON por conexão. Criar `emitBulk()` que pré-serializa o payload para Uint8Array UMA VEZ e enfileira o mesmo buffer em todas as conexões. Para 1000 conexões isso evita 1000× JSON.stringify + TextEncoder.encode redundantes — o custo dominante de CPU em escala. O método `emit()` tradicional (serializa por conexão) permanece para eventos individuais de baixo volume (device.claimed, device.deployment). Convencão: `emitBulk` para batches/coalesced, `emit` para single-device.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-28T23:24:43.054Z",
+      "reinforcementCount": 1
     }
   ]
 }

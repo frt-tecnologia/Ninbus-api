@@ -1,9 +1,10 @@
+import { env } from '@common/config/env';
 /**
  * SSE Event Emitter — company-scoped real-time push.
  * W3C SSE format: id: N\nevent: type\ndata: json\n\n
  */
 import { appLogger } from '@common/logger';
-import { env } from '@common/config/env';
+import { statusCoalescer } from './status-coalescer';
 
 export interface SseEvent {
 	event: string;
@@ -139,6 +140,65 @@ class SseEmitter {
 	}
 
 	/**
+	 * Emit an event with PRE-SERIALISED payload — the JSON is encoded to a
+	 * Uint8Array exactly ONCE and the same buffer is enqueued to every
+	 * connection. Use for high-volume / large-payload events (e.g. the
+	 * coalesced `devices.batch` with hundreds of deltas).
+	 *
+	 * For 1000 connections this avoids 1000× redundant JSON.stringify + encode
+	 * calls — the dominant CPU cost at scale.
+	 */
+	emitBulk(companyId: string, event: string, data: Record<string, unknown>): void {
+		const companyConns = this.connections.get(companyId);
+		const globalConns = this.connections.get('__global__');
+		const hasLocal = companyConns && companyConns.size > 0;
+		const hasGlobal = globalConns && globalConns.size > 0;
+		if (!hasLocal && !hasGlobal) return;
+
+		// Pre-serialise ONCE for company connections.
+		if (hasLocal) {
+			const id = ++this.globalEventId;
+			const frame = this.encodeFrame(id, event, data);
+			for (const conn of companyConns!) {
+				this.enqueueBulk(conn, id, frame);
+			}
+		}
+		// Global connections get a copy with _companyId — needs its own frame.
+		if (hasGlobal) {
+			const id = ++this.globalEventId;
+			const frame = this.encodeFrame(id, event, { ...data, _companyId: companyId });
+			for (const conn of globalConns!) {
+				this.enqueueBulk(conn, id, frame);
+			}
+		}
+	}
+
+	/** Encode an SSE frame to a reusable Uint8Array (no per-connection work). */
+	private encodeFrame(id: number, event: string, data: Record<string, unknown>): Uint8Array {
+		return new TextEncoder().encode(formatSSE(id, event, data));
+	}
+
+	/** Enqueue a pre-encoded frame to a connection (bulk path). */
+	private enqueueBulk(conn: SseConnection, id: number, frame: Uint8Array): void {
+		try {
+			conn.lastEventId = id;
+			conn.controller.enqueue(frame);
+			conn.lastSendAt = new Date();
+		} catch (error) {
+			appLogger.debug(`[SSE] Bulk send failed, removing: ${error}`);
+			this.removeConnection(conn);
+		}
+	}
+
+	/** Whether a company has ANY active SSE connection.
+	 *  Used by the status coalescer to short-circuit buffering when nobody is
+	 *  listening — the key scale lever (idle companies cost ~zero CPU). */
+	hasCompanyConnections(companyId: string): boolean {
+		const conns = this.connections.get(companyId);
+		return !!conns && conns.size > 0;
+	}
+
+	/**
 	 * Send a single event to one connection.
 	 */
 	private sendToConnection(
@@ -170,6 +230,8 @@ class SseEmitter {
 		if (this.heartbeatTimer) return;
 
 		this.heartbeatTimer = setInterval(() => this.runHeartbeat(), this.heartbeatMs);
+		// Start the status coalescer flush timer alongside the heartbeat.
+		statusCoalescer.start();
 
 		appLogger.info(
 			`[SSE] Heartbeat started (interval: ${this.heartbeatMs / 1000}s, max/company: ${this.maxPerCompany})`,
@@ -210,6 +272,8 @@ class SseEmitter {
 			clearInterval(this.heartbeatTimer);
 			this.heartbeatTimer = null;
 		}
+		// Drain any pending coalesced deltas before closing connections.
+		statusCoalescer.stop();
 
 		// Close all connections
 		for (const [, companyConns] of this.connections) {
@@ -229,10 +293,14 @@ class SseEmitter {
 	}
 
 	/** Get companies with active connections. */
-	get companyCount(): number { return this.connections.size; }
+	get companyCount(): number {
+		return this.connections.size;
+	}
 
 	/** Whether the heartbeat timer is running. */
-	get isHeartbeatRunning(): boolean { return this.heartbeatTimer !== null; }
+	get isHeartbeatRunning(): boolean {
+		return this.heartbeatTimer !== null;
+	}
 }
 
 // Singleton instance

@@ -13,6 +13,7 @@
 import { db } from '@common/db';
 import { deviceConnections } from '@common/db/schema';
 import { appLogger } from '@common/logger';
+import { statusCoalescer } from '@common/sse';
 import { and, count, eq, gte, lte, sql } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,16 @@ export async function recordConnectionTransition(input: ConnectionTransitionInpu
 			event: onlineNow ? 'online' : 'offline',
 			occurredAt: input.occurredAt,
 			ipAddress: input.ipAddress ?? null,
+		});
+
+		// SSE: push the transition to connected clients via the coalescer. This
+		// is the single chokepoint ALL transitions funnel through (sync normal +
+		// staleness sweep), so emitting here guarantees no transition is silently
+		// dropped from the real-time feed.
+		statusCoalescer.record(input.companyId, {
+			id: input.deviceId,
+			s: input.current ?? 'unknown',
+			t: input.occurredAt.toISOString(),
 		});
 	} catch (error: any) {
 		appLogger.debug(

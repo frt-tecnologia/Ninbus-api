@@ -10,7 +10,10 @@ import { eq, inArray } from 'drizzle-orm';
 import { forceCloseActiveActionsForDS } from './actions';
 
 /** Verify that a hawkBit Distribution Set belongs to the given company. */
-export async function requireDeploymentOwnership(companyId: string, hawkbitDsId: number): Promise<void> {
+export async function requireDeploymentOwnership(
+	companyId: string,
+	hawkbitDsId: number,
+): Promise<void> {
 	const [local] = await db
 		.select({ companyId: deployments.companyId })
 		.from(deployments)
@@ -56,7 +59,10 @@ export async function deleteDeployment(dsId: number, companyId: string): Promise
 				.update(devices)
 				.set({ hawkbitUpdateStatus: 'in_sync', updatedAt: new Date() })
 				.where(inArray(devices.hawkbitTargetId, targetControllerIds));
-			appLogger.info('[DEPLOY] Cleared pending status for %d local devices', targetControllerIds.length);
+			appLogger.info(
+				'[DEPLOY] Cleared pending status for %d local devices',
+				targetControllerIds.length,
+			);
 
 			const { protectTargetStatuses } = await import('@modules/devices/sync-helpers');
 			protectTargetStatuses(targetControllerIds, 'in_sync');
@@ -68,7 +74,7 @@ export async function deleteDeployment(dsId: number, companyId: string): Promise
 	// Step 6: Emit SSE events so frontend updates immediately
 	if (targetControllerIds.length > 0) {
 		try {
-			const { sseEmitter } = await import('@common/sse');
+			const { sseEmitter, statusCoalescer } = await import('@common/sse');
 			sseEmitter.emit(companyId, 'deployment.deleted', {
 				deploymentId: dsId,
 				timestamp: new Date().toISOString(),
@@ -78,12 +84,16 @@ export async function deleteDeployment(dsId: number, companyId: string): Promise
 				.from(devices)
 				.where(inArray(devices.hawkbitTargetId, targetControllerIds));
 			for (const d of localDevices) {
-				sseEmitter.emit(companyId, 'device.status', {
-					deviceId: d.id, connectionStatus: 'disconnected',
-					hawkbitUpdateStatus: 'in_sync', lastPollAt: null, ipAddress: null,
+				statusCoalescer.record(companyId, {
+					id: d.id,
+					s: 'disconnected',
+					u: 'in_sync',
+					t: null,
 				});
 			}
-		} catch { /* SSE failure is non-critical */ }
+		} catch {
+			/* SSE failure is non-critical */
+		}
 	}
 
 	appLogger.info('[DEPLOY] Deployment DS #%d fully deleted and cleaned up', dsId);

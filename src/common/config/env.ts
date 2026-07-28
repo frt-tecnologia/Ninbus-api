@@ -203,9 +203,36 @@ const EnvSchema = Type.Object({
 	),
 	SSE_MAX_CONNECTIONS_PER_COMPANY: Type.Optional(
 		Type.Number({
-			default: 50,
+			default: 200,
 			minimum: 1,
-			description: 'Maximum concurrent SSE connections per company. Oldest evicted when exceeded.',
+			description:
+				'Maximum concurrent SSE connections per company. Oldest evicted when exceeded. ' +
+				'Default 200 — supports large companies. Each connection ~10-50KB memory ' +
+				'(200 connections ≈ 4-10MB).',
+		}),
+	),
+	SSE_FLUSH_MS: Type.Optional(
+		Type.Number({
+			default: 1500,
+			minimum: 250,
+			maximum: 10000,
+			description:
+				'Coalescing window in ms for devices.batch events. Device status changes are ' +
+				'buffered per-company and flushed as a SINGLE batch event (de-duplicated by deviceId) ' +
+				'instead of N individual device.status events. Critical for fleets of 50k+ devices: ' +
+				'reduces writes from (devices × connections) to (1 × connections) per window. ' +
+				'Default 1500ms — balances real-time feel vs CPU cost.',
+		}),
+	),
+	SSE_BATCH_MAX: Type.Optional(
+		Type.Number({
+			default: 500,
+			minimum: 50,
+			maximum: 5000,
+			description:
+				'Maximum device deltas in a single devices.batch payload before a forced early flush. ' +
+				'Prevents unbounded payload size during mass outages (e.g. network drop affecting 10k+ devices). ' +
+				'Default 500 — keeps each SSE frame under ~50KB.',
 		}),
 	),
 
@@ -306,6 +333,8 @@ export function validateEnv(): Env {
 		SSE_MAX_CONNECTIONS_PER_COMPANY: process.env['SSE_MAX_CONNECTIONS_PER_COMPANY']
 			? Number(process.env['SSE_MAX_CONNECTIONS_PER_COMPANY'])
 			: undefined,
+		SSE_FLUSH_MS: process.env['SSE_FLUSH_MS'] ? Number(process.env['SSE_FLUSH_MS']) : undefined,
+		SSE_BATCH_MAX: process.env['SSE_BATCH_MAX'] ? Number(process.env['SSE_BATCH_MAX']) : undefined,
 		ENABLE_RATE_LIMITER: process.env['ENABLE_RATE_LIMITER'] !== 'false',
 		RATE_LIMIT_WINDOW_MS: process.env['RATE_LIMIT_WINDOW_MS']
 			? Number(process.env['RATE_LIMIT_WINDOW_MS'])

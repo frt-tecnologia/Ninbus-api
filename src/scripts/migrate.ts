@@ -109,6 +109,19 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (entry.tag === '0016_timestamps_to_timestamptz') {
+				// Column-type check on a LATE-converted column. Checking deployments.created_at
+				// (near the end of the SQL) detects partial application: if the migration
+				// stopped midway (e.g. a comment-blocked statement), early columns like
+				// devices.last_poll_at would be timestamptz but late ones would still be
+				// naive. Checking a late column guarantees the WHOLE migration ran.
+				const cols = await client`SELECT data_type FROM information_schema.columns
+					WHERE table_schema='public' AND table_name='deployments' AND column_name='created_at'`;
+				if (cols.length > 0 && cols[0].data_type === 'timestamp with time zone') {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

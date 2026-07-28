@@ -22,7 +22,22 @@
  *
  *   event: device.status
  *     data: {"deviceId":"...","connectionStatus":"online","hawkbitUpdateStatus":"in_progress","lastPollAt":"...","ipAddress":"..."}
- *     → Sent when background sync updates a device. Frontend should update device list/card.
+ *     → Sent for SINGLE-DEVICE events (claim, unclaim, deployment action feedback).
+ *     → NOT used for bulk connection-status changes (those go via devices.batch below).
+ *
+ *   event: devices.batch
+ *     data: {"count":42,"changes":[{"id":"<uuid>","s":"connected","u":"in_sync","t":"2025-..."}, ...],"timestamp":"2025-..."}
+ *     → COALESCED device-status deltas. The backend buffers per-company status
+ *       changes and flushes them as ONE event every SSE_FLUSH_MS (default 1500ms).
+ *       De-duplicated by deviceId (last state wins). This is how 50k+ device
+ *       fleets stay real-time without melting the event loop.
+ *     → `changes` is an array of compact deltas:
+ *         id  = device UUID
+ *         s   = connectionStatus ('connected'|'disconnected'|'online'|'offline'|'unknown')
+ *         u   = hawkbitUpdateStatus (optional — only when it changed)
+ *         t   = lastPollAt ISO UTC (optional — null/omitted = unknown)
+ *     → Frontend: apply each delta to the local device map by `id`. If a device
+ *       is not yet in the local cache, fetch the snapshot via GET /devices.
  *
  *   event: device.deployment
  *     data: {"deviceId":"...","controllerId":"...","status":"pending","message":"...","timestamp":"..."}
@@ -78,18 +93,16 @@
  *   });
  */
 import { env } from '@common/config/env';
-import { sseEmitter } from '@common/sse/emitter';
-import { withAuth } from '@common/middleware/auth-guard';
 import { appLogger } from '@common/logger';
+import { withAuth } from '@common/middleware/auth-guard';
+import { sseEmitter } from '@common/sse/emitter';
 import { Elysia, t } from 'elysia';
 
 /**
  * Company-scoped SSE endpoint.
  * Only pushes events for devices/deployments in this company.
  */
-export const sseModule = withAuth(
-	new Elysia({ prefix: '/api/companies/:companyId' }),
-).get(
+export const sseModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId' })).get(
 	'/sse',
 	async ({ params, user, set, request }) => {
 		if (!env.SSE_ENABLED) {
@@ -103,9 +116,13 @@ export const sseModule = withAuth(
 		const stream = new ReadableStream({
 			start(controller) {
 				const conn = sseEmitter.addConnection(companyId, controller);
-				request.signal.addEventListener('abort', () => {
-					sseEmitter.removeConnection(conn);
-				}, { once: true });
+				request.signal.addEventListener(
+					'abort',
+					() => {
+						sseEmitter.removeConnection(conn);
+					},
+					{ once: true },
+				);
 			},
 		});
 
@@ -138,9 +155,7 @@ export const sseModule = withAuth(
  * NOTE: This is a simplified endpoint for admin/testing purposes.
  * Company-scoped events are also sent here for the user's companies.
  */
-export const sseGlobalModule = withAuth(
-	new Elysia({ prefix: '/api/sse' }),
-).get(
+export const sseGlobalModule = withAuth(new Elysia({ prefix: '/api/sse' })).get(
 	'/global',
 	async ({ user, set, request }) => {
 		if (!env.SSE_ENABLED) {
@@ -155,9 +170,13 @@ export const sseGlobalModule = withAuth(
 				// For global SSE, we use a special "global" companyId
 				// The emitter will send events from all companies to this connection
 				const conn = sseEmitter.addConnection('__global__', controller);
-				request.signal.addEventListener('abort', () => {
-					sseEmitter.removeConnection(conn);
-				}, { once: true });
+				request.signal.addEventListener(
+					'abort',
+					() => {
+						sseEmitter.removeConnection(conn);
+					},
+					{ once: true },
+				);
 			},
 		});
 

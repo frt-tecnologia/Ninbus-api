@@ -1,3 +1,5 @@
+import { appLogger } from '@common/logger';
+import { withAuth } from '@common/middleware/auth-guard';
 /**
  * SSE Test & Debug endpoints.
  *
@@ -9,13 +11,10 @@
  * Auth: cookie session required.
  */
 import { sseEmitter } from '@common/sse/emitter';
-import { withAuth } from '@common/middleware/auth-guard';
-import { appLogger } from '@common/logger';
+import { statusCoalescer } from '@common/sse/status-coalescer';
 import { Elysia, t } from 'elysia';
 
-export const sseTestModule = withAuth(
-	new Elysia({ prefix: '/api/sse' }),
-)
+export const sseTestModule = withAuth(new Elysia({ prefix: '/api/sse' }))
 	.post(
 		'/test/:companyId',
 		async ({ params, user }) => {
@@ -67,7 +66,8 @@ export const sseTestModule = withAuth(
 			detail: {
 				tags: ['SSE'],
 				summary: 'Debug: list active SSE connections',
-				description: 'Returns the count of active SSE connections and companies. Useful for debugging connection issues.',
+				description:
+					'Returns the count of active SSE connections and companies. Useful for debugging connection issues.',
 			},
 		},
 	)
@@ -81,7 +81,11 @@ export const sseTestModule = withAuth(
 
 			appLogger.info(
 				'[SSE] Simulation started by %s: %d %s events for company %s (interval: %dms)',
-				user.email, count, type, params.companyId, interval,
+				user.email,
+				count,
+				type,
+				params.companyId,
+				interval,
 			);
 
 			// Fire-and-forget simulation
@@ -110,8 +114,15 @@ export const sseTestModule = withAuth(
 							};
 							break;
 						case 'devices.batch':
-							data = { count: i + 1 };
-							break;
+							// NEW: simulate the COALESCED format (what the Flutter app receives in
+							// production). Buffers via statusCoalescer; flush is automatic.
+							statusCoalescer.record(params.companyId, {
+								id: `sim-device-${i}`,
+								s: i % 2 === 0 ? 'connected' : 'disconnected',
+								u: ['in_sync', 'pending', 'error', 'registered'][i % 4],
+								t: new Date().toISOString(),
+							});
+							continue;
 						default:
 							data = {
 								message: `Simulated ${type} event #${i}`,
@@ -142,9 +153,17 @@ export const sseTestModule = withAuth(
 				companyId: t.String({ format: 'uuid' }),
 			}),
 			body: t.Object({
-				eventCount: t.Optional(t.Number({ minimum: 1, maximum: 20, description: 'Number of events to send (1-20)' })),
-				intervalMs: t.Optional(t.Number({ minimum: 200, maximum: 10000, description: 'Interval between events in ms' })),
-				eventType: t.Optional(t.String({ description: 'SSE event type: device.status, device.deployment, devices.batch, etc.' })),
+				eventCount: t.Optional(
+					t.Number({ minimum: 1, maximum: 20, description: 'Number of events to send (1-20)' }),
+				),
+				intervalMs: t.Optional(
+					t.Number({ minimum: 200, maximum: 10000, description: 'Interval between events in ms' }),
+				),
+				eventType: t.Optional(
+					t.String({
+						description: 'SSE event type: device.status, device.deployment, devices.batch, etc.',
+					}),
+				),
 			}),
 			detail: {
 				tags: ['SSE'],

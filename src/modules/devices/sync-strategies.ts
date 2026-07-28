@@ -5,7 +5,7 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { companyMembers, devices, session } from '@common/db/schema';
 import { appLogger } from '@common/logger';
-import { sseEmitter } from '@common/sse';
+import { sseEmitter, statusCoalescer } from '@common/sse';
 import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
 import {
@@ -71,31 +71,33 @@ export function emitSseBatchUpdates(
 	companyUpdates: Map<string, number>,
 	changedDevices?: ChangedDevice[],
 ): void {
-	for (const [companyId, count] of companyUpdates) {
+	for (const [companyId] of companyUpdates) {
 		if (changedDevices) {
 			for (const d of changedDevices) {
-				if (d.companyId === companyId) {
-					sseEmitter.emit(companyId, 'device.status', {
-						deviceId: d.deviceId,
-						connectionStatus: d.connectionStatus,
-						hawkbitUpdateStatus: d.hawkbitUpdateStatus,
-						lastPollAt: d.lastPollAt?.toISOString() ?? null,
-						ipAddress: d.ipAddress,
-					});
+				if (d.companyId !== companyId) continue;
 
-					if (d.hawkbitUpdateStatus === 'pending') {
-						sseEmitter.emit(companyId, 'device.deployment', {
-							deviceId: d.deviceId,
-							controllerId: d.controllerId,
-							status: 'pending',
-							message: 'Update pending — waiting for device poll',
-							timestamp: new Date().toISOString(),
-						});
-					}
+				// Buffer the status delta — coalescer flushes as a single batch.
+				statusCoalescer.record(companyId, {
+					id: d.deviceId,
+					s: d.connectionStatus,
+					u: d.hawkbitUpdateStatus,
+					t: d.lastPollAt?.toISOString() ?? null,
+				});
+
+				// Deployment events stay individual (low volume, device-specific UX).
+				if (d.hawkbitUpdateStatus === 'pending') {
+					sseEmitter.emit(companyId, 'device.deployment', {
+						deviceId: d.deviceId,
+						controllerId: d.controllerId,
+						status: 'pending',
+						message: 'Update pending — waiting for device poll',
+						timestamp: new Date().toISOString(),
+					});
 				}
 			}
 		}
-		sseEmitter.emit(companyId, 'devices.batch', { count });
+		// `devices.batch` is now emitted by the coalescer (with the `changes`
+		// array). The bare `count`-only batch is no longer sent here.
 	}
 
 	// Poll detailed action status for devices with pending updates

@@ -26,8 +26,8 @@ export const categories = pgTable('categories', {
 	description: text('description'),
 	/** Audit: who created this category. Nullable for pre-existing rows. */
 	createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
-	createdAt: timestamp('created_at').notNull().defaultNow(),
-	updatedAt: timestamp('updated_at').notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type Category = typeof categories.$inferSelect;

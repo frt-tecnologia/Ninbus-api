@@ -33,11 +33,11 @@ export const pendingCompanyMembers = pgTable(
 		/** Super admin (factory) who created the designation. */
 		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 		/** When the designated user signed up and the role was granted. NULL = still pending. */
-		claimedAt: timestamp('claimed_at'),
+		claimedAt: timestamp('claimed_at', { withTimezone: true }),
 		/** The user.id of the person who claimed this designation. NULL = still pending. */
 		claimedBy: text('claimed_by').references(() => user.id, { onDelete: 'set null' }),
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => ({
 		/** One pending designation per (company, email) pair. */

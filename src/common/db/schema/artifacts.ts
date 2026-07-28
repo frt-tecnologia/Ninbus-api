@@ -45,8 +45,8 @@ export const artifacts = pgTable(
 		/** Total .tar archive size uploaded to hawkBit. */
 		packageSize: integer('package_size'),
 		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => [
 		uniqueIndex('idx_artifacts_hawkbit_sm_id').on(table.hawkbitSmId),
@@ -75,7 +75,7 @@ export const artifactCategoryAssignments = pgTable(
 		categoryId: uuid('category_id')
 			.notNull()
 			.references(() => categories.id, { onDelete: 'cascade' }),
-		assignedAt: timestamp('assigned_at').notNull().defaultNow(),
+		assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => [
 		primaryKey({ columns: [table.artifactId, table.categoryId] }),

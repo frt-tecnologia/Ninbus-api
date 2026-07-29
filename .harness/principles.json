@@ -1063,6 +1063,14 @@
       "category": "architecture",
       "learnedAt": "2026-07-28T23:24:43.054Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-keepalive-comment-flush",
+      "rule": "SSE através de proxies/ALBs (especialmente AWS ALB com idle timeout default 60s) morre se nenhum byte flui. Heartbeat events JSON a cada 30s podem ser segurados por buffering até o ALB matar a conexão. Solução: enviar keepalive comments SSE (`: keepalive\\n\\n`) a cada 15s em CADA ciclo de heartbeat. Linhas começando com `:` são ignoradas pelo EventSource (não geram evento no cliente) mas flusham bytes através de TODA a cadeia de proxy (nginx, ALB, CloudFront). Pré-codificar o comment frame como Uint8Array constante (KEEPALIVE_FRAME) para evitar re-serialização. Default SSE_HEARTBEAT_SEC=15 garante fluxo bem abaixo do cutoff de 60s do ALB.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-07-29T16:45:48.164Z",
+      "reinforcementCount": 1
     }
   ]
 }

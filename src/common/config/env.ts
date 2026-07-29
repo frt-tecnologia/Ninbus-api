@@ -178,6 +178,18 @@ const EnvSchema = Type.Object({
 				'Only active companies are synced in hybrid mode. Default 300s (5 min).',
 		}),
 	),
+	HAWKBIT_STALE_SWEEP_SEC: Type.Optional(
+		Type.Number({
+			default: 10,
+			minimum: 5,
+			maximum: 60,
+			description:
+				'Independent staleness-sweep interval in seconds. Marks devices disconnected ' +
+				'as soon as nextExpectedPollAt < now(), decoupled from the heavier hawkBit sync cycle. ' +
+				'Keeps connection-status latency low (~10s) even when sync interval is 30s+. ' +
+				'Default 10s.',
+		}),
+	),
 
 	// ── Artifacts (upload limits) ─────────────────────────────
 	ARTIFACT_MAX_SIZE_MB: Type.Integer({
@@ -195,10 +207,12 @@ const EnvSchema = Type.Object({
 	}),
 	SSE_HEARTBEAT_SEC: Type.Optional(
 		Type.Number({
-			default: 30,
-			minimum: 10,
+			default: 15,
+			minimum: 5,
 			description:
-				'Heartbeat interval in seconds for SSE connections. Keeps connections alive through proxies.',
+				'Heartbeat interval in seconds for SSE connections. Keeps connections alive ' +
+				'through proxies and ALBs (AWS ALB default idle timeout is 60s — a 15s ' +
+				'heartbeat ensures data flows well before the cutoff). Default 15s.',
 		}),
 	),
 	SSE_MAX_CONNECTIONS_PER_COMPANY: Type.Optional(
@@ -321,6 +335,9 @@ export function validateEnv(): Env {
 			: undefined,
 		HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC']
 			? Number(process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC'])
+			: undefined,
+		HAWKBIT_STALE_SWEEP_SEC: process.env['HAWKBIT_STALE_SWEEP_SEC']
+			? Number(process.env['HAWKBIT_STALE_SWEEP_SEC'])
 			: undefined,
 		ARTIFACT_MAX_SIZE_MB: process.env['ARTIFACT_MAX_SIZE_MB']
 			? Number(process.env['ARTIFACT_MAX_SIZE_MB'])

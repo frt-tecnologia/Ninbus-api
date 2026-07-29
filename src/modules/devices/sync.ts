@@ -42,6 +42,7 @@ const state: SyncState = {
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 let fastSyncTimer: ReturnType<typeof setInterval> | null = null;
+let staleTimer: ReturnType<typeof setInterval> | null = null;
 let hasPendingDeployments = false;
 
 /** Fast sync interval when deployments are active (seconds). */
@@ -84,6 +85,20 @@ export const DeviceSyncEngine = {
 		);
 
 		sseEmitter.startHeartbeat();
+
+		// Independent staleness sweep — marks devices disconnected as soon as
+		// nextExpectedPollAt < now(), decoupled from the (heavier) hawkBit sync
+		// cycle. This keeps connection-status latency low (~10s) regardless of
+		// the sync interval (30s+) or hawkBit response time. The sweep is a cheap
+		// single indexed UPDATE + SSE coalescer push — runs even in on_demand mode.
+		const sweepSec = hawkbitConfig.staleSweepSec;
+		staleTimer = setInterval(() => {
+			markOverdueDevicesOffline().catch((err) => {
+				appLogger.debug('[SYNC] Stale sweep error: %s', err?.message);
+			});
+		}, sweepSec * 1000);
+		appLogger.info('[SYNC] Staleness sweep started (interval: %ds)', sweepSec);
+
 		if (mode === 'on_demand' || intervalSec <= 0) return;
 
 		setTimeout(() => this.runSyncCycle(), 5000);
@@ -103,6 +118,10 @@ export const DeviceSyncEngine = {
 		if (fastSyncTimer) {
 			clearInterval(fastSyncTimer);
 			fastSyncTimer = null;
+		}
+		if (staleTimer) {
+			clearInterval(staleTimer);
+			staleTimer = null;
 		}
 		hasPendingDeployments = false;
 		appLogger.info('[SYNC] Background sync stopped');

@@ -19,6 +19,11 @@ interface SseConnection {
 	lastEventId: number;
 }
 
+/** SSE comment frame — flushes through proxies/ALBs without producing a client
+ *  event (lines starting with `:` are ignored by EventSource). Used as a
+ *  keepalive between heartbeats to defeat aggressive buffering + idle timeouts. */
+const KEEPALIVE_FRAME = new TextEncoder().encode(': keepalive\n\n');
+
 // ---------------------------------------------------------------------------
 // SSE formatting
 // ---------------------------------------------------------------------------
@@ -78,14 +83,18 @@ class SseEmitter {
 
 		companyConns.add(conn);
 
-		// Send connected event immediately
+		// Send connected event immediately (also forces the first byte out —
+		// critical for defeating proxy/ALB buffering that may otherwise hold
+		// the response until an idle timeout kills it).
 		this.sendToConnection(conn, 'connected', {
 			companyId,
 			timestamp: new Date().toISOString(),
 		});
 
-		appLogger.debug(
-			`[SSE] Connection opened for company ${companyId} (${companyConns.size} active)`,
+		appLogger.info(
+			'[SSE] Connection opened for company %s (%d active)',
+			companyId,
+			companyConns.size,
 		);
 		return conn;
 	}
@@ -238,7 +247,9 @@ class SseEmitter {
 		);
 	}
 
-	/** Run one heartbeat cycle — send to all active connections, cleanup stale. */
+	/** Run one heartbeat cycle — send to all active connections, cleanup stale.
+	 *  Each cycle sends a keepalive comment to EVERY connection (forces proxy
+	 *  flush) and a heartbeat event. */
 	private runHeartbeat(): void {
 		const now = Date.now();
 		let active = 0;
@@ -252,7 +263,11 @@ class SseEmitter {
 				}
 
 				try {
-					this.sendToConnection(conn, 'heartbeat', { timestamp: new Date().toISOString() });
+					// Keepalive comment — flushes buffers through ALB/nginx without
+					// producing a client-visible event. Updates lastSendAt so the
+					// stale-cleanup above sees recent activity.
+					conn.controller.enqueue(KEEPALIVE_FRAME);
+					conn.lastSendAt = new Date();
 					active++;
 				} catch {
 					this.removeConnection(conn);
@@ -261,7 +276,7 @@ class SseEmitter {
 			if (companyConns.size === 0) this.connections.delete(companyId);
 		}
 
-		if (active > 0) appLogger.debug(`[SSE] Heartbeat: ${active} connections`);
+		if (active > 0) appLogger.debug('[SSE] Keepalive: %d connections', active);
 	}
 
 	/**

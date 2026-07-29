@@ -62,4 +62,12 @@ export const hawkbitConfig = {
 	get syncActiveWindowSec(): number {
 		return env.HAWKBIT_SYNC_ACTIVE_WINDOW_SEC ?? 300;
 	},
+	/** Staleness sweep interval in seconds — independent timer that marks
+	 *  devices disconnected as soon as nextExpectedPollAt < now(). Runs
+	 *  decoupled from the (heavier) hawkBit sync cycle so connection-status
+	 *  latency stays low (~10s) regardless of sync interval (30s+) or hawkBit
+	 *  response time. Default 10s. */
+	get staleSweepSec(): number {
+		return env.HAWKBIT_STALE_SWEEP_SEC ?? 10;
+	},
 };

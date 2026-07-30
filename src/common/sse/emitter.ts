@@ -248,8 +248,10 @@ class SseEmitter {
 	}
 
 	/** Run one heartbeat cycle — send to all active connections, cleanup stale.
-	 *  Each cycle sends a keepalive comment to EVERY connection (forces proxy
-	 *  flush) and a heartbeat event. */
+	 *  Sends BOTH a keepalive comment (forces proxy/ALB flush — comments are
+	 *  invisible to EventSource) AND a heartbeat EVENT (the Flutter client's
+	 *  SseEventType.heartbeat handler relies on this to confirm the connection
+	 *  is alive; a comment alone would never trigger it). */
 	private runHeartbeat(): void {
 		const now = Date.now();
 		let active = 0;
@@ -263,11 +265,12 @@ class SseEmitter {
 				}
 
 				try {
-					// Keepalive comment — flushes buffers through ALB/nginx without
-					// producing a client-visible event. Updates lastSendAt so the
-					// stale-cleanup above sees recent activity.
+					// 1. Keepalive comment — flushes buffers through ALB/nginx.
 					conn.controller.enqueue(KEEPALIVE_FRAME);
-					conn.lastSendAt = new Date();
+					// 2. heartbeat EVENT — Flutter's SseEventType.heartbeat handler needs
+					//    this to mark the connection alive (a bare comment is ignored by
+					//    the W3C parser and would never fire the handler).
+					this.sendToConnection(conn, 'heartbeat', { timestamp: new Date().toISOString() });
 					active++;
 				} catch {
 					this.removeConnection(conn);
@@ -276,7 +279,7 @@ class SseEmitter {
 			if (companyConns.size === 0) this.connections.delete(companyId);
 		}
 
-		if (active > 0) appLogger.debug('[SSE] Keepalive: %d connections', active);
+		if (active > 0) appLogger.debug('[SSE] Heartbeat: %d connections', active);
 	}
 
 	/**

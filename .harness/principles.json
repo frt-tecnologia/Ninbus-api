@@ -1071,6 +1071,14 @@
       "category": "architecture",
       "learnedAt": "2026-07-29T16:45:48.164Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-sse-heartbeat-event-not-comment",
+      "rule": "SSE keepalive comments (`: keepalive\\n\\n`) são ignorados pelo parser W3C — eles flusham proxies mas NUNCA disparam o handler do cliente. Se o cliente depende do evento `heartbeat` para confirmar que a conexão está viva (ex: enum SseEventType.heartbeat), enviar SÓ comment faz a conexão parecer morta. Sempre enviar AMBOS: o comment (flush de proxy/ALB) E o heartbeat event (`event: heartbeat\\ndata: {timestamp}\\n\\n`) em cada ciclo. Ao validar formato SSE no fio, use hexdump/od -c para confirmar `event:` + `data:` + `\\n\\n` (linha em branco terminadora) — sem a linha em branco, o parser W3C nunca despacha o evento.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-07-30T23:00:28.609Z",
+      "reinforcementCount": 1
     }
   ]
 }

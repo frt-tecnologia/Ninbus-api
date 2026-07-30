@@ -41,14 +41,17 @@ const deviceParams = t.Object({
  * - PUT /:deviceId/link → operator (link to hawkBit)
  */
 export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:companyId/devices' }))
-	// GET / — List company devices (reads from local DB, synced by background worker)
+	// GET / — List company devices (synced before responding for freshness)
 	.get(
 		'/',
 		async ({ params }) => {
-			// Trigger company-scoped sync in hybrid/on_demand modes (stale-while-revalidate).
-			// The sync is fire-and-forget — the current request returns local DB data.
-			// Next request will have fresh data.
-			DeviceSyncEngine.syncCompanyDevices(params.companyId).catch(() => {});
+			// Await the on-demand sync (bounded to 2s) so the FIRST GET returns fresh
+			// lastSeenAt/connectionStatus instead of a stale DB snapshot. Previously
+			// this was fire-and-forget, which caused the Flutter-reported 'status
+			// flicker': GET 1 returned a 19-min-stale lastSeenAt, GET 2 (6s later)
+			// returned the fresh value. Now both return fresh.
+			const syncP = DeviceSyncEngine.syncCompanyDevices(params.companyId).catch(() => {});
+			await Promise.race([syncP, new Promise((r) => setTimeout(r, 2000))]);
 
 			const deviceList = await service.getCompanyDevices(params.companyId);
 			return { data: deviceList, total: deviceList.length };

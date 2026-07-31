@@ -57,6 +57,39 @@ export async function requireOwnership(companyId: string, hawkbitSmId: number): 
 type ArtifactDisplayMeta = Pick<typeof artifacts.$inferSelect, 'name' | 'description'>;
 
 /**
+ * Build an EnrichedSoftwareModule from LOCAL DB data only (no hawkBit call).
+ * Used for graceful degradation when hawkBit is briefly unavailable — the UI
+ * still lists artifacts with name/version/type, just without binary metadata
+ * (size, hashes) and lock status. Mirrors deployments' enrichOrphanedDeployment.
+ */
+function enrichOrphanedSoftwareModule(
+	local: typeof artifacts.$inferSelect,
+): EnrichedSoftwareModule {
+	const ninbusType = resolveArtifactType(local.artifactType);
+	return {
+		id: local.hawkbitSmId,
+		name: local.name,
+		version: local.version,
+		type: 'os',
+		typeName: local.artifactType,
+		description: local.description ?? undefined,
+		vendor: undefined,
+		locked: false,
+		deleted: false,
+		complete: true,
+		createdAt: local.createdAt.getTime(),
+		lastModifiedAt: local.updatedAt.getTime(),
+		ninbusType,
+		ninbusMeta: ninbusType ? NINBUS_ARTIFACT_TYPE_META[ninbusType] : null,
+		artifacts: [],
+		size: local.payloadSize ?? undefined,
+		lockedByDistributionSets: [],
+		// Conservative: don't allow delete without confirming lock status via hawkBit.
+		deletable: false,
+	};
+}
+
+/**
  * Fetch a single SM enriched with the canonical local name/description.
  * (Local DB is the source of truth for display metadata; hawkBit holds the binary.)
  */
@@ -202,7 +235,12 @@ export async function listArtifacts(
 		return { data: enriched, total: enriched.length };
 	} catch (hbError: any) {
 		appLogger.warn('[ARTIFACTS] hawkBit unavailable: %s', hbError?.message ?? 'unknown');
-		return { data: [], total: 0 };
+		// Graceful degradation: return local records as orphaned SMs (no binary
+		// metadata, no lock status) so the UI can still list artifacts while
+		// hawkBit recovers. Previously this returned { data: [], total: 0 }, which
+		// made ALL artifacts disappear whenever hawkBit was briefly unavailable.
+		const orphaned = localArtifacts.map((a: any) => enrichOrphanedSoftwareModule(a));
+		return { data: orphaned, total: orphaned.length };
 	}
 }
 

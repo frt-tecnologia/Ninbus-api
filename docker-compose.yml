@@ -134,7 +134,12 @@ services:
 
     depends_on:
       hawkbit:
-        condition: service_healthy
+        # service_started (not service_healthy): the API has two-level hawkBit
+        # protection (hawkbitConfig.enabled guard in services + network-error
+        # -> 503 in routes), so it can start while hawkBit finishes its slow
+        # Spring Boot startup (~90s). service_healthy blocked deploys whenever
+        # the healthcheck raced the startup window.
+        condition: service_started
     # ── Resource limits & security ──
     mem_limit: ${API_MEM_LIMIT:-256m}
     cpus: ${API_CPUS:-0.5}
@@ -244,7 +249,7 @@ services:
       test: ["CMD", "wget", "-qO-", "http://${HAWKBIT_USERNAME:-admin}:${HAWKBIT_PASSWORD:-admin}@localhost:8080/rest/v1/system/configs"]
       interval: 30s
       timeout: 10s
-      start_period: 60s
+      start_period: 180s
       retries: 5
     # ── Resource limits & security ──
     mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}

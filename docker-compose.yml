@@ -59,6 +59,11 @@ services:
       - api
       - dashboard
       - hawkbit
+    # ── Resource limits & security ──
+    # nginx is a lightweight reverse proxy (uses ~11M). Capping it frees RAM
+    # for hawkBit, which needs the headroom for JVM heap + thread stacks.
+    # Default of the Docker daemon is 2G — pure waste here.
+    mem_limit: ${NGINX_MEM_LIMIT:-128m}
 
   # ── Ninbus API ───────────────────────────────────────────────────────
   api:
@@ -252,9 +257,13 @@ services:
       start_period: 180s
       retries: 5
     # ── Resource limits & security ──
-    mem_limit: ${HAWKBIT_MEM_LIMIT:-1g}
+    mem_limit: ${HAWKBIT_MEM_LIMIT:-1500m}
     cpus: ${HAWKBIT_CPUS:-1.0}
-    pids_limit: 200
+    # hawkBit (Spring Boot + Tomcat + JDBC + async executors) spawns 200+ threads
+    # under load. The previous cap of 200 caused
+    #   OutOfMemoryError: unable to create native thread (EAGAIN)
+    # on http-nio workers. Default is now 512 — do NOT lower below 350.
+    pids_limit: ${HAWKBIT_PIDS_LIMIT:-512}
     security_opt:
       - no-new-privileges:true
 

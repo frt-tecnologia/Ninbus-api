@@ -126,6 +126,9 @@ services:
       HAWKBIT_SYNC_INTERVAL_SEC: ${HAWKBIT_SYNC_INTERVAL_SEC:-30}
       HAWKBIT_SYNC_STALE_SEC: ${HAWKBIT_SYNC_STALE_SEC:-60}
       HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: ${HAWKBIT_SYNC_ACTIVE_WINDOW_SEC:-300}
+      # Device polling interval (HH:MM:SS) pushed to hawkBit at startup (Management API).
+      # The floor is HAWKBIT_CONTROLLER_MIN_POLLING_TIME on the hawkBit service below.
+      HAWKBIT_POLLING_TIME: ${HAWKBIT_POLLING_TIME:-00:05:00}
       HAWKBIT_AUTOPROVISIONING: ${HAWKBIT_AUTOPROVISIONING:-false}
 
       # SSE (Server-Sent Events)
@@ -210,6 +213,15 @@ services:
       # TargetToken auth: allows devices to authenticate via Authorization: TargetToken <token>
       # Without this, ALL DDI polls return 401 regardless of the securityToken value.
       HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_TARGETTOKEN_ENABLED: ${HAWKBIT_DDI_TARGET_TOKEN_AUTH:-true}
+
+      # ── Device Polling Time Floor (Spring property) ──
+      # hawkbit.controller.min-polling-time — the lowest pollingTime a tenant can
+      # set via the Management API (or that the Ninbus API can push). Default
+      # 00:00:30. Lower it ONLY for short demos (e.g. 00:00:05) — sub-30s values
+      # increase device request load. Read from .env so the same file controls
+      # both the floor (here, hawkBit container) and the value (Ninbus API). The
+      # actual pollingTime value is pushed by the API at startup, NOT set here.
+      HAWKBIT_CONTROLLER_MIN_POLLING_TIME: ${HAWKBIT_MIN_POLLING_TIME:-00:00:30}
 
       # ── Reverse-proxy (forward headers) ──
       # Makes hawkBit build absolute DDI _links from X-Forwarded-Proto/Host/Port

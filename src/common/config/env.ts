@@ -191,6 +191,25 @@ const EnvSchema = Type.Object({
 		}),
 	),
 
+	// ── hawkBit Device Polling Time (DDI) ─────────────────────
+	// pollingTime is a hawkBit RUNTIME system config (DB-backed, written only
+	// via the Management API). The API pushes HAWKBIT_POLLING_TIME into hawkBit
+	// at startup so production can control device polling purely from .env.
+	// The min-polling-time FLOOR is a Spring property on the HAWKBIT CONTAINER
+	// (hawkbit.controller.min-polling-time, default 00:00:30) — set via
+	// HAWKBIT_MIN_POLLING_TIME in docker-compose, NOT here (the API never reads it).
+	HAWKBIT_POLLING_TIME: Type.Optional(
+		Type.String({
+			default: '00:05:00',
+			pattern: '^\\d{2}:\\d{2}:\\d{2}$',
+			description:
+				'Device polling interval (HH:MM:SS) pushed to hawkBit (system config pollingTime) ' +
+				'and delivered to ALL devices via the DDI root response. Default 00:05:00 (5 min). ' +
+				'Values below hawkBit min-polling-time floor (default 00:00:30) are REJECTED — lower ' +
+				'HAWKBIT_MIN_POLLING_TIME on the hawkBit container for sub-30s demos.',
+		}),
+	),
+
 	// ── Artifacts (upload limits) ─────────────────────────────
 	ARTIFACT_MAX_SIZE_MB: Type.Integer({
 		default: 50,
@@ -339,6 +358,7 @@ export function validateEnv(): Env {
 		HAWKBIT_STALE_SWEEP_SEC: process.env['HAWKBIT_STALE_SWEEP_SEC']
 			? Number(process.env['HAWKBIT_STALE_SWEEP_SEC'])
 			: undefined,
+		HAWKBIT_POLLING_TIME: process.env['HAWKBIT_POLLING_TIME'],
 		ARTIFACT_MAX_SIZE_MB: process.env['ARTIFACT_MAX_SIZE_MB']
 			? Number(process.env['ARTIFACT_MAX_SIZE_MB'])
 			: 50,

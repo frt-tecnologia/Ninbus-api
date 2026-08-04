@@ -1079,6 +1079,14 @@
       "category": "process",
       "learnedAt": "2026-07-30T23:00:28.609Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-pollingtime-architecture",
+      "rule": "hawkBit 1.0.3 polling time has THREE distinct layers — do not conflate them: (1) `pollingTime` = RUNTIME system config stored in the DB, writable ONLY via Management API PUT /rest/v1/system/configs/pollingTime which REQUIRES Content-Type: application/json with body {\"value\":\"HH:MM:SS\"} — a raw string or text/plain body is rejected (415 Unsupported Media Type / \"not well formed\"). It is NOT a Spring property; env vars on the hawkBit container do NOT change it. (2) min-polling-time FLOOR = Spring property `hawkbit.controller.min-polling-time` (env HAWKBIT_CONTROLLER_MIN_POLLING_TIME, default 00:00:30). There is NO `minPollingTime` system config key — listing /rest/v1/system/configs returns pollingTime + pollingOverdueTime but NOT minPollingTime. hawkBit REJECTS any pollingTime below the floor with 400 configValueInvalid \"allowed range is [00:00:30, 23:59:59]\". To poll faster than 30s you MUST lower the container floor (requires hawkBit restart) AND push the value. (3) `pollingOverdueTime` = how long after a missed poll a device is marked overdue/disconnected (separate concept, default 00:05:00). The Ninbus API pushes pollingTime from .env at startup (best-effort + retried, since hawkBit takes ~180s to boot) so production can control polling without direct Management API access; the floor stays a docker-compose env on the hawkBit container.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-08-04T18:08:31.527Z",
+      "reinforcementCount": 1
     }
   ]
 }

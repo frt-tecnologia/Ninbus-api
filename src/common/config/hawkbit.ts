@@ -70,4 +70,9 @@ export const hawkbitConfig = {
 	get staleSweepSec(): number {
 		return env.HAWKBIT_STALE_SWEEP_SEC ?? 10;
 	},
+	/** Device polling interval (HH:MM:SS) pushed to hawkBit at startup.
+	 *  hawkBit runtime system config (not a Spring property). */
+	get pollingTime(): string {
+		return env.HAWKBIT_POLLING_TIME ?? '00:05:00';
+	},
 };

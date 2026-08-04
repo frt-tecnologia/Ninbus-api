@@ -13,6 +13,7 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
+import { applyPollingTimeConfigRetried } from '@common/hawkbit/system-config';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
 import { eq } from 'drizzle-orm';
@@ -73,6 +74,15 @@ export const DeviceSyncEngine = {
 			appLogger.info('[SYNC] hawkBit disabled — sync not started');
 			return;
 		}
+
+		// Push .env-declared polling time into hawkBit's runtime system config.
+		// hawkBit does NOT read pollingTime/minPollingTime as Spring properties —
+		// they are DB-backed and writable only via the Management API. This lets
+		// production control device polling purely from .env. Fire-and-forget +
+		// retried (hawkBit takes up to 180s to boot). Non-blocking.
+		applyPollingTimeConfigRetried().catch((err) => {
+			appLogger.error('[SYNC] Polling-time config apply failed: %s', err?.message);
+		});
 
 		const mode = hawkbitConfig.syncMode;
 		const intervalSec = hawkbitConfig.syncIntervalSec;

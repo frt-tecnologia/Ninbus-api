@@ -1,58 +1,58 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-07-07T04:24:15.811Z
+**Date**: 2026-08-04T18:09:03.967Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Botão de maximizar dos logs CORRIGIDO e funcionando. Problema original: o botão só mudava maxHeight (20rem→70vh) mas o feed estava (a) filtrado pela janela temporal 24h e (b) limitado a 50 entradas — então 'maximizar' não mostrava mais nada. Fix: adicionei um segundo useFetch (activityAll) que busca o histórico COMPLETO da empresa (GET /admin/activity?companyId=X&limit=500, SEM filtro from/to) apenas quando activityExpanded=true (lazy — não onera o page load normal). A section alterna entre feed compacto (filtrado, 50) e completo (sem filtro, 500) conforme o estado. Descrição da section muda dinamicamente: 'Histórico completo de ações da empresa' quando expandido. Mostra contagem 'N ações registradas'. Build ✓ (6/6 pages), typecheck ✓, lint ✓. Stack Docker saudável. Também corrigido bug de syntax do time-range-context (.ts→.tsx pois tinha JSX) + barrel corrigido.
+Implementada feature: API empurra HAWKBIT_POLLING_TIME ao hawkBit no boot via PUT /rest/v1/system/configs/pollingTime. Build limpo (bun build 1331 módulos), tsc ZERO erros nos arquivos alterados. E2E via Docker verificado: hawkBit retornou pollingTime=00:00:05 apos apply da API (attempt 1 sucesso pois hawkBit ja estava healthy). API log: '[HAWKBIT-CONFIG] Set pollingTime=00:00:05 in hawkBit'. Ambos containers healthy. Floor HAWKBIT_CONTROLLER_MIN_POLLING_TIME=00:00:05 confirmado no container hawkBit. Valor persiste no DB.
 
-**Evidence**: docker exec grep confirma 'activity({companyId:v,limit:500' no chunk deployado (busca completa sem filtro temporal quando expandido). git log HEAD 32e5869 (zero commits novos). categories.test.ts 27/27 (iteração anterior).
+**Evidence**: docker compose exec api bun -e '...GET pollingTime...' -> 00:00:05; docker exec hawkbit env | grep MIN_POLLING -> HAWKBIT_CONTROLLER_MIN_POLLING_TIME=00:00:05
 
 ### ✅ Code Quality
 
-company-observability.tsx reescrito de forma limpa: dois useFetch separados (compact = filtrado/50, all = completo/500) com seleção clara (feedEntries/feedLoading baseado em activityExpanded). time-range-context.tsx (70 linhas) + time-range-picker.tsx (171) split respeita o limite de 250 linhas. Tudo <250.
+system-config.ts (107 linhas) separacao limpa: modulo proprio dono da logica de apply; sync.ts apenas pluga o hook fire-and-forget em startBackgroundSync (o lugar certo). Logger usa %s/template literals (sem number/unknown como 2o arg). sync.ts: 281->291 linhas (ja passava de 250 ANTES da mudanca — pre-existente, +10 linhas minimas: 1 import + bloco catch). Nao refatorei sync.ts por ser scope creep de divida pre-existente.
 
-**Evidence**: wc -l: time-range-context.tsx=70, time-range-picker.tsx=171, company-observability.tsx=181
+**Evidence**: git show HEAD:src/modules/devices/sync.ts | wc -l = 281 (pre-existente >250); wc -l system-config.ts = 107
 
 ### ✅ Schema Organization
 
-Nenhuma mudança em schemas. O endpoint /admin/activity já suporta companyId + limit sem from/to (filter opcional), então a busca 'todos os logs' usa o contrato existente.
+Nenhuma mudanca em route/response schemas. HAWKBIT_POLLING_TIME adicionada ao EnvSchema (TypeBox) com pattern ^\d{2}:\d{2}:\d{2}$ e default 00:05:00. Sem impacto em schemas de modulos.
 
-**Evidence**: observabilityService.activity({companyId, limit:500}) — sem from/to = busca tudo
+**Evidence**: env.ts: HAWKBIT_POLLING_TIME: Type.Optional(Type.String({ default:'00:05:00', pattern }))
 
 ### ✅ Error Handling
 
-activityAll retorna Promise.resolve(null) quando não expandido (não dispara fetch desnecessário). feedLoading reflete corretamente o estado ativo (compact vs all). ActivityFeed trata empty/loading. activityAll fetch lazy evita custo de carregar 500 logs no page load normal.
+Protecao multi-nivel: (1) applyPollingTimeConfig checa hawkbitConfig.enabled -> early return (no-op em testes/dev). (2) hawkbitRequest envolve erros de rede em HawkbitApiError (503). (3) applyPollingTimeConfigRetried DISTINGUE 400 (validation error, ex. pollingTime abaixo do floor) -> log actionable + para (nao retenta pois re-tentar nao resolve) de 503/transient -> retenta 20x a cada 15s (cobre boot de 180s do hawkBit). (4) sync.ts fire-and-forget com .catch() evita unhandled rejection. Validation 400 produz mensagem acionavel sobre baixar HAWKBIT_MIN_POLLING_TIME.
 
-**Evidence**: useFetch activityAll: activityExpanded ? activity(...limit:500) : Promise.resolve(null)
+**Evidence**: system-config.ts: if (err instanceof HawkbitApiError && err.status === 400) { log actionable; return; }
 
 ### ✅ Test Coverage
 
-Backend tests intactos (não toquei em testes). A mudança é puramente frontend (dashboard). Bun segfault intermitente no Windows impede suite completa, mas builds limpos.
+Sem regressao: apply e no-op quando HAWKBIT_ENABLED=false (todos os testes rodam assim); validateEnv() validado carregando em NODE_ENV=test com pollingTime default 00:05:00. Nao adicionei teste unitario dedicado ao novo modulo — o caminho e integralmente guardado por hawkbitConfig.enabled e foi verificado via e2e Docker live (hawkBit real aceitando 00:00:05). Tradeoff razoavel para modulo de config infra.
 
-**Evidence**: tests/ intocado; builds ✓
+**Evidence**: HAWKBIT_ENABLED=false NODE_ENV=test bun -e 'import env' -> env OK pollingTime=00:05:00
 
 ### ✅ Config Centralization
 
-Nenhuma nova config. limit:500 é constante de domínio no componente (não config de ambiente). Sem process.env.
+HAWKBIT_POLLING_TIME: schema TypeBox em env.ts + rawEnv construction (process.env['HAWKBIT_POLLING_TIME']) + .env + .env.example + .env.test + docker-compose api environment. HAWKBIT_MIN_POLLING_TIME CORRETAMENTE tratada como propriedade Spring do CONTAINER hawkBit (como config de CDN, nao config da API Ninbus) — NAO esta em env.ts (API nunca a le), apenas em docker-compose hawkBit env (interpola ${HAWKBIT_MIN_POLLING_TIME:-00:00:30}) + .env/.env.example/.env.docker. Consistente com principio 'CDN config is hawkBit-side (Spring properties), not Ninbus API'.
 
-**Evidence**: observabilityService.activity({companyId, limit: 500})
+**Evidence**: docker-compose hawkBit: HAWKBIT_CONTROLLER_MIN_POLLING_TIME: ${HAWKBIT_MIN_POLLING_TIME:-00:00:30}; env.ts NAO contem HAWKBIT_MIN_POLLING_TIME
 
 ### ✅ Security
 
-Endpoint /admin/activity usa superAdmin guard (do release). A busca de 'todos os logs' usa o mesmo endpoint autenticado via proxy same-origin. Nenhuma mudança de auth.
+apply reusa Basic Auth existente do http.ts (sem novas secrets/credenciais). Guardado por hawkbitConfig.enabled. NENHUM endpoint Management API exposto publicamente — nginx continua bloqueando /rest/v1 (so DDI publico). A API fala com hawkBit pela rede interna Docker (http://hawkbit:8080). PUT so toca a chave pollingTime (nao credenciais/roles). deviceKey nao envolvido.
 
-**Evidence**: observability/index.ts: auth:true, superAdmin:true (release)
+**Evidence**: nginx ninbus.conf: /rest/v1/* hard-blocked, internal api->hawkbit:8080 only
 
-### ✅ 🔮 Futuro (Aprendizado Contígnuo)
+### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Lição: um botão 'Maximizar' que só muda altura visual NÃO maximiza o conteúdo — precisa também (a) buscar mais dados (sem filtro/limite maior) e (b) indicar visualmente que o modo mudou (descrição + contagem). Padrão de UI: toggle de expansão deve ter efeito tanto na APRESENTAÇÃO quanto na FONTE de dados, senão é cosmético. Plano de ação SSE criado em docs/dashboard-sse-action-plan.md para avaliação (não implementado).
+Principio arquitetural registrado: p-hawkbit-pollingtime-architecture — hawkBit 1.0.3 tem 3 camadas distintas de polling (pollingTime runtime config DB via Management API com body {value} JSON; min-polling-time floor como Spring property 00:00:30 sem chave de system config; pollingOverdueTime separado). Documentado no system-config.ts header + env.ts + docker-compose comments. Preveni futuros erros: 415 (text/plain), 'not well formed' (string pura), 400 configValueInvalid (abaixo do floor).
 
-**Evidence**: company-observability.tsx: activityExpanded controla tanto maxHeight (75vh) quanto qual feed (compact vs all=500) quanto a descrição da section; docs/dashboard-sse-action-plan.md
+**Evidence**: principles.json +136; system-config.ts docblock explica as 3 camadas e o formato {value} JSON
 
 ## Overall Notes
 
-Iteração 57: correção do botão de maximizar os logs da empresa + correções da iteração anterior. (1) BOTÃO DE MAXIMIZAR DOS LOGS AGORA FUNCIONA: quando expandido, busca o histórico COMPLETO da empresa (GET /admin/activity?companyId=X&limit=500, sem filtro temporal) em vez de apenas os 50 da última 24h. Adicionei um segundo useFetch (activityAll) que só dispara quando activityExpanded=true (lazy), e a descrição da section muda para 'Histórico completo de ações da empresa'. Mostra contagem de ações carregadas. (2) FIX de syntax: time-range-context renomeado de .ts→.tsx (tinha JSX) + barrel corrigido para importar do context. (3) MANTIDOS da iteração anterior: reatividade (useAllDeployments subscreve no bus), contraste de cores (pendente violeta / concluído verde), TimeRangePicker como Radix Popover (z-index fix), janela temporal na overview. Rerun Docker: dashboard reconstruído, stack saudável. ZERO commits além do merge autorizado (HEAD 32e5869).
+Iteracao: feature de polling-time config-as-code. API empurra HAWKBIT_POLLING_TIME (.env) ao hawkBit no boot via Management API (PUT /rest/v1/system/configs/pollingTime, body {"value":"HH:MM:SS"}, application/json). Floor de 30s (Spring hawkbit.controller.min-polling-time) abaixado via HAWKBIT_MIN_POLLING_TIME no container hawkBit. TESTADO E2E via Docker: hawkBit retornou pollingTime=00:00:05 apos apply (tentativa 1, hawkBit ja healthy), valor persiste no DB, ambos containers healthy, floor confirmado. Arquivos: system-config.ts (novo, 107 linhas, retry+enabled-guard+400-vs-503 distinction), env.ts (+schema+rawEnv), hawkbit.ts (+accessor), sync.ts (+hook fire-and-forget), docker-compose.yml (+api env var +hawkBit floor), .env/.env.example/.env.test/.env.docker. Premissa inicial (5s via system config) estava ERRADA — descobri empiricamente que hawkBit rejeita <30s sem abaixar o floor Spring, e que minPollingTime NAO e chave de system config. Corrigi tudo e validei. ZERO commits (HEAD intact). Local .env deixado em 00:00:05/00:00:05 para a demo do usuario; defaults seguros (00:05:00/00:00:30) em .env.example/.env.docker.

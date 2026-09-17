@@ -57,11 +57,16 @@ export async function getOrCreateSoftwareModuleType(artifactType: NinbusArtifact
 	typeName: string;
 }> {
 	if (!cachedModuleTypes) {
-		cachedModuleTypes = new Map();
 		const types = await hawkbitSoftwareModuleTypes.list();
+		// Populate the cache only AFTER a successful list() — assigning an empty
+		// map before the await would permanently poison the cache when hawkBit
+		// is unreachable (e.g. still booting), forcing every later call into the
+		// create path and failing with 409 EntityAlreadyExists forever.
+		const map = new Map<string, number>();
 		for (const t of types.content) {
-			cachedModuleTypes.set(t.key, t.id);
+			map.set(t.key, t.id);
 		}
+		cachedModuleTypes = map;
 	}
 
 	const existing = cachedModuleTypes.get(artifactType);
@@ -100,11 +105,14 @@ export async function getOrCreateDistributionSetType(artifactType: NinbusArtifac
 	const dsTypeKey = `ninbus-${artifactType}`;
 
 	if (!cachedDsTypes) {
-		cachedDsTypes = new Map();
 		const types = await hawkbitDistributionSetTypes.list();
+		// Same cache-poisoning guard as getOrCreateSoftwareModuleType above —
+		// only publish the cache after a successful list().
+		const map = new Map<string, number>();
 		for (const t of types.content) {
-			cachedDsTypes.set(t.key, t.id);
+			map.set(t.key, t.id);
 		}
+		cachedDsTypes = map;
 	}
 
 	const existing = cachedDsTypes.get(dsTypeKey);

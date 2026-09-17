@@ -120,6 +120,13 @@
       "when": 1789675375579,
       "tag": "0016_firmware_releases",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789675620177,
+      "tag": "0017_firmware_activity_enums",
+      "breakpoints": true
     }
   ]
 }

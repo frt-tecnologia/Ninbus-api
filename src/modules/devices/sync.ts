@@ -17,6 +17,7 @@ import { applyPollingTimeConfigRetried } from '@common/hawkbit/system-config';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
 import { eq } from 'drizzle-orm';
+import { syncFirmwareVersions } from './firmware-sync';
 import { fetchAllHawkBitTargets } from './sync-fetch';
 import {
 	type SyncState,
@@ -157,6 +158,10 @@ export const DeviceSyncEngine = {
 					state.totalSynced = await syncHybrid();
 					break;
 			}
+
+			// Firmware versions: pull DDI-reported versions for devices with an
+			// active deployment or a still-unknown version (best-effort, cheap).
+			await syncFirmwareVersions();
 
 			// Staleness sweep: self-heal orphaned/overdue devices (independent of
 			// hawkBit). Catches devices whose hawkBit target was deleted and would

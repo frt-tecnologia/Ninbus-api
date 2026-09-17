@@ -13,7 +13,7 @@ import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { deleteFirmwareRelease, listFirmwareReleases, uploadFirmwareRelease } from './service';
 import { FirmwareValidationError } from './service';
-import { deployFirmwareToDevices } from './status-service';
+import { handleAdminForceDeploy } from './force-deploy';
 
 /**
  * Firmware Admin Routes — factory-only firmware catalog.
@@ -145,41 +145,7 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 	)
 
 	// POST /deploy — Admin-forced update (console; no end-user interaction)
-	.post(
-		'/deploy',
-		async ({ body, user, set }) => {
-			try {
-				const result = await deployFirmwareToDevices(
-					user.id,
-					body.deviceIds,
-					body?.artifactType ?? 'firmware-ninbus',
-				);
-				await logActivity({
-					actorUserId: user.id,
-					actorEmail: user.email,
-					companyId: null,
-					action: 'firmware.deploy_forced',
-					entityType: 'firmware_release',
-					entityId: String(result.deployments[0]?.result.dsId ?? ''),
-					entityLabel: `${result.devices} device(s), ${result.companies} company/companies`,
-					metadata: { devices: result.devices, companies: result.companies },
-				});
-				return {
-					message: `Forced firmware update queued for ${result.devices} device(s) across ${result.companies} company/companies`,
-					data: result,
-				};
-			} catch (error) {
-				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
-					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
-						message: error.message,
-						code: error.code,
-					};
-				}
-				throw error;
-			}
-		},
+	.post('/deploy', handleAdminForceDeploy,
 		{
 			auth: true,
 			superAdmin: true,

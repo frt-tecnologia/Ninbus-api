@@ -16,4 +16,5 @@ export * from './devices';
 export * from './posts';
 export * from './artifacts';
 export * from './deployments';
+export * from './firmware';
 export * from './observability';

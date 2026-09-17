@@ -1087,6 +1087,14 @@
       "category": "architecture",
       "learnedAt": "2026-08-04T18:08:31.527Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-typed-ownership-errors-not-plain-error",
+      "rule": "Ownership/authorization checks MUST throw TYPED error classes (e.g. DeploymentNotFoundError), NEVER a plain `new Error(...)`. Route catch-alls test `instanceof TypedError` (→ 404) and `error?.status === N`; a plain Error fails BOTH checks and falls through to the generic 503 catch-all — masking a clear \"not found/forbidden\" as a misleading \"Service Unavailable\". Diagnosis proof technique: the 503 response body byte-length, combined with the catch's message template (`Failed to X: ${error.message}`), uniquely identifies the thrown error.message — e.g. content-length 114 = exactly \"Deployment #240 not found in this company\" (41 chars). When a catch-all returns a fixed/templated body, reverse-engineer it via byte count to pinpoint the real throw site. Also: route ownership checks should use LOCAL-DB-only helpers (requireDeploymentOwnership), not functions that fetch from external services (getDeployment), so a local resource returns its state even when the external dependency (hawkBit) is down.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-08-05T18:59:56.136Z",
+      "reinforcementCount": 1
     }
   ]
 }

@@ -30,15 +30,10 @@ export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichme
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
 
 // ---------------------------------------------------------------------------
-// Error classes
+// Error classes (defined in ./errors to avoid a circular import with delete.ts)
 // ---------------------------------------------------------------------------
 
-export class DeploymentNotFoundError extends Error {
-	constructor(message = 'Deployment not found') {
-		super(message);
-		this.name = 'DeploymentNotFoundError';
-	}
-}
+export { DeploymentNotFoundError } from './errors';
 
 // ---------------------------------------------------------------------------
 // CRUD — all scoped by companyId

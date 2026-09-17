@@ -8,6 +8,7 @@ import { hawkbitDistributionSets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq, inArray } from 'drizzle-orm';
 import { forceCloseActiveActionsForDS } from './actions';
+import { DeploymentNotFoundError } from './errors';
 
 /** Verify that a hawkBit Distribution Set belongs to the given company. */
 export async function requireDeploymentOwnership(
@@ -20,7 +21,7 @@ export async function requireDeploymentOwnership(
 		.where(eq(deployments.hawkbitDsId, hawkbitDsId));
 
 	if (!local || local.companyId !== companyId) {
-		throw new Error(`Deployment #${hawkbitDsId} not found in this company`);
+		throw new DeploymentNotFoundError(`Deployment #${hawkbitDsId} not found in this company`);
 	}
 }
 

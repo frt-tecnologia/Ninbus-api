@@ -1,9 +1,9 @@
 {
-  "currentIteration": 51,
+  "currentIteration": 52,
   "maxIterations": 3,
   "phase": "analysis",
   "results": [],
   "overallNotes": "",
-  "humanFeedback": "Extensão da feature de firmware: permitir que o ADMIN force a atualização de firmware diretamente do console (dashboard), sem interação do usuário final. Hoje o endpoint de update é disparado pelo mobile quando o cliente aprova; falta um caminho admin (super admin) para selecionar dispositivos e disparar o deployment direto do console. Entregar: rota admin de deploy forçado, UI na dashboard (seleção de dispositivos + confirmação), testes, E2E no Docker local, versionar via git sem push.",
-  "lastUpdated": "2026-09-17T22:09:33.650Z"
+  "humanFeedback": "Nova extensão da feature de firmware: GATE DE PUBLICAÇÃO. Hoje toda release subida já fica disponível no endpoint de status que o mobile consulta — o cliente pode aplicar imediatamente. Desejado: release só fica visível/disponível para o usuário final quando EXPLICITAMENTE marcada como disponível (published). Upload cria como draft; super admin publica (e despublica) via endpoint próprio. Isso cria a camada de testes: fábrica sobe draft → valida em dispositivos piloto via force deploy do console (que pode usar draft, inclusive com releaseId explícito) → publica → só então o mobile vê update_available e o cliente pode opt-in. Entregar: coluna status (migration via db:generate, aplicada via comando oficial), endpoints publish/unpublish, getLatestRelease/trigger/filter published-only, force deploy com releaseId opcional, UI dashboard (status badge, publicar/despublicar, testar draft), testes, E2E Docker, docs, commit sem push.",
+  "lastUpdated": "2026-09-17T23:26:11.347Z"
 }

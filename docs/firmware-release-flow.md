@@ -193,6 +193,23 @@ As versões ficam disponíveis em:
 
 ### Quem dispara a atualização (mobile opt-in × console force)
 
+Antes de TUDO isso, porém, existe um **gate de publicação**: a release só
+chega ao cliente quando explicitamente publicada.
+
+| Estado | Visível no mobile? | `latest` (end-user)? | Force deploy (console)? |
+|---|---|---|---|
+| `draft` | NÃO (`update_available` não considera) | NÃO | SIM (releaseId explícito → pilotos) |
+| `published` | SIM | SIM | SIM (omissão → latest published) |
+
+- Upload cria a release como **draft** (`POST /api/admin/firmware`).
+- `POST /api/admin/firmware/:id/publish` (super admin) a torna a versão
+  disponível; `.../unpublish` é o freio de emergência (esconde dos endpoints
+  de cliente; deployments já atribuídos seguem no hawkBit).
+- Ciclo de testes da fábrica: sobe draft → **Testar em dispositivos piloto**
+  (dashboard, deploy com releaseId) → valida → **Publicar**.
+- Migrations 0019 (coluna `status`, retrocompat: existentes = published) e
+  0020 (activity_action += `firmware.unpublished`).
+
 Há DOIS caminhos para iniciar a atualização — a execução no hawkBit é
 idêntica (deployment `download=forced`, `update=forced`; o dispositivo
 instala no próximo polling DDI):

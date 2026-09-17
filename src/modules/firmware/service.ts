@@ -39,7 +39,8 @@ export class FirmwareValidationError extends Error {
 			| 'HAWKBIT_NOT_ENABLED'
 			| 'NOT_FOUND'
 			| 'DUPLICATE_VERSION'
-			| 'LOCKED',
+			| 'LOCKED'
+			| 'INVALID_STATUS',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -182,12 +183,23 @@ export async function listFirmwareReleases(params?: { type?: string }) {
 	return { data: rows, total: rows.length };
 }
 
-/** Latest release of a type — highest semver, tie-broken by recency. */
-export async function getLatestRelease(type: string) {
+/**
+ * Latest release of a type — highest semver, tie-broken by recency.
+ *
+ * publishedOnly=true (default): the end-user view — drafts are invisible to
+ * the mobile status endpoint and to the opt-in trigger. The admin console
+ * passes false (or an explicit releaseId) to push drafts to pilot devices.
+ */
+export async function getLatestRelease(type: string, publishedOnly = true) {
 	const rows = await db
 		.select()
 		.from(firmwareReleases)
-		.where(eq(firmwareReleases.artifactType, type))
+		.where(
+			and(
+				eq(firmwareReleases.artifactType, type),
+				publishedOnly ? eq(firmwareReleases.status, 'published') : undefined,
+			),
+		)
 		.orderBy(desc(firmwareReleases.createdAt));
 	if (rows.length === 0) return null;
 	return rows.reduce((latest, r) => (compareVersions(r.version, latest.version) > 0 ? r : latest));

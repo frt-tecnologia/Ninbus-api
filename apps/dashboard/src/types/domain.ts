@@ -214,6 +214,8 @@ export interface FirmwareRelease {
 	/** Semantic version tag (required at upload, unique per type). */
 	version: string;
 	artifactType: FirmwareArtifactType | string;
+	/** Release gate: draft (factory testing) | published (available to users). */
+	status: 'draft' | 'published';
 	description: string | null;
 	originalFilename: string | null;
 	payloadSize: number | null;

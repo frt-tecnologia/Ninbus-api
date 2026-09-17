@@ -93,11 +93,12 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 			<DialogContent>
 				<form onSubmit={submit}>
 					<DialogHeader>
-						<DialogTitle>Publicar atualização de firmware</DialogTitle>
+						<DialogTitle>Enviar atualização de firmware</DialogTitle>
 						<DialogDescription>
-							Envia o arquivo de firmware para o catálogo da fábrica. O servidor
-							empacota o .tar do contrato do dispositivo (header-info + payload).
-							A tag de versão é obrigatória e única por tipo.
+							Envia o arquivo para o catálogo da fábrica como RASCUNHO — invisível
+							para os clientes até você publicar. O servidor empacota o .tar do
+							contrato do dispositivo (header-info + payload). A tag de versão é
+							obrigatória e única por tipo.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="mt-4 flex flex-col gap-4">

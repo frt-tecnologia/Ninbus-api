@@ -42,6 +42,7 @@ export function FirmwareForceDialog({
 	trigger,
 	devices,
 	targetVersion,
+	releaseId,
 	onDone,
 }: {
 	open?: boolean;
@@ -49,6 +50,8 @@ export function FirmwareForceDialog({
 	trigger?: boolean;
 	devices: FirmwareForceTarget[];
 	targetVersion: string | null;
+	/** Explicit release (any status — lets the factory TEST a draft on pilots). */
+	releaseId?: string;
 	onDone?: () => void;
 }) {
 	const [loading, setLoading] = React.useState(false);
@@ -57,7 +60,11 @@ export function FirmwareForceDialog({
 	async function confirm() {
 		setLoading(true);
 		try {
-			const res = await firmwareService.deploy(devices.map((d) => d.id));
+			const res = await firmwareService.deploy(
+				devices.map((d) => d.id),
+				undefined,
+				releaseId,
+			);
 			toast.success((res as { message?: string }).message ?? 'Atualização forçada agendada');
 			onOpenChange?.(false);
 			onDone?.();

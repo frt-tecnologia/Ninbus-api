@@ -72,8 +72,8 @@ export default function FirmwarePage() {
 			/>
 
 			<Section
-				title="Releases publicadas"
-				description="Ordem cronológica — a versão mais alta de cada tipo define a atualização disponível para os dispositivos."
+				title="Releases"
+				description="Ordem cronológica. Rascunhos (testes da fábrica) ficam invisíveis para os clientes até serem publicados; a versão publicada mais alta de cada tipo define a atualização disponível."
 				className="mb-4"
 			>
 				<div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -94,6 +94,7 @@ export default function FirmwarePage() {
 				error={releases.error}
 				onRetry={releases.refetch}
 				onDelete={handleDelete}
+				onChanged={releases.refetch}
 			/>
 			{deleting && <p className="sr-only">Excluindo release…</p>}
 		</>

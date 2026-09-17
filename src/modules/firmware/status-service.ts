@@ -16,6 +16,7 @@ import { deploySoftwareModuleToTargets } from '@modules/deployments/deploy';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { compareVersions, getLatestRelease } from './service';
 import { FirmwareValidationError } from './service';
+import { getFirmwareReleaseById } from './release-gate';
 import { refreshStaleFirmwareVersions } from './version-refresh';
 
 export type DeviceFirmwareStatusValue =
@@ -149,6 +150,7 @@ export async function triggerFirmwareUpdate(
 	userId: string,
 	deviceIds: string[],
 	artifactType: 'firmware-ninbus' | 'firmware-controller' = 'firmware-ninbus',
+	opts?: { releaseId?: string },
 ) {
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
@@ -157,10 +159,21 @@ export async function triggerFirmwareUpdate(
 		);
 	}
 
-	const release = await getLatestRelease(artifactType);
+	// Explicit releaseId (admin console testing a draft) bypasses the
+	// published-only gate; the end-user trigger always resolves the latest
+	// PUBLISHED release.
+	const release = opts?.releaseId
+		? await getFirmwareReleaseById(opts.releaseId)
+		: await getLatestRelease(artifactType);
 	if (!release) {
 		throw new FirmwareValidationError(
 			`No ${artifactType} release has been published yet. The factory must publish one first.`,
+			'NOT_FOUND',
+		);
+	}
+	if (release.artifactType !== artifactType) {
+		throw new FirmwareValidationError(
+			`Release ${release.version} is of type ${release.artifactType}, not ${artifactType}.`,
 			'NOT_FOUND',
 		);
 	}

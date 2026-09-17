@@ -156,6 +156,25 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (/^0019_/.test(entry.tag)) {
+				// Column check — CREATE TYPE/ADD COLUMN would fail if re-run.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_name = 'firmware_releases' AND column_name = 'status'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (/^0020_/.test(entry.tag)) {
+				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
+				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'activity_action' AND e.enumlabel = 'firmware.unpublished'`;
+				if (enumVals.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

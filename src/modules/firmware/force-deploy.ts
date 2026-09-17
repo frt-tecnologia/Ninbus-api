@@ -22,6 +22,7 @@ export async function deployFirmwareToDevices(
 	userId: string,
 	deviceIds: string[],
 	artifactType: 'firmware-ninbus' | 'firmware-controller' = 'firmware-ninbus',
+	releaseId?: string,
 ) {
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
@@ -62,7 +63,7 @@ export async function deployFirmwareToDevices(
 	for (const [companyId, ids] of byCompany) {
 		deployments.push({
 			companyId,
-			result: await triggerFirmwareUpdate(companyId, userId, ids, artifactType),
+			result: await triggerFirmwareUpdate(companyId, userId, ids, artifactType, { releaseId }),
 		});
 	}
 	return { companies: deployments.length, devices: rows.length, deployments };
@@ -80,7 +81,11 @@ export async function deployFirmwareToDevices(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function handleAdminForceDeploy(ctx: any) {
 	const { body, user, set } = ctx as {
-		body: { deviceIds: string[]; artifactType?: 'firmware-ninbus' | 'firmware-controller' };
+		body: {
+			deviceIds: string[];
+			artifactType?: 'firmware-ninbus' | 'firmware-controller';
+			releaseId?: string;
+		};
 		user: { id: string; email: string };
 		set: { status?: number | undefined };
 	};
@@ -89,6 +94,7 @@ export async function handleAdminForceDeploy(ctx: any) {
 			user.id,
 			body.deviceIds,
 			body?.artifactType ?? 'firmware-ninbus',
+			body?.releaseId,
 		);
 		await logActivity({
 			actorUserId: user.id,

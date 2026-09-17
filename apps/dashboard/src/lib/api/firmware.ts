@@ -11,9 +11,11 @@ import type {
  *
  * Endpoints consumed:
  *  GET    /api/admin/firmware            → list releases (chronological DESC)
- *  GET    /api/admin/firmware/latest     → latest release per type
- *  POST   /api/admin/firmware            → publish a release (multipart upload)
+ *  GET    /api/admin/firmware/latest     → latest PUBLISHED release per type
+ *  POST   /api/admin/firmware            → upload a release (starts as draft)
  *  POST   /api/admin/firmware/deploy     → FORCE update to selected devices
+ *  POST   /api/admin/firmware/:id/publish   → make a draft available to users
+ *  POST   /api/admin/firmware/:id/unpublish → hide a release (emergency brake)
  *  DELETE /api/admin/firmware/:releaseId → remove a release
  */
 export const firmwareService = {
@@ -40,11 +42,22 @@ export const firmwareService = {
 		return http.delete<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}`);
 	},
 
-	/** Force the latest firmware to the given devices (console path). */
-	async deploy(deviceIds: string[], artifactType?: string): Promise<ActionResponse> {
+	/** Force firmware to the given devices (console path). releaseId → test a specific DRAFT. */
+	async deploy(deviceIds: string[], artifactType?: string, releaseId?: string): Promise<ActionResponse> {
 		return http.post<ActionResponse>('/admin/firmware/deploy', {
 			deviceIds,
 			...(artifactType ? { artifactType } : {}),
+			...(releaseId ? { releaseId } : {}),
 		});
+	},
+
+	/** Publish a draft — makes it the latest version visible to end users. */
+	async publish(releaseId: string): Promise<ActionResponse> {
+		return http.post<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}/publish`, {});
+	},
+
+	/** Unpublish — emergency brake: hides the release from end users. */
+	async unpublish(releaseId: string): Promise<ActionResponse> {
+		return http.post<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}/unpublish`, {});
 	},
 };

@@ -3,6 +3,7 @@ import {
 	check,
 	index,
 	integer,
+	pgEnum,
 	pgTable,
 	text,
 	timestamp,
@@ -12,23 +13,20 @@ import {
 import { user } from './auth';
 
 /**
- * Firmware Releases — factory-managed GLOBAL firmware catalog.
+ * Release lifecycle gate — the factory test layer.
  *
- * Unlike `artifacts` (company-scoped, uploaded by operators for their own
- * deployments), firmware releases are published by the FACTORY (super admin)
- * and are visible platform-wide. They define what "latest firmware version"
- * means for every device: the mobile app compares each device's reported
- * firmware version (DDI attributes, see `devices.firmwareVersion`) against
- * the latest release of each type to decide who needs an update.
- *
- * Ownership model:
- * - NO companyId — the catalog is global by design (factory publishes once,
- *   every company updates against it).
- * - hawkbitSmId maps to the hawkBit Software Module ID (UNIQUE) — the same
- *   write-through pattern as `artifacts`, minus the tenant filter.
- * - UNIQUE (artifactType, version): one release per version tag per type, so
- *   "latest" is never ambiguous.
+ * - draft: uploaded, NOT visible to end users (no `update_available` on
+ *   mobile status, cannot be applied via the opt-in trigger). Only the
+ *   admin console can push it (force deploy with an explicit releaseId)
+ *   so the factory can validate it on pilot devices first.
+ * - published: available to every company — the mobile status endpoint
+ *   and the opt-in trigger resolve it as the latest release.
  */
+export const firmwareReleaseStatus = pgEnum('firmware_release_status', [
+	'draft',
+	'published',
+]);
+
 export const firmwareReleases = pgTable(
 	'firmware_releases',
 	{
@@ -41,6 +39,8 @@ export const firmwareReleases = pgTable(
 		version: text('version').notNull(),
 		/** Firmware type: firmware-ninbus (self-update) | firmware-controller (CAN). */
 		artifactType: text('artifact_type').notNull(),
+		/** Release gate: draft (factory testing) | published (available to users). */
+		status: firmwareReleaseStatus('status').notNull().default('draft'),
 		description: text('description'),
 		/** Original uploaded filename (.fir, .frz, .bin, etc.). */
 		originalFilename: text('original_filename'),

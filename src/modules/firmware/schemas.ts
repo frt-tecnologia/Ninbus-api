@@ -61,6 +61,9 @@ export const FirmwareReleaseSchema = t.Object({
 	name: t.String(),
 	version: t.String({ description: 'Semantic version tag (e.g. "4.0.1")' }),
 	artifactType: t.String(),
+	status: t.Enum({ draft: 'draft', published: 'published' }, {
+		description: 'Release gate: draft (factory testing, invisible to users) | published (available)',
+	}),
 	description: t.Union([t.String(), t.Null()]),
 	originalFilename: t.Union([t.String(), t.Null()]),
 	payloadSize: t.Union([t.Number(), t.Null()]),
@@ -77,8 +80,13 @@ export const FirmwareReleaseListResponseSchema = t.Object({
 
 export const FirmwareLatestResponseSchema = t.Object({
 	data: t.Union([FirmwareReleaseSchema, t.Null()], {
-		description: 'Latest release for the requested type, null if none published yet',
+		description: 'Latest PUBLISHED release for the requested type, null if none published yet',
 	}),
+});
+
+export const FirmwarePublishResponseSchema = t.Object({
+	message: t.String(),
+	data: FirmwareReleaseSchema,
 });
 
 export const FirmwareUploadResponseSchema = t.Object({
@@ -178,6 +186,9 @@ export const DeployFirmwareBodySchema = t.Object(
 		}),
 		// Firmware type to deploy — defaults to firmware-ninbus.
 		artifactType: t.Optional(t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')])),
+		// Explicit release (any status — allows testing a DRAFT on pilot devices).
+		// Omitted → latest PUBLISHED release of the type.
+		releaseId: t.Optional(t.String({ format: 'uuid' })),
 	},
 	{
 		default: { deviceIds: ['123e4567-e89b-12d3-a456-426614174000'] },

@@ -16,6 +16,7 @@ import { formatDateTime } from '@/lib/utils';
 import type { FirmwareRelease } from '@/types/domain';
 import { Cpu, FileSpreadsheet, FileText, HardDrive, Package, Trash2 } from 'lucide-react';
 import * as React from 'react';
+import { FirmwareGateActions } from './firmware-gate-actions';
 
 /**
  * Factory firmware catalog — chronological list (newest first from the API)
@@ -28,12 +29,15 @@ export function FirmwareTable({
 	error,
 	onRetry,
 	onDelete,
+	onChanged,
 }: {
 	releases: FirmwareRelease[];
 	loading: boolean;
 	error: string | null;
 	onRetry: () => void;
 	onDelete: (release: FirmwareRelease) => void;
+	/** Refetch after publish/unpublish (gate actions). */
+	onChanged?: () => void;
 }) {
 	const [search, setSearch] = React.useState('');
 	const [type, setType] = React.useState<string>('all');
@@ -63,7 +67,18 @@ export function FirmwareTable({
 			sortValue: (r) => r.version,
 			render: (r) => (
 				<div className="flex flex-col">
-					<Id value={r.version} copy />
+					<div className="flex items-center gap-1.5">
+						<Id value={r.version} copy />
+						{r.status === 'draft' ? (
+							<span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-600 dark:text-amber-400">
+								rascunho
+							</span>
+						) : (
+							<span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600 dark:text-emerald-400">
+								publicada
+							</span>
+						)}
+					</div>
 					{r.name && <span className="text-xs text-muted-foreground">{r.name}</span>}
 				</div>
 			),
@@ -208,15 +223,18 @@ export function FirmwareTable({
 				error={error}
 				onRetry={onRetry}
 				actions={(r) => (
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						title="Excluir release"
-						onClick={() => onDelete(r)}
-					>
-						<Trash2 className="h-4 w-4 text-muted-foreground" />
-					</Button>
+					<div className="flex items-center gap-0.5">
+						<FirmwareGateActions release={r} onChanged={onChanged} />
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							title="Excluir release"
+							onClick={() => onDelete(r)}
+						>
+							<Trash2 className="h-4 w-4 text-muted-foreground" />
+						</Button>
+					</div>
 				)}
 				empty={
 					<div className="py-12 text-center text-sm text-muted-foreground">

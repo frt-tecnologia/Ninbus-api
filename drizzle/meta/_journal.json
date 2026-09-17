@@ -134,6 +134,20 @@
       "when": 1789683097413,
       "tag": "0018_brief_true_believers",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789687610632,
+      "tag": "0019_nebulous_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789687842487,
+      "tag": "0020_lush_doctor_strange",
+      "breakpoints": true
     }
   ]
 }

@@ -153,6 +153,13 @@
       "type": "evaluation",
       "summary": "Iteration 50: 8/8 criteria passed. Feature de gestão de firmware completa e validada E2E no Docker local (Neon dev + test DBs, hawkBit 1.0.3, TargetToken DDI na 8180). Branch feat/firmware-management com 8 commits convencionais, SEM push (requisito). Ciclo validado de ponta a ponta: upload super-admin 201 → catálogo cronológico → mobile status (latest/devices/summary) → trigger (DS criado, target atribuído) → device DDI (poll → deploymentBase → download TAR → feedback 1.0.3 → configData) → up_to_date via refresh on-demand. Bugs reais encontrados e corrigidos durante o E2E: veneno de cache em getOrCreate (409 eterno pós-boot do hawkBit) e gap de sincronização pós-instalação (refresh on-demand rate-limited 60s, auto-limitante). Migrações aplicadas UNICAMENTE via comando oficial após rollback da aplicação manual (feedback do revisor incorporado) + checks idempotentes no runner seguindo o padrão existente. Contrato de feedback DDI do hawkBit 1.0.3 descoberto via /v3/api-docs e documentado (formato legado retorna 400). 3 princípios novos registrados (migrations via comando, feedback DDI 1.0.3, cache-populate-on-success).",
       "allTestsPassed": true
+    },
+    {
+      "id": "iteration-51-1789684774234",
+      "timestamp": 1789684774234,
+      "type": "evaluation",
+      "summary": "Iteration 51: 8/8 criteria passed. Iteration 51 complete: admin-forced firmware deploy from the console. POST /api/admin/firmware/deploy (superAdmin) accepts global deviceIds, groups them per company and creates isolated hawkBit deployments reusing the exact mobile-trigger execution (triggerFirmwareUpdate) — same FORCED download/update semantics, audit as firmware.deploy_forced (migration 0018, applied via bun run db:migrate on dev+test). Dashboard: confirmation dialog (current→target version), inline action on the outdated badge in the devices table, and a Force button on the device detail firmware section. Tests 30/30 (403 non-super-admin, 400 hawkBit-disabled, guard path); E2E in Docker: upload 4.0.3 → admin deploy (DS 46) → device poll/install/feedback/configData → up_to_date+in_sync. All files back under 250 lines (force-deploy.ts extracted; handler ctx typed any+narrowed due to macro-resolved context). Handoff briefings for the Flutter and embedded agents saved under docs/handoff/ (embedded: DDI configData version contract, 1.0.3 feedback format, TAR v3; Flutter: status endpoint, opt-in trigger, force-status transitions). 12 commits on feat/firmware-management, no push, per instruction.",
+      "allTestsPassed": true
     }
   ]
 }

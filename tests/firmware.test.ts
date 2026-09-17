@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
 import { companies, devices, firmwareReleases } from '../src/common/db/schema';
+import { eq } from 'drizzle-orm';
 import { classifyDeviceFirmware } from '../src/modules/firmware/status-service';
 import { compareVersions } from '../src/modules/firmware/service';
 import { extractFirmwareVersions } from '../src/modules/devices/firmware-sync';
@@ -230,6 +231,7 @@ describe('Firmware Module', () => {
 				version: '3.9.0',
 				artifactType: 'firmware-ninbus',
 				originalFilename: 'wifi3-390.bin',
+				status: 'published',
 			},
 			{
 				hawkbitSmId: 900002,
@@ -237,6 +239,17 @@ describe('Firmware Module', () => {
 				version: '4.0.1',
 				artifactType: 'firmware-ninbus',
 				originalFilename: 'wifi3-401.bin',
+				status: 'published',
+			},
+			// DRAFT with a HIGHER semver — must NOT become the latest: the
+			// publish gate hides it from end users until explicitly published.
+			{
+				hawkbitSmId: 900003,
+				name: 'wifi3 4.9 candidate',
+				version: '4.9.0',
+				artifactType: 'firmware-ninbus',
+				originalFilename: 'wifi3-490rc.bin',
+				status: 'draft',
 			},
 		]);
 
@@ -295,8 +308,12 @@ describe('Firmware Module', () => {
 			}),
 		);
 		const body = await res.json();
-		expect(body.total).toBe(2);
-		expect(body.data.map((r: { version: string }) => r.version)).toEqual(['3.9.0', '4.0.1']);
+		expect(body.total).toBe(3);
+		// Drafts appear in the admin list (with their status) — hidden only
+		// from end-user endpoints.
+		expect(body.data[0].status).toBeDefined();
+		const versions = body.data.map((r: { version: string }) => r.version).sort();
+		expect(versions).toEqual(['3.9.0', '4.0.1', '4.9.0']);
 	});
 
 	it('GET firmware/status classifies company devices (owner)', async () => {
@@ -396,5 +413,87 @@ describe('Firmware Module', () => {
 			}),
 		);
 		expect([400, 404]).toContain(res.status);
+	});
+
+	// ── Publish gate (draft ⇄ published) ───────────────────────────────
+
+	let draftReleaseId: string;
+
+	it('finds the seeded draft for gate tests', async () => {
+		const [draft] = await db
+			.select()
+			.from(firmwareReleases)
+			.where(eq(firmwareReleases.version, '4.9.0'));
+		draftReleaseId = draft.id;
+		expect(draft.status).toBe('draft');
+	});
+
+	it('publish rejects non-super-admin (403)', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/publish`, {
+				method: 'POST',
+				headers: { Cookie: ownerCookie },
+			}),
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it('publish returns 404 for unknown release', async () => {
+		const res = await app.handle(
+			new Request('http://localhost/api/admin/firmware/00000000-0000-0000-0000-000000000000/publish', {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect(res.status).toBe(404);
+	});
+
+	it('publish flips draft → published and it becomes the latest', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/publish`, {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.data.status).toBe('published');
+
+		// Now the latest IS the previously-hidden draft.
+		const latest = await app.handle(
+			new Request('http://localhost/api/admin/firmware/latest', {
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect((await latest.json()).data.version).toBe('4.9.0');
+	});
+
+	it('publishing twice returns 400 (already published)', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/publish`, {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect(res.status).toBe(400);
+	});
+
+	it('unpublish hides the release from end users again', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/unpublish`, {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.data.status).toBe('draft');
+
+		const latest = await app.handle(
+			new Request('http://localhost/api/admin/firmware/latest', {
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect((await latest.json()).data.version).toBe('4.0.1');
 	});
 });

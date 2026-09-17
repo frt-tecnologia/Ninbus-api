@@ -12,6 +12,7 @@ export type { AddMemberInput, UpdateMemberInput, CompanyRole, Member } from './m
 export { designationService, userService } from './users';
 export type { CreateDesignationInput } from './users';
 export { deploymentService } from './deployments';
+export { firmwareService } from './firmware';
 export { observabilityService } from './observability';
 export { categoryService } from './categories';
 export type {

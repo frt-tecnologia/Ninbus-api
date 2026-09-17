@@ -8,8 +8,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Section, Signal, Id, Relative, Time, Empty } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
-import { companyService, deploymentService, deviceService } from '@/lib/api';
-import { connectionSignal, deviceSignal, deploymentSignal } from '@/lib/design/tokens';
+import { companyService, deploymentService, deviceService, firmwareService } from '@/lib/api';
+import { connectionSignal, deviceSignal, deploymentSignal, firmwareSignal } from '@/lib/design/tokens';
 
 /**
  * Device detail — the link target for a device serial/name anywhere in the
@@ -43,6 +43,7 @@ export default function DeviceDetailPage() {
 		),
 		[companyId],
 	);
+	const latestFirmware = useFetch(useCallback(() => firmwareService.latest('firmware-ninbus'), []));
 
 	return (
 		<>
@@ -85,6 +86,45 @@ export default function DeviceDetailPage() {
 							<Row label="Última conexão" value={<Relative value={device.lastSeenAt} />} />
 							<Row label="Adicionado" value={<Time value={device.createdAt} />} />
 						</dl>
+					</Section>
+
+					{/* Firmware — device + peripheral versions vs the factory catalog */}
+					<Section
+						title="Firmware"
+						description={
+							latestFirmware.data?.data
+								? `Última release da fábrica: ${latestFirmware.data.data.version} (${latestFirmware.data.data.name}).`
+								: 'Nenhuma release publicada pela fábrica ainda.'
+							}
+					>
+						<dl className="grid grid-cols-2 gap-2 px-3 py-2 text-sm">
+							<Row
+								label="Firmware Ninbus"
+								value={
+									<>
+										<Signal token={firmwareSignal(device.firmwareStatus)} size="sm" />
+										<span className="mt-0.5 font-mono text-xs">
+											{device.firmwareVersion ?? 'versão não reportada'}
+										</span>
+									</>
+									}
+								/>
+							<Row
+								label="Controlador (periférico)"
+								value={
+									<span className="font-mono text-xs">
+										{device.controllerFirmwareVersion ?? 'versão não reportada'}
+									</span>
+									}
+								/>
+							<Row label="Mais recente (fábrica)" value={<span className="font-mono text-xs">{device.latestFirmwareVersion ?? '—'}</span>} />
+							<Row label="Último update hawkBit" value={<Signal token={deploymentSignal(device.hawkbitUpdateStatus ?? 'unknown')} size="sm" />} />
+						</dl>
+						{device.hawkbitUpdateStatus === 'error' && (
+							<p className="px-3 pb-3 text-xs text-signal-fault">
+								A última tentativa de atualização falhou — verifique o histórico de deployments.
+							</p>
+						)}
 					</Section>
 
 					{/* Company deployments */}

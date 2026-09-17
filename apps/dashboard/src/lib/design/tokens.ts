@@ -114,6 +114,21 @@ export const connectionSignal = (s: string | null | undefined) =>
 export const deploymentSignal = (s: string) => resolve(DEPLOYMENT_SIGNAL, s);
 export const phaseSignal = (s: string) => resolve(PHASE_SIGNAL, s);
 
+// ── Firmware update state (device vs latest factory release) ───────────
+export const FIRMWARE_SIGNAL: Record<string, SignalToken> = {
+	up_to_date: { tone: 'ok', shape: 'dot', label: 'Atualizado' },
+	update_available: { tone: 'busy', shape: 'diamond', label: 'Atualização disponível' },
+	unknown: { tone: 'idle', shape: 'ring', label: 'Versão desconhecida' },
+	error: { tone: 'fault', shape: 'slash', label: 'Erro na atualização' },
+	no_release: { tone: 'idle', shape: 'square', label: 'Sem release' },
+	// Catalog-side (release list): is this the newest published version?
+	latest: { tone: 'ok', shape: 'dot', label: 'Mais recente' },
+	superseded: { tone: 'idle', shape: 'square', label: 'Substituída' },
+};
+
+export const firmwareSignal = (s: string | null | undefined) =>
+	resolve(FIRMWARE_SIGNAL, s, '—');
+
 // ── Tone → CSS classes ─────────────────────────────────────────────────
 // Consumed by primitives to apply the semantic background/text/border WITHOUT
 // repeating the var() soup. Keep these in sync with globals.css tokens.

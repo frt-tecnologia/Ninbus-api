@@ -10,7 +10,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import { connectionSignal, deviceSignal } from '@/lib/design/tokens';
+import { connectionSignal, deviceSignal, firmwareSignal } from '@/lib/design/tokens';
 import { exportToExcel, exportToPdf } from '@/lib/export';
 import { formatDateTime } from '@/lib/utils';
 import type { Company, Device } from '@/types/domain';
@@ -38,6 +38,7 @@ export function DeviceTable({
 }) {
 	const [search, setSearch] = React.useState('');
 	const [company, setCompany] = React.useState<string>('all');
+	const [fwStatus, setFwStatus] = React.useState<string>('all');
 
 	const companyName = (id: string | null) =>
 		!id ? 'Sem empresa' : (companies.find((c) => c.id === id)?.name ?? id.slice(0, 8));
@@ -46,12 +47,13 @@ export function DeviceTable({
 		const term = search.trim().toLowerCase();
 		return devices.filter((d) => {
 			if (company !== 'all' && d.companyId !== company) return false;
+			if (fwStatus !== 'all' && (d.firmwareStatus ?? 'unknown') !== fwStatus) return false;
 			if (!term) return true;
-			return [d.serialNumber, d.serialDisplay, d.name, d.hawkbitTargetId].some((v) =>
-				(v ?? '').toLowerCase().includes(term),
+			return [d.serialNumber, d.serialDisplay, d.name, d.hawkbitTargetId, d.firmwareVersion].some(
+				(v) => (v ?? '').toLowerCase().includes(term),
 			);
 		});
-	}, [devices, search, company]);
+	}, [devices, search, company, fwStatus]);
 
 	const columns: Column<Device>[] = [
 		{
@@ -84,6 +86,17 @@ export function DeviceTable({
 			render: (d) => <Signal token={connectionSignal(d.connectionStatus)} size="sm" />,
 		},
 		{
+			key: 'firmware',
+			header: 'Firmware',
+			sortValue: (d) => d.firmwareVersion ?? '',
+			render: (d) => (
+				<div className="flex flex-col gap-0.5">
+					<span className="font-mono text-xs">{d.firmwareVersion ?? '—'}</span>
+					<Signal token={firmwareSignal(d.firmwareStatus)} size="sm" />
+				</div>
+			),
+		},
+		{
 			key: 'lastSeen',
 			header: 'Última conexão',
 			sortValue: (d) => d.lastSeenAt ?? '',
@@ -113,6 +126,9 @@ export function DeviceTable({
 		{ header: 'Empresa', accessor: (d: Device) => companyName(d.companyId) },
 		{ header: 'Status', accessor: (d: Device) => deviceSignal(d.status).label },
 		{ header: 'Conexão', accessor: (d: Device) => connectionSignal(d.connectionStatus).label },
+		{ header: 'Firmware', accessor: (d: Device) => d.firmwareVersion ?? '—' },
+		{ header: 'Firmware controlador', accessor: (d: Device) => d.controllerFirmwareVersion ?? '—' },
+		{ header: 'Situação firmware', accessor: (d: Device) => firmwareSignal(d.firmwareStatus).label },
 		{ header: 'Última conexão', accessor: (d: Device) => formatDateTime(d.lastSeenAt) },
 		{ header: 'Adicionado', accessor: (d: Device) => formatDateTime(d.createdAt) },
 	];
@@ -170,6 +186,18 @@ export function DeviceTable({
 								{c.name}
 							</SelectItem>
 						))}
+					</SelectContent>
+				</Select>
+				<Select value={fwStatus} onValueChange={setFwStatus}>
+					<SelectTrigger className="h-9 w-52" title="Filtrar por situação de firmware">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="all">Firmware: todos</SelectItem>
+						<SelectItem value="up_to_date">Atualizados</SelectItem>
+						<SelectItem value="update_available">A atualizar</SelectItem>
+						<SelectItem value="unknown">Versão desconhecida</SelectItem>
+						<SelectItem value="error">Com erro</SelectItem>
 					</SelectContent>
 				</Select>
 			</Toolbar>

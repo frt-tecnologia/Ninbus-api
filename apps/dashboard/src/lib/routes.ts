@@ -19,6 +19,7 @@ export const ROUTES = {
 	companies: '/companies',
 	users: '/users',
 	deployments: '/deployments',
+	firmware: '/deployments/firmware',
 	designations: '/designations',
 	login: '/auth/login',
 	signUp: '/auth/sign-up',

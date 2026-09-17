@@ -70,6 +70,14 @@ export interface Device {
 	nextExpectedPollAt?: string | null;
 	ipAddress?: string | null;
 	hawkbitUpdateStatus?: string | null;
+	/** Firmware version the device reported via DDI (null = never reported). */
+	firmwareVersion?: string | null;
+	/** Controller (LightDot peripheral) firmware version reported via DDI. */
+	controllerFirmwareVersion?: string | null;
+	/** Admin enrichment: latest factory firmware version at query time. */
+	latestFirmwareVersion?: string | null;
+	/** Admin enrichment: up_to_date | update_available | unknown | error | no_release */
+	firmwareStatus?: string;
 }
 
 export interface ProvisionDeviceInput {
@@ -193,6 +201,34 @@ export interface TargetStatusTrail {
 	progress?: number | null;
 	currentMessage?: string;
 	trail: StatusTrailEntry[];
+}
+
+// ── Firmware (factory catalog) ───────────────────────────────────────
+
+export type FirmwareArtifactType = 'firmware-ninbus' | 'firmware-controller';
+
+/** A factory-published firmware release (global catalog). */
+export interface FirmwareRelease {
+	id: string;
+	name: string;
+	/** Semantic version tag (required at upload, unique per type). */
+	version: string;
+	artifactType: FirmwareArtifactType | string;
+	description: string | null;
+	originalFilename: string | null;
+	payloadSize: number | null;
+	packageSize: number | null;
+	createdBy: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface FirmwareUploadInput {
+	file: File;
+	name: string;
+	version: string;
+	artifactType: FirmwareArtifactType;
+	description?: string;
 }
 
 // ── API envelope shapes ────────────────────────────────────────────────

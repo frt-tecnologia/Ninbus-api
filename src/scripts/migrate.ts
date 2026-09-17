@@ -146,6 +146,16 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (/^0018_/.test(entry.tag)) {
+				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
+				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'activity_action' AND e.enumlabel = 'firmware.deploy_forced'`;
+				if (enumVals.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

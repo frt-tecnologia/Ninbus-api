@@ -191,6 +191,24 @@ As versões ficam disponíveis em:
   `GET /api/admin/companies/:companyId/devices` (dashboard admin — com
   `latestFirmwareVersion` + `firmwareStatus` computados).
 
+### Quem dispara a atualização (mobile opt-in × console force)
+
+Há DOIS caminhos para iniciar a atualização — a execução no hawkBit é
+idêntica (deployment `download=forced`, `update=forced`; o dispositivo
+instala no próximo polling DDI):
+
+| Caminho | Endpoint | Quem decide | RBAC |
+|---|---|---|---|
+| **Mobile (opt-in)** | `POST /companies/:companyId/devices/firmware/update` | o CLIENTE aprova no app | `companyRole: operator` |
+| **Console (force)** | `POST /api/admin/firmware/deploy` | a FÁBRICA empurra direto | `superAdmin` |
+
+O deploy do console aceita `deviceIds` globais (qualquer company): o backend
+agrupa por company e cria um deployment POR company (DS isolado, verificação
+de atribuição e auditoria próprias — action `firmware.deploy_forced`).
+Na dashboard, o force aparece como badge clicável na tabela de dispositivos
+(dispositivos `update_available`) e como botão na página de detalhe, sempre
+com dialog de confirmação mostrando `versão atual → versão alvo`.
+
 ## 4. Visualização na dashboard (admin)
 
 - **Dispositivos (tabela):** coluna *Firmware* com a versão reportada + sinal

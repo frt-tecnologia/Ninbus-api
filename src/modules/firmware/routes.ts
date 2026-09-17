@@ -1,6 +1,8 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import {
+	DeployFirmwareBodySchema,
 	ErrorResponseSchema,
+	FirmwareDeployResponseSchema,
 	FirmwareLatestResponseSchema,
 	FirmwareReleaseListResponseSchema,
 	FirmwareUploadResponseSchema,
@@ -11,6 +13,7 @@ import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { deleteFirmwareRelease, listFirmwareReleases, uploadFirmwareRelease } from './service';
 import { FirmwareValidationError } from './service';
+import { deployFirmwareToDevices } from './status-service';
 
 /**
  * Firmware Admin Routes — factory-only firmware catalog.
@@ -22,6 +25,7 @@ import { FirmwareValidationError } from './service';
  * - GET /         → list releases chronologically (DB-only, works w/o hawkBit)
  * - GET /latest   → latest release per type (highest semver)
  * - DELETE /:id   → remove a release (409 while locked by a deployment)
+ * - POST /deploy  → FORCE the update to selected devices (console path)
  */
 export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/firmware' }))
 	// POST / — Upload a factory firmware release
@@ -137,6 +141,65 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 					'(null when nothing has been published).',
 			},
 			response: { 200: FirmwareLatestResponseSchema, 403: ErrorResponseSchema },
+		},
+	)
+
+	// POST /deploy — Admin-forced update (console; no end-user interaction)
+	.post(
+		'/deploy',
+		async ({ body, user, set }) => {
+			try {
+				const result = await deployFirmwareToDevices(
+					user.id,
+					body.deviceIds,
+					body?.artifactType ?? 'firmware-ninbus',
+				);
+				await logActivity({
+					actorUserId: user.id,
+					actorEmail: user.email,
+					companyId: null,
+					action: 'firmware.deploy_forced',
+					entityType: 'firmware_release',
+					entityId: String(result.deployments[0]?.result.dsId ?? ''),
+					entityLabel: `${result.devices} device(s), ${result.companies} company/companies`,
+					metadata: { devices: result.devices, companies: result.companies },
+				});
+				return {
+					message: `Forced firmware update queued for ${result.devices} device(s) across ${result.companies} company/companies`,
+					data: result,
+				};
+			} catch (error) {
+				if (error instanceof FirmwareValidationError) {
+					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					return {
+						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
+						message: error.message,
+						code: error.code,
+					};
+				}
+				throw error;
+			}
+		},
+		{
+			auth: true,
+			superAdmin: true,
+			body: DeployFirmwareBodySchema,
+			detail: {
+				tags: ['Firmware'],
+				summary: 'Force a firmware update to selected devices (factory console)',
+				description:
+					'Console counterpart of the mobile trigger: the factory pushes the LATEST release ' +
+					'to the given devices without end-user interaction. Devices are grouped by company ' +
+					'(one deployment per company). hawkBit deployments are download/update FORCED — ' +
+					'devices install on their next DDI poll.',
+			},
+			response: {
+				200: FirmwareDeployResponseSchema,
+				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
+				503: ErrorResponseSchema,
+			},
 		},
 	)
 

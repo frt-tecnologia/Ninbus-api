@@ -1095,6 +1095,30 @@
       "category": "quality",
       "learnedAt": "2026-08-05T18:59:56.136Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-migrations-only-via-command",
+      "rule": "Database migrations must be generated with `bun run db:generate` (drizzle-kit generate) and applied ONLY through the official terminal command (`bun run db:migrate` — or the same script pointed at another env via --env-file). NEVER apply migration SQL by hand, via ad-hoc scripts, or by writing custom SQL. If the startup runner lacks an idempotency check for a new migration tag, add the check following the existing per-tag pattern in src/scripts/migrate.ts (table/column/enum existence probes) so boots stay clean on databases where the command already ran.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-17T21:46:18.728Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-103-ddi-feedback-contract",
+      "rule": "hawkBit 1.0.3 changed the DDI deployment feedback body: it is now {\"status\":{\"execution\":\"...\",\"result\":{\"finished\":\"success|failure|none\"}},\"timestamp\":<ms>}. The legacy v1 format {\"id\":...,\"report\":{\"execution\",\"finished\"}} returns 400 \"hawkbit.server.error.rest.body.notReadable\". When integrating with external APIs whose docs may lag, fetch the live OpenAPI schema (GET /v3/api-docs) and validate the contract with a real request before wiring device code.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-17T21:56:29.241Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-cache-populate-only-on-success",
+      "rule": "Never assign an in-memory cache variable before the await that fills it. Pattern: build the local map first, then publish it to the module-level variable only AFTER the fetch succeeds. Assigning early (cachedX = new Map(); const data = await fetch()) leaves a permanently empty cache when the fetch fails once (e.g. dependency still booting), and every subsequent call takes the create/write path — surfacing as inexplicable 409 EntityAlreadyExists or duplicate writes until process restart.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-17T21:56:35.696Z",
+      "reinforcementCount": 1
     }
   ]
 }

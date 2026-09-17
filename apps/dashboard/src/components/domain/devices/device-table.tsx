@@ -17,6 +17,7 @@ import type { Company, Device } from '@/types/domain';
 import { FileSpreadsheet, FileText } from 'lucide-react';
 import * as React from 'react';
 import { DeviceCategoryEditor } from './device-category-editor';
+import { FirmwareForceCell } from '@/components/domain/firmware/firmware-force-dialog';
 
 /**
  * Dense device table — the operator's primary fleet view. Serials/keys in mono,
@@ -89,12 +90,15 @@ export function DeviceTable({
 			key: 'firmware',
 			header: 'Firmware',
 			sortValue: (d) => d.firmwareVersion ?? '',
-			render: (d) => (
-				<div className="flex flex-col gap-0.5">
-					<span className="font-mono text-xs">{d.firmwareVersion ?? '—'}</span>
-					<Signal token={firmwareSignal(d.firmwareStatus)} size="sm" />
-				</div>
-			),
+			render: (d) =>
+				d.firmwareStatus === 'update_available' && d.latestFirmwareVersion ? (
+					<FirmwareForceCell device={d} targetVersion={d.latestFirmwareVersion} />
+				) : (
+					<div className="flex flex-col gap-0.5">
+						<span className="font-mono text-xs">{d.firmwareVersion ?? '—'}</span>
+						<Signal token={firmwareSignal(d.firmwareStatus)} size="sm" />
+					</div>
+				),
 		},
 		{
 			key: 'lastSeen',

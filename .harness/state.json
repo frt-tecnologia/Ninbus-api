@@ -1,9 +1,9 @@
 {
-  "currentIteration": 50,
+  "currentIteration": 51,
   "maxIterations": 3,
   "phase": "analysis",
   "results": [],
   "overallNotes": "",
-  "humanFeedback": "Nova tarefa: implementar área de firmware na dashboard (seção deployments) para upload de arquivos de atualização de firmware do dispositivo, acessível apenas a super admin (fábrica). Critérios: (1) upload na própria dashboard em seção dedicada; (2) lista cronológica de firmwares com filtro/ordenação reutilizando componentes existentes; (3) uploads devem conter a tag de versão do Ninbus descrita na documentação; (4) novo endpoint que o mobile consulta para verificar se os dispositivos da company estão na versão mais recente, retornando dispositivos desatualizados para o mobile triggar atualização quando o cliente permitir; (5) dispositivo reporta versão de firmware própria e de periféricos (controlador) na request DDI, versões expostas no endpoint de listagem de dispositivos; (6) visualização admin de dispositivos mostra versões de firmware dos dispositivos e periféricos, com controle de quais faltam atualizar/atualizados/erros. Contrato v3 do agente embarcado: TAR com header-info/ (token \"type\"), data/ = manifesto+imagem, TAR puro sem gzip, manifesto assinado com counter > piso do bootloader. Testar no Docker local com Neon, versionar via git (sem push).",
-  "lastUpdated": "2026-09-17T19:56:50.151Z"
+  "humanFeedback": "Extensão da feature de firmware: permitir que o ADMIN force a atualização de firmware diretamente do console (dashboard), sem interação do usuário final. Hoje o endpoint de update é disparado pelo mobile quando o cliente aprova; falta um caminho admin (super admin) para selecionar dispositivos e disparar o deployment direto do console. Entregar: rota admin de deploy forçado, UI na dashboard (seleção de dispositivos + confirmação), testes, E2E no Docker local, versionar via git sem push.",
+  "lastUpdated": "2026-09-17T22:09:33.650Z"
 }

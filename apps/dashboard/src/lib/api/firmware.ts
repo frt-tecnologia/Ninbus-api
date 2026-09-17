@@ -13,6 +13,7 @@ import type {
  *  GET    /api/admin/firmware            → list releases (chronological DESC)
  *  GET    /api/admin/firmware/latest     → latest release per type
  *  POST   /api/admin/firmware            → publish a release (multipart upload)
+ *  POST   /api/admin/firmware/deploy     → FORCE update to selected devices
  *  DELETE /api/admin/firmware/:releaseId → remove a release
  */
 export const firmwareService = {
@@ -37,5 +38,13 @@ export const firmwareService = {
 
 	async remove(releaseId: string): Promise<ActionResponse> {
 		return http.delete<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}`);
+	},
+
+	/** Force the latest firmware to the given devices (console path). */
+	async deploy(deviceIds: string[], artifactType?: string): Promise<ActionResponse> {
+		return http.post<ActionResponse>('/admin/firmware/deploy', {
+			deviceIds,
+			...(artifactType ? { artifactType } : {}),
+		});
 	},
 };

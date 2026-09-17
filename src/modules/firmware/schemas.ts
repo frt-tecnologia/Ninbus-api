@@ -153,4 +153,49 @@ export const TriggerFirmwareUpdateSchema = t.Object(
 	},
 );
 
+// ── Admin-forced deploy (console) ─────────────────────────────────
+
+/** Deployment execution result (shared by mobile trigger and admin force). */
+export const FirmwareDeploymentResultSchema = t.Object({
+	dsId: t.Number(),
+	name: t.String(),
+	version: t.String(),
+	targetsAssigned: t.Number(),
+	artifactType: t.String(),
+	smId: t.Number(),
+	smName: t.String(),
+	verified: t.Number(),
+	failed: t.Number(),
+});
+
+/** POST /api/admin/firmware/deploy — admin body (global device selection). */
+export const DeployFirmwareBodySchema = t.Object(
+	{
+		deviceIds: t.Array(t.String({ format: 'uuid' }), {
+			minItems: 1,
+			maxItems: 500,
+			description: 'Devices to update (any company; grouped into per-company deployments).',
+		}),
+		// Firmware type to deploy — defaults to firmware-ninbus.
+		artifactType: t.Optional(t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')])),
+	},
+	{
+		default: { deviceIds: ['123e4567-e89b-12d3-a456-426614174000'] },
+	},
+);
+
+export const FirmwareDeployResponseSchema = t.Object({
+	message: t.String(),
+	data: t.Object({
+		companies: t.Number({ description: 'Deployments created (one per company).' }),
+		devices: t.Number({ description: 'Total devices scheduled.' }),
+		deployments: t.Array(
+			t.Object({
+				companyId: t.String({ format: 'uuid' }),
+				result: FirmwareDeploymentResultSchema,
+			}),
+		),
+	}),
+});
+
 export { ErrorResponseSchema, GenericActionResponseSchema } from '@common/schemas';

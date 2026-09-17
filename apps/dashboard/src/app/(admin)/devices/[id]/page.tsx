@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { companyService, deploymentService, deviceService, firmwareService } from '@/lib/api';
 import { connectionSignal, deviceSignal, deploymentSignal, firmwareSignal } from '@/lib/design/tokens';
+import { FirmwareForceDialog } from '@/components/domain/firmware/firmware-force-dialog';
 
 /**
  * Device detail — the link target for a device serial/name anywhere in the
@@ -120,6 +121,22 @@ export default function DeviceDetailPage() {
 							<Row label="Mais recente (fábrica)" value={<span className="font-mono text-xs">{device.latestFirmwareVersion ?? '—'}</span>} />
 							<Row label="Último update hawkBit" value={<Signal token={deploymentSignal(device.hawkbitUpdateStatus ?? 'unknown')} size="sm" />} />
 						</dl>
+						{device.firmwareStatus === 'update_available' && device.latestFirmwareVersion && (
+							<div className="border-t px-3 py-2">
+								<FirmwareForceDialog
+									trigger
+									targetVersion={device.latestFirmwareVersion}
+									devices={[
+										{
+											id: device.id,
+											name: device.name,
+											serialDisplay: device.serialDisplay,
+											firmwareVersion: device.firmwareVersion,
+										},
+									]}
+								/>
+							</div>
+						)}
 						{device.hawkbitUpdateStatus === 'error' && (
 							<p className="px-3 pb-3 text-xs text-signal-fault">
 								A última tentativa de atualização falhou — verifique o histórico de deployments.

@@ -1119,6 +1119,14 @@
       "category": "architecture",
       "learnedAt": "2026-09-17T21:56:35.696Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-migration-sql-comments-break-runner",
+      "rule": "Custom migration runners that split files by '--> statement-breakpoint' often filter statements starting with '--'. NEVER place a '--' comment line before the first SQL keyword of a split statement — the comment swallows the statement silently (ADD COLUMN skipped, later statements fail). Use /* inline */ comments instead, or keep comments out of generated SQL files. Also: backfill semantics (existing rows get DEFAULT value A, new rows get DEFAULT B) require ADD COLUMN ... DEFAULT A followed by ALTER COLUMN ... SET DEFAULT B.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-17T23:52:50.803Z",
+      "reinforcementCount": 1
     }
   ]
 }

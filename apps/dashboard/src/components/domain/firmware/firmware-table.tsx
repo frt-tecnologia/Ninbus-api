@@ -16,7 +16,8 @@ import { formatDateTime } from '@/lib/utils';
 import type { FirmwareRelease } from '@/types/domain';
 import { Cpu, FileSpreadsheet, FileText, HardDrive, Package, Trash2 } from 'lucide-react';
 import * as React from 'react';
-import { FirmwareGateActions } from './firmware-gate-actions';
+import { FirmwareGateActions, ReleaseStatusBadge } from './firmware-gate-actions';
+import { compareVersionTags } from '@/lib/semver';
 
 /**
  * Factory firmware catalog — chronological list (newest first from the API)
@@ -69,15 +70,7 @@ export function FirmwareTable({
 				<div className="flex flex-col">
 					<div className="flex items-center gap-1.5">
 						<Id value={r.version} copy />
-						{r.status === 'draft' ? (
-							<span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-600 dark:text-amber-400">
-								rascunho
-							</span>
-						) : (
-							<span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600 dark:text-emerald-400">
-								publicada
-							</span>
-						)}
+						<ReleaseStatusBadge status={r.status} />
 					</div>
 					{r.name && <span className="text-xs text-muted-foreground">{r.name}</span>}
 				</div>
@@ -250,19 +243,4 @@ export function FirmwareTable({
 			</p>
 		</div>
 	);
-}
-
-/** Semver compare for the "latest vs superseded" column (mirrors the API). */
-function compareVersionTags(a: string, b: string): number {
-	const pa = /^(\d+)\.(\d+)\.(\d+)(?:[-+]([0-9A-Za-z.-]+))?$/.exec(a.trim());
-	const pb = /^(\d+)\.(\d+)\.(\d+)(?:[-+]([0-9A-Za-z.-]+))?$/.exec(b.trim());
-	if (!pa || !pb) return a.localeCompare(b);
-	for (let i = 1; i <= 3; i++) {
-		const diff = Number(pa[i]) - Number(pb[i]);
-		if (diff !== 0) return diff;
-	}
-	if (!pa[4] && !pb[4]) return 0;
-	if (!pa[4]) return 1;
-	if (!pb[4]) return -1;
-	return pa[4].localeCompare(pb[4] ?? '');
 }

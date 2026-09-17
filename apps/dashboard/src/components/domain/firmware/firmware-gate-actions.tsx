@@ -73,3 +73,19 @@ export function FirmwareGateActions({
 		</>
 	);
 }
+
+/** draft/published pill for the firmware table version column. */
+export function ReleaseStatusBadge({ status }: { status: 'draft' | 'published' }) {
+	if (status === 'draft') {
+		return (
+			<span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-600 dark:text-amber-400">
+				rascunho
+			</span>
+		);
+	}
+	return (
+		<span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600 dark:text-emerald-400">
+			publicada
+		</span>
+	);
+}

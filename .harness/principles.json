@@ -1135,6 +1135,14 @@
       "category": "security",
       "learnedAt": "2026-09-18T06:26:55.741Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "prehashed-ecdsa-raw-digest-signing",
+      "rule": "When porting a Prehashed ECDSA contract (sign/verify over an already-computed digest, e.g. psa_verify_hash / cryptography's Prehashed(SHA256)): Node's crypto.sign('sha256', digest, key) hashes the digest AGAIN (e = SHA256(digest)) — WRONG. The raw-digest path is crypto.sign(null, digest, key) on Node/OpenSSL, but Bun/BoringSSL rejects it (NO_DEFAULT_DIGEST) — use @noble/curves sign(msgHash, priv, {prehash:false, format:'der'}) for portability. noble v2 arg order is verify(SIGNATURE, message, pub, opts). CRITICAL LESSON: self-consistent sign+verify tests CANNOT catch hash-semantics mismatches — the signature verified against itself either way. ALWAYS cross-validate against the AUTHORITATIVE verifier (here: the Ninbus-v4 Python tools — ota_pack.validate_manifest + pubkey Prehashed verify, exactly what the bootloader does) before shipping any crypto port. Without this round-trip proof every device in the fleet would have rejected server signatures.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-18T13:16:50.278Z",
+      "reinforcementCount": 1
     }
   ]
 }

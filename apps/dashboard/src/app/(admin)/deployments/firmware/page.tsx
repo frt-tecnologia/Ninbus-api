@@ -1,17 +1,17 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { ArrowLeft, Cpu, HardDrive } from 'lucide-react';
-import { PageHeader } from '@/components/layout/page-header';
-import { Section } from '@/components/system';
 import { FirmwareTable } from '@/components/domain/firmware/firmware-table';
 import { FirmwareUploadDialog } from '@/components/domain/firmware/firmware-upload-dialog';
+import { PageHeader } from '@/components/layout/page-header';
+import { Section } from '@/components/system';
 import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { useFetch } from '@/hooks/useFetch';
 import { firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
+import { ArrowLeft, Cpu, HardDrive } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 
 /**
  * Firmware — the factory's firmware release catalog, nested under the
@@ -34,7 +34,14 @@ export default function FirmwarePage() {
 		const result = await firmwareService
 			.remove(release.id)
 			.then((res) => res as { message?: string; hawkbitKept?: boolean; error?: undefined })
-			.catch((e: unknown) => ({ error: e instanceof Error ? e.message : 'Falha ao excluir' }) as { error: string; message?: undefined; hawkbitKept?: undefined });
+			.catch(
+				(e: unknown) =>
+					({ error: e instanceof Error ? e.message : 'Falha ao excluir' }) as {
+						error: string;
+						message?: undefined;
+						hawkbitKept?: undefined;
+					},
+			);
 		setDeleting(null);
 		if ('error' in result && result.error) {
 			toast.error(result.error);
@@ -43,7 +50,7 @@ export default function FirmwarePage() {
 		if (result.hawkbitKept) {
 			toast.warning(
 				result.message ??
-						`Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`,
+					`Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`,
 			);
 		} else {
 			toast.success(result.message ?? `Release ${release.version} excluída.`);
@@ -59,7 +66,7 @@ export default function FirmwarePage() {
 		<>
 			<PageHeader
 				title="Firmware"
-				description="Catálogo de releases de firmware da fábrica — publica atualizações para toda a frota."
+				description="Catálogo de releases da fábrica."
 				action={
 					<>
 						<button
@@ -77,7 +84,7 @@ export default function FirmwarePage() {
 
 			<Section
 				title="Releases"
-				description="Ordem cronológica. Rascunhos (testes da fábrica) ficam invisíveis para os clientes até serem publicados; a versão publicada mais alta de cada tipo define a atualização disponível."
+				description="Rascunhos ficam invisíveis para clientes até a publicação. A versão publicada mais alta define a atualização disponível."
 				className="mb-4"
 			>
 				<div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -105,7 +112,7 @@ export default function FirmwarePage() {
 				onOpenChange={(o) => !o && setToDelete(null)}
 				destructive
 				title={`Excluir a release ${toDelete?.version ?? ''} (${toDelete?.name ?? ''})?`}
-				description="Releases já enviadas a dispositivos deixam o catálogo, mas o binário permanece no servidor de atualização como histórico de deployments."
+				description="Já enviada a dispositivos, a release sai do catálogo, mas o binário permanece como histórico."
 				confirmLabel="Excluir"
 				onConfirm={handleDelete}
 			/>

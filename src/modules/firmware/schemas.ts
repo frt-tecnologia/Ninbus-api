@@ -17,43 +17,40 @@ const NO_CONTROL_CHARS = '^[^\\x00-\\x1F\\x7F]*$';
  */
 export const SEMVER_PATTERN = '^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$';
 
-/** Factory firmware upload — version tag is REQUIRED (unlike company artifacts). */
-export const UploadFirmwareBodySchema = t.Object(
-	{
-		file: t.File({
-			description:
-				'Raw firmware file (.fir, .frz, .bin). Max size: ARTIFACT_MAX_SIZE_MB (default 50 MB). ' +
-				'Packaged server-side into the device .tar contract (header-info + data/payload.bin).',
-		}),
-		name: t.String({
-			minLength: 1,
-			maxLength: 256,
-			pattern: NO_CONTROL_CHARS,
-			description: 'Display name (e.g. "wifi3 — estabilidade CAN")',
-		}),
-		version: t.String({
-			pattern: SEMVER_PATTERN,
-			maxLength: 64,
-			description: 'Semantic version tag of this release (REQUIRED, e.g. "4.0.1")',
-		}),
-		artifactType: t.Union(
-			[
-				t.Literal('firmware-ninbus', { description: 'Ninbus self-update (STM32, reboots)' }),
-				t.Literal('firmware-controller', { description: 'Controller/LightDot firmware via CAN' }),
-			],
-			{ description: 'Firmware type — which component this release updates' },
-		),
-		description: t.Optional(t.String({ maxLength: 1000, description: 'Optional release notes' })),
-	},
-	{
-		default: {
-			name: 'wifi3 — estabilidade CAN',
-			version: '4.0.1',
-			artifactType: 'firmware-ninbus',
-			description: 'Correção de reconexão WiFi + watchdog CAN.',
-		},
-	},
-);
+/**
+ * Factory firmware upload — version tag is REQUIRED (unlike company artifacts).
+ *
+ * NO `default` here: Elysia APPLIES TypeBox defaults to the parsed body, so a
+ * default with example values fabricates data on incomplete requests
+ * (production incident: an empty upload arrived as "wifi3 — estabilidade
+ * CAN" / "4.0.1"). Examples belong in the route `detail.description` only.
+ */
+export const UploadFirmwareBodySchema = t.Object({
+	file: t.File({
+		description:
+			'Raw firmware file (.fir, .frz, .bin). Max size: ARTIFACT_MAX_SIZE_MB (default 50 MB). ' +
+			'Packaged server-side into the device .tar contract (header-info + data/payload.bin).',
+	}),
+	name: t.String({
+		minLength: 1,
+		maxLength: 256,
+		pattern: NO_CONTROL_CHARS,
+		description: 'Display name (e.g. "wifi3 — estabilidade CAN")',
+	}),
+	version: t.String({
+		pattern: SEMVER_PATTERN,
+		maxLength: 64,
+		description: 'Semantic version tag of this release (REQUIRED, e.g. "4.0.1")',
+	}),
+	artifactType: t.Union(
+		[
+			t.Literal('firmware-ninbus', { description: 'Ninbus self-update (STM32, reboots)' }),
+			t.Literal('firmware-controller', { description: 'Controller/LightDot firmware via CAN' }),
+		],
+		{ description: 'Firmware type — which component this release updates' },
+	),
+	description: t.Optional(t.String({ maxLength: 1000, description: 'Optional release notes' })),
+});
 
 /** A firmware release as stored in the local catalog (DB-only read). */
 export const FirmwareReleaseSchema = t.Object({
@@ -61,9 +58,13 @@ export const FirmwareReleaseSchema = t.Object({
 	name: t.String(),
 	version: t.String({ description: 'Semantic version tag (e.g. "4.0.1")' }),
 	artifactType: t.String(),
-	status: t.Enum({ draft: 'draft', published: 'published' }, {
-		description: 'Release gate: draft (factory testing, invisible to users) | published (available)',
-	}),
+	status: t.Enum(
+		{ draft: 'draft', published: 'published' },
+		{
+			description:
+				'Release gate: draft (factory testing, invisible to users) | published (available)',
+		},
+	),
 	description: t.Union([t.String(), t.Null()]),
 	originalFilename: t.Union([t.String(), t.Null()]),
 	payloadSize: t.Union([t.Number(), t.Null()]),
@@ -154,18 +155,13 @@ export const FirmwareStatusResponseSchema = t.Object({
 });
 
 /** POST /devices/firmware/update — trigger the update for selected devices. */
-export const TriggerFirmwareUpdateSchema = t.Object(
-	{
-		deviceIds: t.Array(t.String({ format: 'uuid' }), {
-			minItems: 1,
-			maxItems: 500,
-			description: 'Devices to update (must belong to this company). Cross-tenant ids are dropped.',
-		}),
-	},
-	{
-		default: { deviceIds: ['123e4567-e89b-12d3-a456-426614174000'] },
-	},
-);
+export const TriggerFirmwareUpdateSchema = t.Object({
+	deviceIds: t.Array(t.String({ format: 'uuid' }), {
+		minItems: 1,
+		maxItems: 500,
+		description: 'Devices to update (must belong to this company). Cross-tenant ids are dropped.',
+	}),
+});
 
 // ── Admin-forced deploy (console) ─────────────────────────────────
 
@@ -183,23 +179,20 @@ export const FirmwareDeploymentResultSchema = t.Object({
 });
 
 /** POST /api/admin/firmware/deploy — admin body (global device selection). */
-export const DeployFirmwareBodySchema = t.Object(
-	{
-		deviceIds: t.Array(t.String({ format: 'uuid' }), {
-			minItems: 1,
-			maxItems: 500,
-			description: 'Devices to update (any company; grouped into per-company deployments).',
-		}),
-		// Firmware type to deploy — defaults to firmware-ninbus.
-		artifactType: t.Optional(t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')])),
-		// Explicit release (any status — allows testing a DRAFT on pilot devices).
-		// Omitted → latest PUBLISHED release of the type.
-		releaseId: t.Optional(t.String({ format: 'uuid' })),
-	},
-	{
-		default: { deviceIds: ['123e4567-e89b-12d3-a456-426614174000'] },
-	},
-);
+export const DeployFirmwareBodySchema = t.Object({
+	deviceIds: t.Array(t.String({ format: 'uuid' }), {
+		minItems: 1,
+		maxItems: 500,
+		description: 'Devices to update (any company; grouped into per-company deployments).',
+	}),
+	// Firmware type to deploy — defaults to firmware-ninbus.
+	artifactType: t.Optional(
+		t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')]),
+	),
+	// Explicit release (any status — allows testing a DRAFT on pilot devices).
+	// Omitted → latest PUBLISHED release of the type.
+	releaseId: t.Optional(t.String({ format: 'uuid' })),
+});
 
 export const FirmwareDeployResponseSchema = t.Object({
 	message: t.String(),

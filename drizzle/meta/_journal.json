@@ -148,6 +148,13 @@
       "when": 1789687842487,
       "tag": "0020_lush_doctor_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789706400000,
+      "tag": "0021_firmware_release_counter",
+      "breakpoints": true
     }
   ]
 }

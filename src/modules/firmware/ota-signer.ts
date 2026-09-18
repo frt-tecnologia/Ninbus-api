@@ -1,10 +1,4 @@
-import {
-	type KeyObject,
-	createHash,
-	createPrivateKey,
-	sign as cryptoSign,
-	verify as cryptoVerify,
-} from 'node:crypto';
+import { type KeyObject, createHash, createPrivateKey } from 'node:crypto';
 /**
  * Server-side OTA signer + canonical packager — faithful port of
  * tools/ota_sign.py + tools/ota_pack.py (repo Ninbus-v4).
@@ -25,9 +19,11 @@ import {
  *
  * Cryptographic parity with ota_sign.py:
  *   digest = SHA256(image ‖ counter_le ‖ size_le)
- *   sig    = ECDSA_P-256_sign(priv, SHA256(digest))   ← Prehashed(SHA256)
- * In Node: crypto.sign('sha256', digest, key) — hashes the digest with
- * SHA-256 and signs, exactly the Prehashed semantics.
+ *   sig    = ECDSA_P-256_sign_RAW(priv, digest)   ← Prehashed: e = digest,
+ *           NOT SHA256(digest) — the bootloader's psa_verify_hash consumes
+ *           the manifest digest directly. In Node: crypto.sign(null, digest).
+ * Self-verified + validated against ota_pack/ota_sign by the Python-tools
+ * round-trip (docs/firmware-release-flow.md §5).
  *
  * SECURITY: the private key comes from FIRMWARE_SIGNING_KEY (inline PEM or
  * path). It must be the SAME key whose public half is burned into the
@@ -38,6 +34,11 @@ import {
 import { readFileSync } from 'node:fs';
 import type { Readable } from 'stream';
 import { env } from '@common/config/env';
+// Raw-digest ECDSA (Prehashed contract): Bun's BoringSSL rejects
+// crypto.sign(null, digest, key) with NO_DEFAULT_DIGEST while Node/OpenSSL
+// accepts it — @noble/curves signs the PRE-COMPUTED hash on every runtime
+// (deterministic RFC 6979, DER output, zero native deps, audited).
+import { p256 } from '@noble/curves/nist.js';
 import tar from 'tar-stream';
 
 const MANIFEST_SIZE = 128;
@@ -165,8 +166,26 @@ export function buildSignedManifest(
 	}
 	const key = loadSigningKey(keyOverride);
 	const digest = otaDigest(image, counter);
-	const signature = Buffer.from(cryptoSign('sha256', digest, key));
-	if (!cryptoVerify('sha256', digest, key, signature)) {
+	// PREHASHED contract (boot_verify.c psa_verify_hash + ota_sign.py
+	// Prehashed(SHA256)): e = digest — the manifest digest IS the message hash.
+	// Node: algorithm=null signs the RAW digest (crypto.sign('sha256', digest)
+	// would hash it AGAIN — e = SHA256(digest) — and every device would
+	// reject; caught by the Python-tools round-trip proof, not by Node-only
+	// self-consistent tests). DER-encoded ECDSA output by default.
+	const jwk = key.export({ format: 'jwk' }) as { d?: string };
+	if (!jwk.d) throw new OtaSignerError('chave PEM sem componente privado (d)', 'INVALID_KEY');
+	const privScalar = new Uint8Array(Buffer.from(jwk.d, 'base64url'));
+	const signature = Buffer.from(
+		p256.sign(new Uint8Array(digest), privScalar, { prehash: false, format: 'der' }),
+	);
+	if (
+		!p256.verify(
+			new Uint8Array(signature), // noble v2 arg order: (signature, message, pub)
+			new Uint8Array(digest),
+			p256.getPublicKey(privScalar, false),
+			{ prehash: false, format: 'der' },
+		)
+	) {
 		throw new OtaSignerError('autoverificação da assinatura falhou', 'INVALID_SIGNATURE');
 	}
 	validateDerSignature(signature);

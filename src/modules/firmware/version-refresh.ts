@@ -42,7 +42,11 @@ export async function refreshStaleFirmwareVersions<
 	const now = Date.now();
 	const eligible = rows.filter((r) => {
 		if (!r.id || !r.hawkbitTargetId) return false;
-		if (latestVersion && r.firmwareVersion && compareVersions(r.firmwareVersion, latestVersion) >= 0) {
+		if (
+			latestVersion &&
+			r.firmwareVersion &&
+			compareVersions(r.firmwareVersion, latestVersion) >= 0
+		) {
 			return false;
 		}
 		return now - (lastAttributePullAt.get(r.id) ?? 0) >= REFRESH_TTL_MS;

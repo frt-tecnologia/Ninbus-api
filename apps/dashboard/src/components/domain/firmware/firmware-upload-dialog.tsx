@@ -29,11 +29,11 @@ import { toast } from 'sonner';
 /**
  * Publish a factory firmware release. GOLDEN RULE (v4 device contract): the
  * device only accepts the canonical signed TAR (artifact.info +
- * data/firmware.npm with the NPM manifest). SAME interface, two paths:
- *  - .tar (ota_sign.py + ota_pack.py output) → uploaded verbatim
- *  - raw .bin + counter → the SERVER signs + packs (ota_sign.py parity,
- *    requires FIRMWARE_SIGNING_KEY on the API)
- * firmware-controller also accepts a raw .fir (packaged server-side).
+ * data/firmware.npm with the NPM manifest). ONE form — file, name, version,
+ * type, notes. For firmware-ninbus a raw .bin is signed + packed BY THE
+ * SERVER (ota_sign.py parity, automatic monotonic counter — no manual
+ * field); a tool-generated .tar is stored verbatim. firmware-controller
+ * also accepts a raw .fir (packaged server-side).
  */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -82,7 +82,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 			);
 		setLoading(false);
 		if (err) {
-			toast.error(err);
+			toast.error(err, { duration: 10000 });
 			return;
 		}
 		toast.success(`Rascunho ${version.trim()} criado — publique quando validar.`);
@@ -126,7 +126,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 								className="cursor-pointer file:mr-3 file:cursor-pointer"
 							/>
 							<FieldDescription>
-								Ninbus: .tar do ota_pack.py ou .bin (servidor assina) · Controlador: .fir ou .tar
+								Ninbus: .bin (servidor assina e empacota) ou .tar · Controlador: .fir ou .tar
 							</FieldDescription>
 							{file && (
 								<FieldDescription>

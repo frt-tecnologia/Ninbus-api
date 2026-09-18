@@ -85,6 +85,8 @@ export const FirmwareReleaseSchema = t.Object({
 	originalFilename: t.Union([t.String(), t.Null()]),
 	payloadSize: t.Union([t.Number(), t.Null()]),
 	packageSize: t.Union([t.Number(), t.Null()]),
+	/** Anti-downgrade manifest counter (firmware-ninbus only). Auto: max+1. */
+	counter: t.Union([t.Number(), t.Null()]),
 	createdBy: t.Union([t.String(), t.Null()]),
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,

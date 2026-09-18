@@ -1,13 +1,9 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import {
-	createHash,
-	createPublicKey,
-	verify as cryptoVerify,
-	generateKeyPairSync,
-} from 'node:crypto';
+import { createHash, verify as cryptoVerify, generateKeyPairSync } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import tar from 'tar-stream';
 const tarMod = tar;
+import { p256 } from '@noble/curves/nist.js';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
 import { devices, firmwareReleases } from '../src/common/db/schema';
@@ -282,7 +278,7 @@ describe('Firmware Module', () => {
 		expect(res.status).toBe(403);
 	});
 
-	it('POST /api/admin/firmware rejects raw .bin for firmware-ninbus (400, golden rule)', async () => {
+	it('POST /api/admin/firmware .bin (server-side signing) without key → clear 400', async () => {
 		const form = new FormData();
 		form.append(
 			'file',
@@ -298,11 +294,12 @@ describe('Firmware Module', () => {
 				body: form,
 			}),
 		);
-		// v4 golden rule: raw .bin needs the counter (server-side signing) or a .tar.
+		// The server tries to sign+pack automatically (no manual counter field) —
+		// without FIRMWARE_SIGNING_KEY configured it must fail with a clear 400.
 		expect(res.status).toBe(400);
 		const body = await res.json();
-		expect(body.code).toBe('COUNTER_REQUIRED');
-		expect(body.message).toContain('counter');
+		expect(body.code).toBe('SIGNING_KEY_NOT_CONFIGURED');
+		expect(body.message).toContain('FIRMWARE_SIGNING_KEY');
 	});
 
 	it('POST /api/admin/firmware rejects a tar without the NPM manifest magic (400)', async () => {
@@ -342,7 +339,7 @@ describe('Firmware Module', () => {
 		expect(body.code).toBe('INVALID_PACKAGE');
 	});
 
-	it('POST /api/admin/firmware .bin + counter without signing key → clear 400', async () => {
+	it('POST /api/admin/firmware .bin ignores a stale counter field (automatic)', async () => {
 		const form = new FormData();
 		form.append(
 			'file',
@@ -351,7 +348,7 @@ describe('Firmware Module', () => {
 		form.append('name', 'wifi3');
 		form.append('version', '1.0.0');
 		form.append('artifactType', 'firmware-ninbus');
-		form.append('counter', '7');
+		form.append('counter', '7'); // legacy/ignored — the counter is AUTOMATIC
 		const res = await app.handle(
 			new Request('http://localhost/api/admin/firmware', {
 				method: 'POST',
@@ -359,10 +356,10 @@ describe('Firmware Module', () => {
 				body: form,
 			}),
 		);
-		// tests run without FIRMWARE_SIGNING_KEY → the server-side pipeline is off
+		// same as no counter: automatic policy → no key → clear 400
 		expect(res.status).toBe(400);
 		const body = await res.json();
-		expect(['SIGNING_KEY_NOT_CONFIGURED', 'HAWKBIT_NOT_ENABLED']).toContain(body.code);
+		expect(body.code).toBe('SIGNING_KEY_NOT_CONFIGURED');
 	});
 
 	it('POST /api/admin/firmware fails cleanly when hawkBit is disabled (400)', async () => {
@@ -798,20 +795,30 @@ describe('ota-signer (server-side sign + pack)', () => {
 		expect(manifest.subarray(8, 40).equals(digest)).toBe(true);
 
 		// signature @ [45, 45+sigLen) verifies with the PUBLIC half — what the
-		// bootloader does. cryptoVerify hashes the digest with SHA-256 first
-		// (Prehashed(SHA256) in ota_sign.py).
+		// bootloader does (psa_verify_hash over the RAW manifest digest).
 		const sigLen = manifest[44]!;
 		const signature = manifest.subarray(45, 45 + sigLen);
 		validateDerSignature(signature);
-		expect(cryptoVerify('sha256', digest, publicKey, signature)).toBe(true);
-		expect(() =>
-			cryptoVerify(
-				'sha256',
-				digest,
-				createPublicKey(publicKey),
-				Buffer.from(signature.toString('hex')),
-			),
-		).toThrow();
+		// PREHASHED contract: the manifest digest IS the hash. noble verify with
+		// prehash:false — same math as psa_verify_hash/Prehashed(SHA256). Proven
+		// against the Python tools (ota_pack/ota_sign) in the round-trip.
+		const jwk = publicKey.export({ format: 'jwk' }) as { x: string; y: string };
+		const pubBytes = new Uint8Array(
+			Buffer.concat([
+				Buffer.from([0x04]),
+				Buffer.from(jwk.x, 'base64url'),
+				Buffer.from(jwk.y, 'base64url'),
+			]),
+		);
+		expect(
+			p256.verify(new Uint8Array(signature), new Uint8Array(digest), pubBytes, {
+				prehash: false,
+				format: 'der',
+			}),
+		).toBe(true);
+		// REGRESSION GUARD: hashing the digest AGAIN (crypto 'sha256') must NOT
+		// verify — the double-hash bug caught by the Python round-trip.
+		expect(cryptoVerify('sha256', digest, publicKey, signature)).toBe(false);
 	});
 
 	it('rejects oversized images (≤ 192 KiB)', async () => {

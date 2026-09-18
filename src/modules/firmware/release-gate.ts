@@ -10,7 +10,10 @@ import { FirmwareValidationError } from './service';
 
 /** Fetch one release by id (any status) — throws NOT_FOUND if absent. */
 export async function getFirmwareReleaseById(releaseId: string) {
-	const [release] = await db.select().from(firmwareReleases).where(eq(firmwareReleases.id, releaseId));
+	const [release] = await db
+		.select()
+		.from(firmwareReleases)
+		.where(eq(firmwareReleases.id, releaseId));
 	if (!release) {
 		throw new FirmwareValidationError('Firmware release not found', 'NOT_FOUND');
 	}
@@ -29,10 +32,7 @@ export async function getFirmwareReleaseById(releaseId: string) {
  * release disappears from user-facing endpoints even though deployments
  * already assigned to devices keep running (hawkBit-side).
  */
-export async function setFirmwareReleaseStatus(
-	releaseId: string,
-	status: 'draft' | 'published',
-) {
+export async function setFirmwareReleaseStatus(releaseId: string, status: 'draft' | 'published') {
 	const release = await getFirmwareReleaseById(releaseId);
 	if (release.status === status) {
 		throw new FirmwareValidationError(
@@ -48,6 +48,12 @@ export async function setFirmwareReleaseStatus(
 	if (!updated) {
 		throw new FirmwareValidationError('Firmware release not found', 'NOT_FOUND');
 	}
-	appLogger.info('[FIRMWARE] Release %s (%s v%s) → %s', releaseId, release.name, release.version, status);
+	appLogger.info(
+		'[FIRMWARE] Release %s (%s v%s) → %s',
+		releaseId,
+		release.name,
+		release.version,
+		status,
+	);
 	return updated;
 }

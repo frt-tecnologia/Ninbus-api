@@ -256,13 +256,16 @@ py tools\ota_pack.py <APP>.bin manifest.bin update-app.tar --type firmware-ninbu
 # subir o update-app.tar (o backend valida a estrutura e armazena VERBATIM)
 ```
 
-**B) Servidor assina (dashboard direto):** subir o `.bin` cru + preencher o
-**counter** no dialog — a API assina com `FIRMWARE_SIGNING_KEY` (PEM EC
-P-256 inline ou caminho; a pubkey correspondente deve estar no bootloader) e
-empacota o tar canônico (`ota-signer.ts`, paridade criptográfica com
-ota_sign.py: digest SHA-256(imagem‖counter‖size), assinatura DER
-auto-verificada). Sem a chave configurada → 400 SIGNING_KEY_NOT_CONFIGURED
-(cai no caminho A).
+**B) Servidor assina (dashboard direto):** subir só o `.bin` cru — o formulário
+é exatamente arquivo + nome + versão + tipo + notas. A API assina com
+`FIRMWARE_SIGNING_KEY` (PEM EC P-256 inline ou caminho; a pubkey
+correspondente deve estar no bootloader) e empacota o tar canônico
+(`ota-signer.ts`, paridade criptográfica com ota_sign.py: digest
+SHA-256(imagem‖counter‖size), assinatura DER auto-verificada). O counter
+anti-downgrade é **AUTOMÁTICO**: `max(counter do catálogo ninbus) + 1`,
+monotônico e persistido na coluna `firmware_releases.counter` (releases
+.tar também registram o counter do manifesto, alimentando o piso). Sem a
+chave configurada → 400 SIGNING_KEY_NOT_CONFIGURED (cai no caminho A).
 
 Estrutura (USTAR, mtime=0, determinístico — validada server-side por
 `src/modules/firmware/tar-validator.ts`, port de `ota_pack.py`):
@@ -285,9 +288,14 @@ Regras críticas:
 3. Imagem ≤ 192 KiB (0x30000); `<APP>.bin` = build-prod/zephyr (nunca
    bootloader, nunca .hex, nunca .elf).
 4. **Counter > piso do bootloader** (anti-downgrade, ver `ota meta` no shell
-   do device). Counter ≤ piso → o download passa mas o bootloader rejeita
-   após o reboot (sela/rollback) — o pior caminho. Política: incrementar a
-   cada release e não reutilizar counter de build rejeitada.
+   do device). Counter ≤ piso → o bootloader descarta o staging ANTES de
+   programar qualquer coisa (app intacta), reinicia na versão antiga e ela
+   reporta `closed failure "firmware was not applied by bootloader"` no
+   próximo ciclo — visível como ERROR no dashboard, nunca um falso success
+   (mas é o pior caminho: ciclo desperdiçado). O bootloader TAMBÉM verifica
+   `manifest.counter <= accepted_counter` → downgrade/replay rejeitado.
+   Política: incrementar a cada release e não reutilizar counter de build
+   rejeitada — o backend faz isso automaticamente (max do catálogo + 1).
 5. A pubkey correspondente à `dev-ec256.pem` tem que estar no bootloader
    gravado (produção exigirá chave própria — gate pendente).
 6. `firmware-controller` aceita `.tar` (verbatim) OU `.fir` cru — o backend

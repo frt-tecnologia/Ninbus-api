@@ -217,10 +217,11 @@ Nothing in that chain (upload → hawkBit → S3 → CloudFront → device) runs
 `CalcCRC.exe` or modifies a single byte. So the `.fir` placed in `payload.bin`
 MUST already be the post-CalcCRC image with the bootloader CRC16 at offset 1047
 (read by the STM32 as `*(U16*)(0x08008000 + 1047)`). Uploading a raw pre-CRC
-`.fir`, `.hex`, or `.axf` makes the bootloader reject the image and silently
-keep the old firmware. The upload endpoint logs a warning when a firmware-ninbus
-payload is < 1048 bytes (too small to carry the CRC), but cannot validate the
-CRC value itself.
+`.fir`, `.hex`, or `.axf` makes the bootloader reject the image. NOTE: the
+rejection is NOT silent — the bootloader discards the staging BEFORE
+programming anything (app intact), boots the OLD app, and the old app reports
+`closed failure "firmware was not applied by bootloader"` on its next DDI
+cycle, so hawkBit/the dashboard show a visible ERROR (never a false success).
 
 ### Delivery via CloudFront — IDENTICAL to NFX (no new CDN config)
 

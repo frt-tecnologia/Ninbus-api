@@ -61,6 +61,8 @@ export interface CanonicalTarInfo {
 	payloadSize: number;
 	/** Image bytes only (ninbus); equals payloadSize for the other types. */
 	imageSize: number;
+	/** Manifest anti-downgrade counter (ninbus only; null otherwise). */
+	counter: number | null;
 }
 
 const invalid = (message: string): InvalidPackageError =>
@@ -159,9 +161,9 @@ export async function validateCanonicalTar(
 
 	if (artifactType === 'firmware-ninbus') {
 		const imageSize = validateNinbusManifest(data.data, artifactType);
-		return { payloadSize: data.data.length, imageSize };
+		return { payloadSize: data.data.length, imageSize, counter: data.data.readUInt32LE(40) };
 	}
-	return { payloadSize: data.data.length, imageSize: data.data.length };
+	return { payloadSize: data.data.length, imageSize: data.data.length, counter: null };
 }
 
 /** Extract all members from a tar buffer (name + content). */

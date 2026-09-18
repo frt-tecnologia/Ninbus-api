@@ -194,11 +194,23 @@ export async function runStartupMigrations(databaseUrl?: string) {
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);
 			const sql = fs.readFileSync(sqlFile, 'utf8');
 
-			// Split by statement breakpoint and execute each
+			// Split by statement breakpoint and execute each. Strip comment LINES
+			// (not whole chunks): 0021 ships leading comments + one ALTER with NO
+			// breakpoint — dropping chunks starting with '--' silently skipped the
+			// ALTER while still logging '✓ Applied', leaving the column missing and
+			// every firmware_releases query 500-ing in production.
 			const statements = sql
 				.split('--> statement-breakpoint')
+				.map((chunk: string) =>
+					chunk
+						.split('
+')
+						.filter((line: string) => !line.trim().startsWith('--'))
+						.join('
+'),
+				)
 				.map((s: string) => s.trim())
-				.filter((s: string) => s.length > 0 && !s.startsWith('--'));
+				.filter((s: string) => s.length > 0);
 
 			for (const stmt of statements) {
 				try {

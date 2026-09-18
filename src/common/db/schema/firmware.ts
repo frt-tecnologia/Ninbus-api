@@ -22,10 +22,7 @@ import { user } from './auth';
  * - published: available to every company — the mobile status endpoint
  *   and the opt-in trigger resolve it as the latest release.
  */
-export const firmwareReleaseStatus = pgEnum('firmware_release_status', [
-	'draft',
-	'published',
-]);
+export const firmwareReleaseStatus = pgEnum('firmware_release_status', ['draft', 'published']);
 
 export const firmwareReleases = pgTable(
 	'firmware_releases',
@@ -48,6 +45,10 @@ export const firmwareReleases = pgTable(
 		payloadSize: integer('payload_size'),
 		/** Total .tar archive size uploaded to hawkBit. */
 		packageSize: integer('package_size'),
+		/** Anti-downgrade manifest counter (firmware-ninbus only, from the NPM
+		 *  manifest). Drives the automatic nextCounter = max+1 policy — releases
+		 *  created before this column are treated as 0. */
+		counter: integer('counter'),
 		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

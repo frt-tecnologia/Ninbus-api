@@ -1,8 +1,8 @@
 import { withAuth } from '@common/middleware/auth-guard';
-import { ErrorResponseSchema, FirmwarePublishResponseSchema } from '@modules/firmware/schemas';
-import { logActivity } from '@modules/observability/activity-service';
 import { setFirmwareReleaseStatus } from '@modules/firmware/release-gate';
+import { ErrorResponseSchema, FirmwarePublishResponseSchema } from '@modules/firmware/schemas';
 import { FirmwareValidationError } from '@modules/firmware/service';
+import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 
 /**
@@ -28,13 +28,20 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 					entityLabel: `${release.name} v${release.version}`,
 					metadata: { status: release.status },
 				});
-				return { message: `Release ${release.version} is now available for download`, data: release };
+				return {
+					message: `Release ${release.version} is now available for download`,
+					data: release,
+				};
 			} catch (error) {
-					if (error instanceof FirmwareValidationError) {
-						set.status = error.code === 'NOT_FOUND' ? 404 : 400;
-						return { error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error', message: error.message, code: error.code };
-					}
-					throw error;
+				if (error instanceof FirmwareValidationError) {
+					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					return {
+						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
+						message: error.message,
+						code: error.code,
+					};
+				}
+				throw error;
 			}
 		},
 		{
@@ -74,13 +81,20 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 					entityLabel: `${release.name} v${release.version}`,
 					metadata: { status: release.status },
 				});
-				return { message: `Release ${release.version} is no longer available for download`, data: release };
+				return {
+					message: `Release ${release.version} is no longer available for download`,
+					data: release,
+				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-						set.status = error.code === 'NOT_FOUND' ? 404 : 400;
-						return { error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error', message: error.message, code: error.code };
-					}
-					throw error;
+					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					return {
+						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
+						message: error.message,
+						code: error.code,
+					};
+				}
+				throw error;
 			}
 		},
 		{

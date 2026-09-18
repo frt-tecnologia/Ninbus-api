@@ -14,9 +14,9 @@ import { devices } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { deploySoftwareModuleToTargets } from '@modules/deployments/deploy';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { getFirmwareReleaseById } from './release-gate';
 import { compareVersions, getLatestRelease } from './service';
 import { FirmwareValidationError } from './service';
-import { getFirmwareReleaseById } from './release-gate';
 import { refreshStaleFirmwareVersions } from './version-refresh';
 
 export type DeviceFirmwareStatusValue =
@@ -39,7 +39,6 @@ export function classifyDeviceFirmware(
 		? 'up_to_date'
 		: 'update_available';
 }
-
 
 /**
  * GET firmware status for a company:

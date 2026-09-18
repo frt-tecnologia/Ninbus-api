@@ -256,13 +256,16 @@ py tools\ota_pack.py <APP>.bin manifest.bin update-app.tar --type firmware-ninbu
 # subir o update-app.tar (o backend valida a estrutura e armazena VERBATIM)
 ```
 
-**B) Servidor assina (dashboard direto):** subir o `.bin` cru + preencher o
-**counter** no dialog — a API assina com `FIRMWARE_SIGNING_KEY` (PEM EC
-P-256 inline ou caminho; a pubkey correspondente deve estar no bootloader) e
-empacota o tar canônico (`ota-signer.ts`, paridade criptográfica com
-ota_sign.py: digest SHA-256(imagem‖counter‖size), assinatura DER
-auto-verificada). Sem a chave configurada → 400 SIGNING_KEY_NOT_CONFIGURED
-(cai no caminho A).
+**B) Servidor assina (dashboard direto):** subir só o `.bin` cru — o formulário
+é exatamente arquivo + nome + versão + tipo + notas. A API assina com
+`FIRMWARE_SIGNING_KEY` (PEM EC P-256 inline ou caminho; a pubkey
+correspondente deve estar no bootloader) e empacota o tar canônico
+(`ota-signer.ts`, paridade criptográfica com ota_sign.py: digest
+SHA-256(imagem‖counter‖size), assinatura DER auto-verificada). O counter
+anti-downgrade é **AUTOMÁTICO**: `max(counter do catálogo ninbus) + 1`,
+monotônico e persistido na coluna `firmware_releases.counter` (releases
+.tar também registram o counter do manifesto, alimentando o piso). Sem a
+chave configurada → 400 SIGNING_KEY_NOT_CONFIGURED (cai no caminho A).
 
 Estrutura (USTAR, mtime=0, determinístico — validada server-side por
 `src/modules/firmware/tar-validator.ts`, port de `ota_pack.py`):

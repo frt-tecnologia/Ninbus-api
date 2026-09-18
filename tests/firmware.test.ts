@@ -282,7 +282,7 @@ describe('Firmware Module', () => {
 		expect(res.status).toBe(403);
 	});
 
-	it('POST /api/admin/firmware rejects raw .bin for firmware-ninbus (400, golden rule)', async () => {
+	it('POST /api/admin/firmware .bin (server-side signing) without key → clear 400', async () => {
 		const form = new FormData();
 		form.append(
 			'file',
@@ -298,11 +298,12 @@ describe('Firmware Module', () => {
 				body: form,
 			}),
 		);
-		// v4 golden rule: raw .bin needs the counter (server-side signing) or a .tar.
+		// The server tries to sign+pack automatically (no manual counter field) —
+		// without FIRMWARE_SIGNING_KEY configured it must fail with a clear 400.
 		expect(res.status).toBe(400);
 		const body = await res.json();
-		expect(body.code).toBe('COUNTER_REQUIRED');
-		expect(body.message).toContain('counter');
+		expect(body.code).toBe('SIGNING_KEY_NOT_CONFIGURED');
+		expect(body.message).toContain('FIRMWARE_SIGNING_KEY');
 	});
 
 	it('POST /api/admin/firmware rejects a tar without the NPM manifest magic (400)', async () => {
@@ -342,7 +343,7 @@ describe('Firmware Module', () => {
 		expect(body.code).toBe('INVALID_PACKAGE');
 	});
 
-	it('POST /api/admin/firmware .bin + counter without signing key → clear 400', async () => {
+	it('POST /api/admin/firmware .bin ignores a stale counter field (automatic)', async () => {
 		const form = new FormData();
 		form.append(
 			'file',
@@ -351,7 +352,7 @@ describe('Firmware Module', () => {
 		form.append('name', 'wifi3');
 		form.append('version', '1.0.0');
 		form.append('artifactType', 'firmware-ninbus');
-		form.append('counter', '7');
+		form.append('counter', '7'); // legacy/ignored — the counter is AUTOMATIC
 		const res = await app.handle(
 			new Request('http://localhost/api/admin/firmware', {
 				method: 'POST',
@@ -359,10 +360,10 @@ describe('Firmware Module', () => {
 				body: form,
 			}),
 		);
-		// tests run without FIRMWARE_SIGNING_KEY → the server-side pipeline is off
+		// same as no counter: automatic policy → no key → clear 400
 		expect(res.status).toBe(400);
 		const body = await res.json();
-		expect(['SIGNING_KEY_NOT_CONFIGURED', 'HAWKBIT_NOT_ENABLED']).toContain(body.code);
+		expect(body.code).toBe('SIGNING_KEY_NOT_CONFIGURED');
 	});
 
 	it('POST /api/admin/firmware fails cleanly when hawkBit is disabled (400)', async () => {

@@ -18,8 +18,8 @@ import {
 import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
-import { and, desc, eq } from 'drizzle-orm';
-import { OtaSignerError, buildNinbusTar, parseCounter } from './ota-signer';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { OtaSignerError, buildNinbusTar } from './ota-signer';
 import {
 	type CanonicalArtifactType,
 	InvalidPackageError,
@@ -48,7 +48,6 @@ export class FirmwareValidationError extends Error {
 			| 'LOCKED'
 			| 'INVALID_STATUS'
 			| 'INVALID_PACKAGE'
-			| 'COUNTER_REQUIRED'
 			| 'SIGNING_KEY_NOT_CONFIGURED'
 			| 'INVALID_KEY'
 			| 'INVALID_IMAGE'
@@ -74,10 +73,6 @@ export interface FirmwareUploadInput {
 	version: string;
 	artifactType: (typeof FIRMWARE_TYPES)[number];
 	description?: string;
-	/** Anti-downgrade counter (above the fleet's "ota meta" floor) — REQUIRED
-	 *  for firmware-ninbus raw .bin uploads: the server signs + packs the
-	 *  canonical tar (ota_sign.py parity). Ignored for .tar uploads. */
-	counter?: string;
 }
 
 /** Upload a factory firmware release to hawkBit + register in the local catalog. */
@@ -90,18 +85,18 @@ export async function uploadFirmwareRelease(
 	// Device contract (v4 golden rule): firmware-ninbus ONLY as the canonical
 	// signed .tar. Two equivalent paths, SAME interface:
 	//   A) factory ran ota_sign.py + ota_pack.py → upload the .tar (verbatim)
-	//   B) raw .bin + counter → the server signs + packs (ota-signer.ts,
-	//      ota_sign.py parity — requires FIRMWARE_SIGNING_KEY)
+	//   B) raw .bin → the server signs + packs it (ota-signer.ts, ota_sign.py
+	//      parity — requires FIRMWARE_SIGNING_KEY) with the AUTOMATIC
+	//      anti-downgrade counter: max(catalog counter) + 1 (monotonic —
+	//      never reused, never below a previous release; embedded policy).
 	const isNinbus = input.artifactType === 'firmware-ninbus';
 	let signCounter: number | null = null;
 	if (isNinbus && !isTar) {
-		if (input.counter === undefined || input.counter.trim() === '') {
-			throw new FirmwareValidationError(
-				`firmware-ninbus .bin exige o counter anti-downgrade (acima do piso do "ota meta" da frota) para o servidor assinar e empacotar — ou suba o .tar gerado por ota_pack.py. Recebido: ${file.name}.`,
-				'COUNTER_REQUIRED',
-			);
-		}
-		signCounter = parseCounter(input.counter);
+		const [row] = await db
+			.select({ maxCounter: sql<number>`coalesce(max(${firmwareReleases.counter}), 0)` })
+			.from(firmwareReleases)
+			.where(eq(firmwareReleases.artifactType, 'firmware-ninbus'));
+		signCounter = Number(row?.maxCounter ?? 0) + 1;
 	}
 	validateFileSize(file.size);
 
@@ -113,6 +108,12 @@ export async function uploadFirmwareRelease(
 		// Server-side pipeline: sign + pack, then validate our OWN output
 		// (defense in depth — same validator the .tar path goes through).
 		try {
+			appLogger.info(
+				'[FIRMWARE] Server-side signing: %s (%d KB) counter=%d → canonical tar',
+				file.name,
+				Math.round(fileBuffer.length / 1024),
+				signCounter,
+			);
 			fileBuffer = await buildNinbusTar(fileBuffer, signCounter);
 			tarInfo = await validateCanonicalTar(fileBuffer, 'firmware-ninbus');
 		} catch (e) {
@@ -223,6 +224,8 @@ export async function uploadFirmwareRelease(
 			originalFilename: file.name,
 			payloadSize: payloadBytes,
 			packageSize: tarSize,
+			// ninbus: signed counter (server path) or the manifest counter (.tar)
+			counter: signCounter ?? tarInfo?.counter ?? null,
 			createdBy: userId,
 		})
 		.returning();

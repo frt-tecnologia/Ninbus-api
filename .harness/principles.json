@@ -1159,6 +1159,14 @@
       "category": "process",
       "learnedAt": "2026-09-18T21:43:17.040Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-env-var-compose-passthrough",
+      "rule": "Uma nova variável de env precisa de QUATRO pontos de registro: (1) schema env.ts, (2) .env.example, (3) .env.test, (4) o bloco environment do serviço no docker-compose.yml. O container só vê o que o compose repassa — sem o passthrough, a var existe no .env do host mas é undefined no container (sintoma: NOT_CONFIGURED apesar de 'estar no .env'). Além disso: arquivos .env NÃO suportam valores multilinhas — chaves PEM precisam ser UMA linha com escapes \\n literais (ou um caminho de arquivo); PEM colado em bloco real quebra o parser do compose (\"key cannot contain a space\") ou dropa o valor silenciosamente.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-18T23:20:21.184Z",
+      "reinforcementCount": 1
     }
   ]
 }

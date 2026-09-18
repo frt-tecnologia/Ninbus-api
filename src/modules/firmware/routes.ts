@@ -43,6 +43,7 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 					version: body.version,
 					artifactType: body.artifactType,
 					description: body?.description,
+					counter: body?.counter,
 				});
 				set.status = 201;
 				await logActivity({

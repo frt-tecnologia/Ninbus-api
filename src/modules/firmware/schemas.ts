@@ -53,6 +53,19 @@ export const UploadFirmwareBodySchema = t.Object({
 		{ description: 'Firmware type — which component this release updates' },
 	),
 	description: t.Optional(t.String({ maxLength: 1000, description: 'Optional release notes' })),
+	/**
+	 * Anti-downgrade counter — REQUIRED when uploading a RAW .bin for
+	 * firmware-ninbus: the server signs + packs the canonical tar
+	 * (ota_sign.py parity, needs FIRMWARE_SIGNING_KEY). Must be ABOVE the
+	 * fleet's bootloader floor ("ota meta" on the device shell). Ignored
+	 * for .tar uploads. Decimal or 0x-hex.
+	 */
+	counter: t.Optional(
+		t.String({
+			maxLength: 12,
+			description: 'e.g. "7" or "0x07" — ota meta floor + 1 at minimum',
+		}),
+	),
 });
 
 /** A firmware release as stored in the local catalog (DB-only read). */

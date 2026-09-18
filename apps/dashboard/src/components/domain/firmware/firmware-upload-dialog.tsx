@@ -1,9 +1,5 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -14,13 +10,8 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from '@/components/ui/dialog';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import {
-	Field,
-	FieldDescription,
-	FieldGroup,
-	FieldLabel,
-} from '@/components/ui/field';
 import {
 	Select,
 	SelectContent,
@@ -30,6 +21,10 @@ import {
 } from '@/components/ui/select';
 import { firmwareService } from '@/lib/api';
 import type { FirmwareArtifactType } from '@/types/domain';
+import { UploadCloud } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
 
 /**
  * Publish a factory firmware release: raw firmware file + REQUIRED semver
@@ -80,7 +75,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 			toast.error(err);
 			return;
 		}
-		toast.success(`Firmware ${version.trim()} publicado.`);
+		toast.success(`Rascunho ${version.trim()} criado — publique quando validar.`);
 		setOpen(false);
 		reset();
 		router.refresh();
@@ -88,7 +83,13 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
+		<Dialog
+			open={open}
+			onOpenChange={(v) => {
+				setOpen(v);
+				if (!v) reset();
+			}}
+		>
 			<DialogTrigger asChild>
 				<Button size="sm">
 					<UploadCloud className="h-4 w-4" />
@@ -98,92 +99,85 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 			<DialogContent>
 				<form onSubmit={submit}>
 					<DialogHeader>
-						<DialogTitle>Enviar atualização de firmware</DialogTitle>
+						<DialogTitle>Enviar firmware</DialogTitle>
 						<DialogDescription>
-							Envia o arquivo para o catálogo da fábrica como RASCUNHO — invisível
-							para os clientes até você publicar. O servidor empacota o .tar do
-							contrato do dispositivo (header-info + payload). A tag de versão é
-							obrigatória e única por tipo.
+							Entra como rascunho — publique após validar em dispositivos piloto.
 						</DialogDescription>
 					</DialogHeader>
 					<FieldGroup>
-					<Field data-required>
-						<FieldLabel htmlFor="fw-file">Arquivo de firmware (.fir, .frz, .bin)</FieldLabel>
-						<Input
-							id="fw-file"
-							type="file"
-							accept=".fir,.frz,.nfx,.bin,.hex,.fw"
-							required
-							onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-							className="cursor-pointer file:mr-3 file:cursor-pointer"
-						/>
-						{file && (
-							<FieldDescription>
-								{file.name} · {(file.size / 1024).toFixed(0)} KB
-							</FieldDescription>
-						)}
-					</Field>
-					<Field data-required>
-						<FieldLabel htmlFor="fw-name">Nome da release</FieldLabel>
-						<Input
-							id="fw-name"
-							placeholder='Ex.: "wifi3 — estabilidade CAN"'
-							maxLength={256}
-							required
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-						/>
-					</Field>
-					<div className="grid gap-4 sm:grid-cols-2">
-						<Field data-required data-invalid={version ? !versionValid : undefined}>
-							<FieldLabel htmlFor="fw-version">Tag de versão (semver)</FieldLabel>
+						<Field data-required>
+							<FieldLabel htmlFor="fw-file">Arquivo (.fir, .frz, .bin)</FieldLabel>
 							<Input
-								id="fw-version"
-								placeholder="4.0.1"
-								maxLength={64}
+								id="fw-file"
+								type="file"
+								accept=".fir,.frz,.nfx,.bin,.hex,.fw"
 								required
-								value={version}
-								onChange={(e) => setVersion(e.target.value)}
-								aria-invalid={version ? !versionValid : undefined}
+								onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+								className="cursor-pointer file:mr-3 file:cursor-pointer"
 							/>
-							{version && !versionValid && (
-								<FieldDescription>Use o formato X.Y.Z (ex.: 4.0.1)</FieldDescription>
+							{file && (
+								<FieldDescription>
+									{file.name} · {(file.size / 1024).toFixed(0)} KB
+								</FieldDescription>
 							)}
 						</Field>
 						<Field data-required>
-							<FieldLabel htmlFor="fw-type">Tipo</FieldLabel>
-							<Select value={type} onValueChange={(v) => setType(v as FirmwareArtifactType)}>
-								<SelectTrigger id="fw-type">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="firmware-ninbus">
-										Firmware Ninbus (auto-update, reinicia)
-									</SelectItem>
-									<SelectItem value="firmware-controller">
-										Firmware Controlador (CAN, sem reinício)
-									</SelectItem>
-								</SelectContent>
-							</Select>
+							<FieldLabel htmlFor="fw-name">Nome</FieldLabel>
+							<Input
+								id="fw-name"
+								placeholder="wifi3 — estabilidade CAN"
+								maxLength={256}
+								required
+								value={name}
+								onChange={(e) => setName(e.target.value)}
+							/>
 						</Field>
-					</div>
-					<Field>
-						<FieldLabel htmlFor="fw-desc">Notas da release (opcional)</FieldLabel>
-						<Input
-							id="fw-desc"
-							placeholder="Correções, melhorias, riscos…"
-							maxLength={1000}
-							value={description}
-							onChange={(e) => setDescription(e.target.value)}
-						/>
-					</Field>
-				</FieldGroup>
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field data-required data-invalid={version ? !versionValid : undefined}>
+								<FieldLabel htmlFor="fw-version">Versão (semver)</FieldLabel>
+								<Input
+									id="fw-version"
+									placeholder="4.0.1"
+									maxLength={64}
+									required
+									value={version}
+									onChange={(e) => setVersion(e.target.value)}
+									aria-invalid={version ? !versionValid : undefined}
+								/>
+								{version && !versionValid && (
+									<FieldDescription>Use o formato X.Y.Z (ex.: 4.0.1)</FieldDescription>
+								)}
+							</Field>
+							<Field data-required>
+								<FieldLabel htmlFor="fw-type">Tipo</FieldLabel>
+								<Select value={type} onValueChange={(v) => setType(v as FirmwareArtifactType)}>
+									<SelectTrigger id="fw-type">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="firmware-ninbus">Ninbus (reinicia)</SelectItem>
+										<SelectItem value="firmware-controller">Controlador (CAN)</SelectItem>
+									</SelectContent>
+								</Select>
+							</Field>
+						</div>
+						<Field>
+							<FieldLabel htmlFor="fw-desc">Notas</FieldLabel>
+							<Input
+								id="fw-desc"
+								placeholder="O que mudou nesta release"
+								maxLength={1000}
+								value={description}
+								onChange={(e) => setDescription(e.target.value)}
+							/>
+						</Field>
+					</FieldGroup>
 					<DialogFooter className="mt-5">
 						<Button type="button" variant="outline" onClick={() => setOpen(false)}>
 							Cancelar
 						</Button>
 						<Button type="submit" disabled={loading || !file || !name.trim() || !versionValid}>
-							{loading ? 'Publicando…' : 'Publicar'}
+							{loading ? 'Enviando…' : 'Enviar'}
 						</Button>
 					</DialogFooter>
 				</form>

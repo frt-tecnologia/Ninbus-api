@@ -19,6 +19,7 @@ import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
 import { and, desc, eq } from 'drizzle-orm';
+import { OtaSignerError, buildNinbusTar, parseCounter } from './ota-signer';
 import {
 	type CanonicalArtifactType,
 	InvalidPackageError,
@@ -46,7 +47,13 @@ export class FirmwareValidationError extends Error {
 			| 'DUPLICATE_VERSION'
 			| 'LOCKED'
 			| 'INVALID_STATUS'
-			| 'INVALID_PACKAGE',
+			| 'INVALID_PACKAGE'
+			| 'COUNTER_REQUIRED'
+			| 'SIGNING_KEY_NOT_CONFIGURED'
+			| 'INVALID_KEY'
+			| 'INVALID_IMAGE'
+			| 'INVALID_COUNTER'
+			| 'INVALID_SIGNATURE',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -67,6 +74,10 @@ export interface FirmwareUploadInput {
 	version: string;
 	artifactType: (typeof FIRMWARE_TYPES)[number];
 	description?: string;
+	/** Anti-downgrade counter (above the fleet's "ota meta" floor) — REQUIRED
+	 *  for firmware-ninbus raw .bin uploads: the server signs + packs the
+	 *  canonical tar (ota_sign.py parity). Ignored for .tar uploads. */
+	counter?: string;
 }
 
 /** Upload a factory firmware release to hawkBit + register in the local catalog. */
@@ -77,21 +88,43 @@ export async function uploadFirmwareRelease(
 ) {
 	const isTar = file.name.toLowerCase().endsWith('.tar');
 	// Device contract (v4 golden rule): firmware-ninbus ONLY as the canonical
-	// .tar signed by the Ninbus-v4 tools (ota_sign.py + ota_pack.py). The
-	// controller firmware may arrive as .tar OR as a raw .fir (packaged here).
-	if (input.artifactType === 'firmware-ninbus' && !isTar) {
-		throw new FirmwareValidationError(
-			`firmware-ninbus exige o TAR canônico gerado por tools/ota_sign.py + ota_pack.py (repo Ninbus-v4) — o dispositivo rejeita .bin/.hex/.elf crus ("REJEITADO: manifesto sem magic NPM"). Recebido: ${file.name}.`,
-			'INVALID_EXTENSION',
-		);
+	// signed .tar. Two equivalent paths, SAME interface:
+	//   A) factory ran ota_sign.py + ota_pack.py → upload the .tar (verbatim)
+	//   B) raw .bin + counter → the server signs + packs (ota-signer.ts,
+	//      ota_sign.py parity — requires FIRMWARE_SIGNING_KEY)
+	const isNinbus = input.artifactType === 'firmware-ninbus';
+	let signCounter: number | null = null;
+	if (isNinbus && !isTar) {
+		if (input.counter === undefined || input.counter.trim() === '') {
+			throw new FirmwareValidationError(
+				`firmware-ninbus .bin exige o counter anti-downgrade (acima do piso do "ota meta" da frota) para o servidor assinar e empacotar — ou suba o .tar gerado por ota_pack.py. Recebido: ${file.name}.`,
+				'COUNTER_REQUIRED',
+			);
+		}
+		signCounter = parseCounter(input.counter);
 	}
 	validateFileSize(file.size);
 
 	// Validate the canonical tar structure BEFORE any external call — a
 	// malformed package must fail fast, never reach a device.
-	const fileBuffer = Buffer.from(await file.arrayBuffer());
+	let fileBuffer: Buffer = Buffer.from(await file.arrayBuffer());
 	let tarInfo: Awaited<ReturnType<typeof validateCanonicalTar>> | null = null;
-	if (isTar) {
+	if (signCounter !== null) {
+		// Server-side pipeline: sign + pack, then validate our OWN output
+		// (defense in depth — same validator the .tar path goes through).
+		try {
+			fileBuffer = await buildNinbusTar(fileBuffer, signCounter);
+			tarInfo = await validateCanonicalTar(fileBuffer, 'firmware-ninbus');
+		} catch (e) {
+			if (e instanceof OtaSignerError) {
+				throw new FirmwareValidationError(e.message, e.code);
+			}
+			if (e instanceof InvalidPackageError) {
+				throw new FirmwareValidationError(e.message, 'INVALID_PACKAGE');
+			}
+			throw e;
+		}
+	} else if (isTar) {
 		try {
 			tarInfo = await validateCanonicalTar(fileBuffer, input.artifactType as CanonicalArtifactType);
 		} catch (e) {
@@ -144,9 +177,12 @@ export async function uploadFirmwareRelease(
 	let tarFilename: string;
 	let tarSize: number;
 	let payloadBytes: number;
-	if (isTar) {
+	if (isTar || signCounter !== null) {
 		tarBlob = new Blob([fileBuffer], { type: 'application/x-tar' });
-		tarFilename = file.name;
+		tarFilename =
+			signCounter !== null
+				? file.name.replace(/\.[^.]+$/, '') + '.tar' // server-packaged from .bin
+				: file.name;
 		tarSize = fileBuffer.length;
 		payloadBytes = tarInfo!.imageSize;
 	} else {

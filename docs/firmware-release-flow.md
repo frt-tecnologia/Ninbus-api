@@ -246,13 +246,23 @@ com dialog de confirmação mostrando `versão atual → versão alvo`.
 > zip) o firmware descarta com `closed/failure` — caso real: deployment 657,
 > "REJEITADO: manifesto sem magic NPM".
 
-Pipeline obrigatório (fábrica, Windows):
+Pipeline (dois caminhos equivalentes, MESMA interface de upload):
+
+**A) Fábrica local (Windows):**
 
 ```
 py tools\ota_sign.py <APP>.bin <COUNTER> tools\keys\dev-ec256.pem manifest.bin
 py tools\ota_pack.py <APP>.bin manifest.bin update-app.tar --type firmware-ninbus
 # subir o update-app.tar (o backend valida a estrutura e armazena VERBATIM)
 ```
+
+**B) Servidor assina (dashboard direto):** subir o `.bin` cru + preencher o
+**counter** no dialog — a API assina com `FIRMWARE_SIGNING_KEY` (PEM EC
+P-256 inline ou caminho; a pubkey correspondente deve estar no bootloader) e
+empacota o tar canônico (`ota-signer.ts`, paridade criptográfica com
+ota_sign.py: digest SHA-256(imagem‖counter‖size), assinatura DER
+auto-verificada). Sem a chave configurada → 400 SIGNING_KEY_NOT_CONFIGURED
+(cai no caminho A).
 
 Estrutura (USTAR, mtime=0, determinístico — validada server-side por
 `src/modules/firmware/tar-validator.ts`, port de `ota_pack.py`):

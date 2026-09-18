@@ -12,7 +12,6 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { firmwareService, deviceService } from '@/lib/api';
@@ -23,8 +22,15 @@ import type { FirmwareRelease } from '@/types/domain';
  * devices via the admin force deploy endpoint, with an explicit releaseId.
  * This is how the factory validates a release BEFORE publishing it.
  */
-export function FirmwareTestDialog({ release }: { release: FirmwareRelease }) {
-	const [open, setOpen] = React.useState(false);
+export function FirmwareTestDialog({
+	release,
+	open,
+	onOpenChange,
+}: {
+	release: FirmwareRelease;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
 	const [devices, setDevices] = React.useState<Awaited<ReturnType<typeof deviceService.listAll>>['data']>([]);
 	const [selected, setSelected] = React.useState<Set<string>>(new Set());
 	const [query, setQuery] = React.useState('');
@@ -67,7 +73,7 @@ export function FirmwareTestDialog({ release }: { release: FirmwareRelease }) {
 			toast.success(
 				(res as { message?: string }).message ?? `Teste agendado para ${selected.size} dispositivo(s)`,
 			);
-			setOpen(false);
+			onOpenChange(false);
 			setSelected(new Set());
 			router.refresh();
 		} catch (err) {
@@ -78,17 +84,7 @@ export function FirmwareTestDialog({ release }: { release: FirmwareRelease }) {
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger asChild>
-				<Button
-					type="button"
-					variant="ghost"
-					size="sm"
-					title={`Testar a release ${release.version} em dispositivos piloto`}
-				>
-					<FlaskConical className="h-4 w-4 text-muted-foreground" />
-				</Button>
-			</DialogTrigger>
+		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
@@ -132,7 +128,7 @@ export function FirmwareTestDialog({ release }: { release: FirmwareRelease }) {
 					)}
 				</ul>
 				<DialogFooter>
-					<Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+					<Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
 						Cancelar
 					</Button>
 					<Button onClick={confirm} disabled={loading || selected.size === 0}>

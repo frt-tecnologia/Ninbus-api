@@ -14,7 +14,13 @@ import { exportToExcel, exportToPdf } from '@/lib/export';
 import { firmwareSignal } from '@/lib/design/tokens';
 import { formatDateTime } from '@/lib/utils';
 import type { FirmwareRelease } from '@/types/domain';
-import { Cpu, FileSpreadsheet, FileText, HardDrive, Package, Trash2 } from 'lucide-react';
+import { Cpu, FileSpreadsheet, FileText, HardDrive, Package } from 'lucide-react';
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyTitle,
+} from '@/components/ui/empty';
 import * as React from 'react';
 import { FirmwareGateActions, ReleaseStatusBadge } from './firmware-gate-actions';
 import { compareVersionTags } from '@/lib/semver';
@@ -170,7 +176,7 @@ export function FirmwareTable({
 								})
 							}
 						>
-							<FileText className="h-4 w-4" />
+							<FileText />
 							PDF
 						</Button>
 						<Button
@@ -184,7 +190,7 @@ export function FirmwareTable({
 								})
 							}
 						>
-							<FileSpreadsheet className="h-4 w-4" />
+							<FileSpreadsheet />
 							Excel
 						</Button>
 					</div>
@@ -216,26 +222,24 @@ export function FirmwareTable({
 				error={error}
 				onRetry={onRetry}
 				actions={(r) => (
-					<div className="flex items-center gap-0.5">
-						<FirmwareGateActions release={r} onChanged={onChanged} />
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							title="Excluir release"
-							onClick={() => onDelete(r)}
-						>
-							<Trash2 className="h-4 w-4 text-muted-foreground" />
-						</Button>
-					</div>
+					<FirmwareGateActions release={r} onDelete={onDelete} onChanged={onChanged} />
 				)}
 				empty={
-					<div className="py-12 text-center text-sm text-muted-foreground">
-						<Package className="mx-auto mb-2 h-5 w-5 opacity-40" />
-						{releases.length === 0
-							? 'Nenhum firmware publicado ainda. Use "Enviar firmware".'
-							: 'Nenhuma release corresponde aos filtros.'}
-					</div>
+					<Empty className="py-12">
+						<EmptyHeader>
+							<div className="flex size-11 items-center justify-center rounded-full border bg-muted">
+								<Package className="opacity-60" />
+							</div>
+							<EmptyTitle>
+								{releases.length === 0 ? 'Nenhum firmware no catálogo' : 'Nenhuma release encontrada'}
+							</EmptyTitle>
+							<EmptyDescription>
+								{releases.length === 0
+									? 'Use "Enviar firmware" para adicionar a primeira release.'
+									: 'Nenhuma release corresponde aos filtros aplicados.'}
+							</EmptyDescription>
+						</EmptyHeader>
+					</Empty>
 				}
 			/>
 			<p className="text-xs text-muted-foreground">

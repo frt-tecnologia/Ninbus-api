@@ -15,7 +15,12 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/system';
+import {
+	Field,
+	FieldDescription,
+	FieldGroup,
+	FieldLabel,
+} from '@/components/ui/field';
 import {
 	Select,
 	SelectContent,
@@ -101,75 +106,78 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 							obrigatória e única por tipo.
 						</DialogDescription>
 					</DialogHeader>
-					<div className="mt-4 flex flex-col gap-4">
-						<Field label="Arquivo de firmware (.fir, .frz, .bin)" htmlFor="fw-file" required>
+					<FieldGroup>
+					<Field data-required>
+						<FieldLabel htmlFor="fw-file">Arquivo de firmware (.fir, .frz, .bin)</FieldLabel>
+						<Input
+							id="fw-file"
+							type="file"
+							accept=".fir,.frz,.nfx,.bin,.hex,.fw"
+							required
+							onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+							className="cursor-pointer file:mr-3 file:cursor-pointer"
+						/>
+						{file && (
+							<FieldDescription>
+								{file.name} · {(file.size / 1024).toFixed(0)} KB
+							</FieldDescription>
+						)}
+					</Field>
+					<Field data-required>
+						<FieldLabel htmlFor="fw-name">Nome da release</FieldLabel>
+						<Input
+							id="fw-name"
+							placeholder='Ex.: "wifi3 — estabilidade CAN"'
+							maxLength={256}
+							required
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+						/>
+					</Field>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<Field data-required data-invalid={version ? !versionValid : undefined}>
+							<FieldLabel htmlFor="fw-version">Tag de versão (semver)</FieldLabel>
 							<Input
-								id="fw-file"
-								type="file"
-								accept=".fir,.frz,.nfx,.bin,.hex,.fw"
+								id="fw-version"
+								placeholder="4.0.1"
+								maxLength={64}
 								required
-								onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-								className="cursor-pointer file:mr-3 file:cursor-pointer"
+								value={version}
+								onChange={(e) => setVersion(e.target.value)}
+								aria-invalid={version ? !versionValid : undefined}
 							/>
-							{file && (
-								<span className="text-xs text-muted-foreground">
-									{file.name} · {(file.size / 1024).toFixed(0)} KB
-								</span>
+							{version && !versionValid && (
+								<FieldDescription>Use o formato X.Y.Z (ex.: 4.0.1)</FieldDescription>
 							)}
 						</Field>
-						<Field label="Nome da release" htmlFor="fw-name" required>
-							<Input
-								id="fw-name"
-								placeholder='Ex.: "wifi3 — estabilidade CAN"'
-								maxLength={256}
-								required
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-							/>
-						</Field>
-						<div className="grid gap-4 sm:grid-cols-2">
-							<Field
-								label="Tag de versão (semver)"
-								htmlFor="fw-version"
-								required
-								hint={version && !versionValid ? 'Use o formato X.Y.Z (ex.: 4.0.1)' : undefined}
-							>
-								<Input
-									id="fw-version"
-									placeholder="4.0.1"
-									maxLength={64}
-									required
-									value={version}
-									onChange={(e) => setVersion(e.target.value)}
-									aria-invalid={version ? !versionValid : undefined}
-								/>
-							</Field>
-							<Field label="Tipo" htmlFor="fw-type" required>
-								<Select value={type} onValueChange={(v) => setType(v as FirmwareArtifactType)}>
-									<SelectTrigger id="fw-type">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="firmware-ninbus">
-											Firmware Ninbus (auto-update, reinicia)
-										</SelectItem>
-										<SelectItem value="firmware-controller">
-											Firmware Controlador (CAN, sem reinício)
-										</SelectItem>
-									</SelectContent>
-								</Select>
-							</Field>
-						</div>
-						<Field label="Notas da release (opcional)" htmlFor="fw-desc">
-							<Input
-								id="fw-desc"
-								placeholder="Correções, melhorias, riscos…"
-								maxLength={1000}
-								value={description}
-								onChange={(e) => setDescription(e.target.value)}
-							/>
+						<Field data-required>
+							<FieldLabel htmlFor="fw-type">Tipo</FieldLabel>
+							<Select value={type} onValueChange={(v) => setType(v as FirmwareArtifactType)}>
+								<SelectTrigger id="fw-type">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="firmware-ninbus">
+										Firmware Ninbus (auto-update, reinicia)
+									</SelectItem>
+									<SelectItem value="firmware-controller">
+										Firmware Controlador (CAN, sem reinício)
+									</SelectItem>
+								</SelectContent>
+							</Select>
 						</Field>
 					</div>
+					<Field>
+						<FieldLabel htmlFor="fw-desc">Notas da release (opcional)</FieldLabel>
+						<Input
+							id="fw-desc"
+							placeholder="Correções, melhorias, riscos…"
+							maxLength={1000}
+							value={description}
+							onChange={(e) => setDescription(e.target.value)}
+						/>
+					</Field>
+				</FieldGroup>
 					<DialogFooter className="mt-5">
 						<Button type="button" variant="outline" onClick={() => setOpen(false)}>
 							Cancelar

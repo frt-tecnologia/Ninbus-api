@@ -115,7 +115,7 @@ export function FirmwareForceDialog({
 			<Dialog>
 				<DialogTrigger asChild>
 					<Button size="sm" variant="destructive" className="gap-1.5">
-						<Rocket className="h-3.5 w-3.5" />
+						<Rocket />
 						Forçar atualização
 					</Button>
 				</DialogTrigger>

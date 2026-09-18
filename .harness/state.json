@@ -1,9 +1,9 @@
 {
-  "currentIteration": 53,
+  "currentIteration": 54,
   "maxIterations": 3,
   "phase": "analysis",
   "results": [],
   "overallNotes": "",
-  "humanFeedback": "Exclusão de release bloqueada: DELETE /api/admin/firmware/:id retorna 409 LOCKED quando o Software Module já participou de um Distribution Set atribuído (imutabilidade de auditoria do hawkBit 1.0.3 — mesmo cancelando a action o DS fica locked). Releases de teste ficam presas no catálogo para sempre. Corrigir com semântica catálogo × histórico: DELETE remove SEMPRE a linha do catálogo Ninbus; se o SM estiver locked no hawkBit, o fallback mantém o binário lá (histórico) e a resposta avisa (200 com warning hawkbitKept); full-delete no hawkBit continua acontecendo quando não há deployments. Atualizar mensagem do confirm na dashboard, docs, teste do caminho 404, E2E no Docker (full-delete de release sem deployment + fallback local de release locked), commit sem push.",
-  "lastUpdated": "2026-09-18T00:01:35.774Z"
+  "humanFeedback": "Upgrade de UI com a skill shadcn/ui instalada: a dashboard carece de elementos e interações profissionais. Migrar para componentes shadcn reais mantendo funcionalidade e usabilidade: (1) substituir TODOS os window.confirm nativos por AlertDialog shadcn via componente ConfirmDialog reutilizável; (2) ações de linha das tabelas em DropdownMenu; (3) estados vazios com Empty; (4) forms com Field/FieldGroup shadcn; (5) ícones em botões com data-icon (sem classes de tamanho); (6) instalar componentes que faltam (alert-dialog, field, empty, spinner etc. via CLI oficial do shadcn). Validar com tsc + next build + rebuild docker. Conventional commits, sem push.",
+  "lastUpdated": "2026-09-18T00:16:01.486Z"
 }

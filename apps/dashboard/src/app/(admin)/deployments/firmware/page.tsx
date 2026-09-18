@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Section } from '@/components/system';
 import { FirmwareTable } from '@/components/domain/firmware/firmware-table';
 import { FirmwareUploadDialog } from '@/components/domain/firmware/firmware-upload-dialog';
+import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { useFetch } from '@/hooks/useFetch';
 import { firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
@@ -24,15 +25,11 @@ export default function FirmwarePage() {
 	const router = useRouter();
 	const releases = useFetch(useCallback(() => firmwareService.list(), []));
 	const [deleting, setDeleting] = useState<string | null>(null);
+	const [toDelete, setToDelete] = useState<FirmwareRelease | null>(null);
 
-	async function handleDelete(release: FirmwareRelease) {
-		if (
-			!window.confirm(
-				`Excluir a release ${release.version} (${release.name}) do catálogo?\n` +
-					'Releases já enviadas a dispositivos deixam o catálogo, mas o binário permanece no servidor de atualização como histórico.',
-			)
-		)
-			return;
+	async function handleDelete() {
+		const release = toDelete;
+		if (!release) return;
 		setDeleting(release.id);
 		const result = await firmwareService
 			.remove(release.id)
@@ -100,8 +97,17 @@ export default function FirmwarePage() {
 				loading={releases.loading}
 				error={releases.error}
 				onRetry={releases.refetch}
-				onDelete={handleDelete}
+				onDelete={setToDelete}
 				onChanged={releases.refetch}
+			/>
+			<ConfirmDialog
+				open={toDelete !== null}
+				onOpenChange={(o) => !o && setToDelete(null)}
+				destructive
+				title={`Excluir a release ${toDelete?.version ?? ''} (${toDelete?.name ?? ''})?`}
+				description="Releases já enviadas a dispositivos deixam o catálogo, mas o binário permanece no servidor de atualização como histórico de deployments."
+				confirmLabel="Excluir"
+				onConfirm={handleDelete}
 			/>
 			{deleting && <p className="sr-only">Excluindo release…</p>}
 		</>

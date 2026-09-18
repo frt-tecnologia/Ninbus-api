@@ -7,6 +7,7 @@ import type { Company, Device, User } from '@/types/domain';
 import {
 	Building2,
 	Bus,
+	CircuitBoard,
 	HardDrive,
 	LayoutDashboard,
 	type LucideIcon,
@@ -79,6 +80,14 @@ const NAV_ENTRIES: SearchEntry[] = [
 		sublabel: 'Atualizações OTA',
 		icon: Package,
 		href: ROUTES.deployments,
+		group: 'Navegação',
+	},
+	{
+		id: 'nav-firmware',
+		label: 'Firmware',
+		sublabel: 'Catálogo de releases da fábrica',
+		icon: CircuitBoard,
+		href: ROUTES.firmware,
 		group: 'Navegação',
 	},
 ];

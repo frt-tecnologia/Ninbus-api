@@ -111,7 +111,9 @@ export const adminModule = withAuth(new Elysia({ prefix: '/api/admin' }))
 		'/companies/:companyId/devices',
 		async ({ params }) => {
 			const deviceList = await getCompanyDevices(params.companyId);
-			return { data: deviceList, total: deviceList.length };
+			const { enrichDevicesWithFirmwareStatus } = await import('@modules/firmware/status-service');
+			const enriched = await enrichDevicesWithFirmwareStatus(deviceList);
+			return { data: enriched, total: enriched.length };
 		},
 		{
 			auth: true,

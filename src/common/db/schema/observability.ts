@@ -53,6 +53,10 @@ export const activityActionEnum = pgEnum('activity_action', [
 	'deployment.deleted',
 	'artifact.uploaded',
 	'artifact.deleted',
+	'firmware.published',
+	'firmware.unpublished',
+	'firmware.deleted',
+	'firmware.deploy_forced',
 ]);
 
 export const activityEntityEnum = pgEnum('activity_entity', [
@@ -61,6 +65,7 @@ export const activityEntityEnum = pgEnum('activity_entity', [
 	'device',
 	'deployment',
 	'artifact',
+	'firmware_release',
 	'member',
 	'designation',
 	'user',

@@ -54,6 +54,12 @@ export const devices = pgTable(
 		connectionStatus: varchar('connection_status', { length: 20 }).default('unknown'),
 		/** hawkBit update status — from target.updateStatus. */
 		hawkbitUpdateStatus: hawkbitUpdateStatusEnum('hawkbit_update_status').default('unknown'),
+		/** Firmware version of the Ninbus device itself — reported by the device via
+		 * DDI configData attributes (`fw.ninbus.version`), pulled by the sync engine. */
+		firmwareVersion: text('firmware_version'),
+		/** Firmware version of the attached controller (LightDot peripheral) —
+		 * reported via DDI attributes (`fw.controller.version`). */
+		controllerFirmwareVersion: text('controller_firmware_version'),
 		/** hawkBit IP address — from target.ipAddress. */
 		ipAddress: text('ip_address'),
 		/** hawkBit last poll time — from target.pollStatus.lastRequestAt. */

@@ -1087,6 +1087,46 @@
       "category": "architecture",
       "learnedAt": "2026-08-04T18:08:31.527Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-typed-ownership-errors-not-plain-error",
+      "rule": "Ownership/authorization checks MUST throw TYPED error classes (e.g. DeploymentNotFoundError), NEVER a plain `new Error(...)`. Route catch-alls test `instanceof TypedError` (→ 404) and `error?.status === N`; a plain Error fails BOTH checks and falls through to the generic 503 catch-all — masking a clear \"not found/forbidden\" as a misleading \"Service Unavailable\". Diagnosis proof technique: the 503 response body byte-length, combined with the catch's message template (`Failed to X: ${error.message}`), uniquely identifies the thrown error.message — e.g. content-length 114 = exactly \"Deployment #240 not found in this company\" (41 chars). When a catch-all returns a fixed/templated body, reverse-engineer it via byte count to pinpoint the real throw site. Also: route ownership checks should use LOCAL-DB-only helpers (requireDeploymentOwnership), not functions that fetch from external services (getDeployment), so a local resource returns its state even when the external dependency (hawkBit) is down.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-08-05T18:59:56.136Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migrations-only-via-command",
+      "rule": "Database migrations must be generated with `bun run db:generate` (drizzle-kit generate) and applied ONLY through the official terminal command (`bun run db:migrate` — or the same script pointed at another env via --env-file). NEVER apply migration SQL by hand, via ad-hoc scripts, or by writing custom SQL. If the startup runner lacks an idempotency check for a new migration tag, add the check following the existing per-tag pattern in src/scripts/migrate.ts (table/column/enum existence probes) so boots stay clean on databases where the command already ran.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-17T21:46:18.728Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-hawkbit-103-ddi-feedback-contract",
+      "rule": "hawkBit 1.0.3 changed the DDI deployment feedback body: it is now {\"status\":{\"execution\":\"...\",\"result\":{\"finished\":\"success|failure|none\"}},\"timestamp\":<ms>}. The legacy v1 format {\"id\":...,\"report\":{\"execution\",\"finished\"}} returns 400 \"hawkbit.server.error.rest.body.notReadable\". When integrating with external APIs whose docs may lag, fetch the live OpenAPI schema (GET /v3/api-docs) and validate the contract with a real request before wiring device code.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-17T21:56:29.241Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-cache-populate-only-on-success",
+      "rule": "Never assign an in-memory cache variable before the await that fills it. Pattern: build the local map first, then publish it to the module-level variable only AFTER the fetch succeeds. Assigning early (cachedX = new Map(); const data = await fetch()) leaves a permanently empty cache when the fetch fails once (e.g. dependency still booting), and every subsequent call takes the create/write path — surfacing as inexplicable 409 EntityAlreadyExists or duplicate writes until process restart.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-17T21:56:35.696Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migration-sql-comments-break-runner",
+      "rule": "Custom migration runners that split files by '--> statement-breakpoint' often filter statements starting with '--'. NEVER place a '--' comment line before the first SQL keyword of a split statement — the comment swallows the statement silently (ADD COLUMN skipped, later statements fail). Use /* inline */ comments instead, or keep comments out of generated SQL files. Also: backfill semantics (existing rows get DEFAULT value A, new rows get DEFAULT B) require ADD COLUMN ... DEFAULT A followed by ALTER COLUMN ... SET DEFAULT B.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-17T23:52:50.803Z",
+      "reinforcementCount": 1
     }
   ]
 }

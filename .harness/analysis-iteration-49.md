@@ -1,58 +1,58 @@
 # Iteration 49 Analysis
 
 **Phase**: completed
-**Date**: 2026-08-04T18:09:03.967Z
+**Date**: 2026-08-05T19:00:25.276Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Implementada feature: API empurra HAWKBIT_POLLING_TIME ao hawkBit no boot via PUT /rest/v1/system/configs/pollingTime. Build limpo (bun build 1331 módulos), tsc ZERO erros nos arquivos alterados. E2E via Docker verificado: hawkBit retornou pollingTime=00:00:05 apos apply da API (attempt 1 sucesso pois hawkBit ja estava healthy). API log: '[HAWKBIT-CONFIG] Set pollingTime=00:00:05 in hawkBit'. Ambos containers healthy. Floor HAWKBIT_CONTROLLER_MIN_POLLING_TIME=00:00:05 confirmado no container hawkBit. Valor persiste no DB.
+Build limpo (bun build 1332 módulos). tsc ZERO erros nos 4 arquivos alterados. E2E no Docker local (Neon+hawkBit reais) passou: DS inexistente 999999→404 (reproduz o #240, antes 503); DELETE 999999→404 (o cancel que falhava); DS local 4→200 com 3 targets+estado. 8/8 testes unitários do classifyDeploymentError. 0 regressões (DDI feedback + snapshot flaky confirmados pré-existentes via stash baseline).
 
-**Evidence**: docker compose exec api bun -e '...GET pollingTime...' -> 00:00:05; docker exec hawkbit env | grep MIN_POLLING -> HAWKBIT_CONTROLLER_MIN_POLLING_TIME=00:00:05
+**Evidence**: bun build: 1332 modules; E2E smoke: target-statuses 999999→404, DELETE 999999→404, target-statuses 4→200; bun test errors.test.ts: 8 pass 0 fail
 
 ### ✅ Code Quality
 
-system-config.ts (107 linhas) separacao limpa: modulo proprio dono da logica de apply; sync.ts apenas pluga o hook fire-and-forget em startBackgroundSync (o lugar certo). Logger usa %s/template literals (sem number/unknown como 2o arg). sync.ts: 281->291 linhas (ja passava de 250 ANTES da mudanca — pre-existente, +10 linhas minimas: 1 import + bloco catch). Nao refatorei sync.ts por ser scope creep de divida pre-existente.
+errors.ts=77 linhas, delete.ts=101 (≤250). Logger usa %s com String(status) coercion (princípio 'nunca number como 2º arg'). Separacão limpa: classe+classifier em errors.ts (neutral module, evita import circular service↔delete). device-routes.ts(369) e service.ts(289) já excediam 250 ANTES desta mudança — dívida pré-existente, não aumentei (scope creep evitado).
 
-**Evidence**: git show HEAD:src/modules/devices/sync.ts | wc -l = 281 (pre-existente >250); wc -l system-config.ts = 107
+**Evidence**: wc -l: errors 77, delete 101; grep logger: String(status); git stash baseline confirma linhas pré-existentes
 
 ### ✅ Schema Organization
 
-Nenhuma mudanca em route/response schemas. HAWKBIT_POLLING_TIME adicionada ao EnvSchema (TypeBox) com pattern ^\d{2}:\d{2}:\d{2}$ e default 00:05:00. Sem impacto em schemas de modulos.
+Adicionei 404: ErrorResponseSchema aos response schemas de target-statuses e targets. ErrorResponseSchema é IMPORTADO de schemas.ts (não definido inline) — apenas novo código de status numa entrada existente. Conforme princípio 'route files referenciam response schemas de schemas.ts'.
 
-**Evidence**: env.ts: HAWKBIT_POLLING_TIME: Type.Optional(Type.String({ default:'00:05:00', pattern }))
+**Evidence**: device-routes.ts: response {200,403,404,503} com ErrorResponseSchema importado de @modules/deployments/schemas
 
 ### ✅ Error Handling
 
-Protecao multi-nivel: (1) applyPollingTimeConfig checa hawkbitConfig.enabled -> early return (no-op em testes/dev). (2) hawkbitRequest envolve erros de rede em HawkbitApiError (503). (3) applyPollingTimeConfigRetried DISTINGUE 400 (validation error, ex. pollingTime abaixo do floor) -> log actionable + para (nao retenta pois re-tentar nao resolve) de 503/transient -> retenta 20x a cada 15s (cobre boot de 180s do hawkBit). (4) sync.ts fire-and-forget com .catch() evita unhandled rejection. Validation 400 produz mensagem acionavel sobre baixar HAWKBIT_MIN_POLLING_TIME.
+NÚCLEO do fix: catch-all 503 fixo substituído por classifyDeploymentError que distingue DeploymentNotFoundError→404, HawkbitApiError 404→404 (órfão), 401→502 (auth), 408/503→503 (indisponível), outros→502 com status real. MELHORA a proteção 2-níveis: agora erros de ownership/auth/são distinguíveis em vez de virar 503 genérico. Ownership agora é DB-local (requireDeploymentOwnership), então recurso local devolve estado mesmo com hawkBit fora.
 
-**Evidence**: system-config.ts: if (err instanceof HawkbitApiError && err.status === 400) { log actionable; return; }
+**Evidence**: errors.ts classifyDeploymentError; E2E 404 vs 503 anterior; 8 testes cobrem todos os branches
 
 ### ✅ Test Coverage
 
-Sem regressao: apply e no-op quando HAWKBIT_ENABLED=false (todos os testes rodam assim); validateEnv() validado carregando em NODE_ENV=test com pollingTime default 00:05:00. Nao adicionei teste unitario dedicado ao novo modulo — o caminho e integralmente guardado por hawkbitConfig.enabled e foi verificado via e2e Docker live (hawkBit real aceitando 00:00:05). Tradeoff razoavel para modulo de config infra.
+Adicionado errors.test.ts (8 testes, lógica pura sem DB/hawkBit) cobrindo: DeploymentNotFoundError→404, Hawkbit 404/401/408/503/500, plain Error, non-Error. Protege o fix contra regressão. HAWKBIT_ENABLED=false compatível (teste não toca hawkBit). E2E Docker validou o caminho real.
 
-**Evidence**: HAWKBIT_ENABLED=false NODE_ENV=test bun -e 'import env' -> env OK pollingTime=00:05:00
+**Evidence**: errors.test.ts: 8 pass; cobertura de todos os status branches
 
 ### ✅ Config Centralization
 
-HAWKBIT_POLLING_TIME: schema TypeBox em env.ts + rawEnv construction (process.env['HAWKBIT_POLLING_TIME']) + .env + .env.example + .env.test + docker-compose api environment. HAWKBIT_MIN_POLLING_TIME CORRETAMENTE tratada como propriedade Spring do CONTAINER hawkBit (como config de CDN, nao config da API Ninbus) — NAO esta em env.ts (API nunca a le), apenas em docker-compose hawkBit env (interpola ${HAWKBIT_MIN_POLLING_TIME:-00:00:30}) + .env/.env.example/.env.docker. Consistente com principio 'CDN config is hawkBit-side (Spring properties), not Ninbus API'.
+Nenhuma mudança de configuração. N/A — não toca env.ts/.env*.
 
-**Evidence**: docker-compose hawkBit: HAWKBIT_CONTROLLER_MIN_POLLING_TIME: ${HAWKBIT_MIN_POLLING_TIME:-00:00:30}; env.ts NAO contem HAWKBIT_MIN_POLLING_TIME
+**Evidence**: git diff: nenhum arquivo de config alterado
 
 ### ✅ Security
 
-apply reusa Basic Auth existente do http.ts (sem novas secrets/credenciais). Guardado por hawkbitConfig.enabled. NENHUM endpoint Management API exposto publicamente — nginx continua bloqueando /rest/v1 (so DDI publico). A API fala com hawkBit pela rede interna Docker (http://hawkbit:8080). PUT so toca a chave pollingTime (nao credenciais/roles). deviceKey nao envolvido.
+Isolamento de tenant PRESERVADO e FORTALECIDO: requireDeploymentOwnership continua verificando companyId no DB local (igual antes). Mudar de getDeployment→requireDeploymentOwnership não enfraquece auth — apenas remove a dependência de hawkBit da verificação de ownership. RBAC companyRole intacto. Não expõe dados cross-tenant.
 
-**Evidence**: nginx ninbus.conf: /rest/v1/* hard-blocked, internal api->hawkbit:8080 only
+**Evidence**: delete.ts requireDeploymentOwnership: select companyId where hawkbitDsId; companyRole macro nas rotas inalterado
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Principio arquitetural registrado: p-hawkbit-pollingtime-architecture — hawkBit 1.0.3 tem 3 camadas distintas de polling (pollingTime runtime config DB via Management API com body {value} JSON; min-polling-time floor como Spring property 00:00:30 sem chave de system config; pollingOverdueTime separado). Documentado no system-config.ts header + env.ts + docker-compose comments. Preveni futuros erros: 415 (text/plain), 'not well formed' (string pura), 400 configValueInvalid (abaixo do floor).
+Princípio registrado: p-typed-ownership-errors-not-plain-error — checks de ownership DEVEM lançar classes tipadas (não Error genérico) senão catch-alls mascaram 404 como 503. Inclui técnica de diagnóstico por byte-count do body de catch-all fixo/templado (114 bytes = 'Deployment #240 not found in this company'). 137 princípios totais.
 
-**Evidence**: principles.json +136; system-config.ts docblock explica as 3 camadas e o formato {value} JSON
+**Evidence**: harness_learn_principle p-typed-ownership-errors-not-plain-error (category: quality)
 
 ## Overall Notes
 
-Iteracao: feature de polling-time config-as-code. API empurra HAWKBIT_POLLING_TIME (.env) ao hawkBit no boot via Management API (PUT /rest/v1/system/configs/pollingTime, body {"value":"HH:MM:SS"}, application/json). Floor de 30s (Spring hawkbit.controller.min-polling-time) abaixado via HAWKBIT_MIN_POLLING_TIME no container hawkBit. TESTADO E2E via Docker: hawkBit retornou pollingTime=00:00:05 apos apply (tentativa 1, hawkBit ja healthy), valor persiste no DB, ambos containers healthy, floor confirmado. Arquivos: system-config.ts (novo, 107 linhas, retry+enabled-guard+400-vs-503 distinction), env.ts (+schema+rawEnv), hawkbit.ts (+accessor), sync.ts (+hook fire-and-forget), docker-compose.yml (+api env var +hawkBit floor), .env/.env.example/.env.test/.env.docker. Premissa inicial (5s via system config) estava ERRADA — descobri empiricamente que hawkBit rejeita <30s sem abaixar o floor Spring, e que minPollingTime NAO e chave de system config. Corrigi tudo e validei. ZERO commits (HEAD intact). Local .env deixado em 00:00:05/00:00:05 para a demo do usuario; defaults seguros (00:05:00/00:00:30) em .env.example/.env.docker.
+Fix do bug 503→404 em deployments (mascaramento de erro de ownership). Causa raiz provada por byte-count: content-length 114 = exatamente "Deployment #240 not found in this company" (41 chars) → requireDeploymentOwnership lançava Error genérico, não DeploymentNotFoundError, então o catch-all mascarava 404 como 503. MUDANÇAS (4 arquivos, cirúrgicas): (1) errors.ts NOVO — classe DeploymentNotFoundError + helper classifyDeploymentError(error)→{status,error,message} mapeando 404/401→502/408·503→503/outros→502; (2) delete.ts — requireDeploymentOwnership lança DeploymentNotFoundError tipado; (3) service.ts — re-exporta a classe de errors.ts (evita import circular service↔delete); (4) device-routes.ts — target-statuses/status-trail/targets usam requireDeploymentOwnership (DB local, não getDeployment que precisa de hawkBit) + classifyDeploymentError no catch; adicionado 404 aos response schemas; removido binding morto. TESTADO E2E no Docker local (Neon + hawkBit reais): DS inexistente 999999 → 404 (era 503); DELETE 999999 (o "cancel" que falhava) → 404 (era 503); DS local 4 → 200 com 3 targets+estado. 8 testes unitários novos (classifyDeploymentError, todos branches). tsc LIMPO nos arquivos alterados; build limpo (1332 módulos); biome limpo; 0 regressões (DDI/snapshot flaky pré-existentes confirmados via stash baseline). NOTA: device-routes.ts (369 linhas) e service.ts (289) já excediam 250 ANTES desta mudança — dívida pré-existente, não aumentei (scope creep evitado conforme princípio). OBS importante para o usuário: o DS 240 em produção é um ÓRFÃO de dados (existe no hawkBit mas NÃO no DB local do Ninbus) — com este fix ele agora devolve 404 honesto em vez de 503 enganoso. Para que o 240 ESPECÍFICO devolva estado E seja cancelável, é preciso o backfill (Mudança 3a) — não implementado por "minimal changes"; disponível mediante confirmação.

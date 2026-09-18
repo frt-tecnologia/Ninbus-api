@@ -19,9 +19,9 @@ import {
 	deploymentParams,
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
+import { classifyDeploymentError } from './errors';
 import { isTargetOwnedByCompany } from './helpers';
 import * as service from './service';
-const { DeploymentNotFoundError } = service;
 
 const deviceParams = t.Object({
 	companyId: t.String({ format: 'uuid' }),
@@ -68,20 +68,21 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/target-statuses',
 		async ({ params, query, set }) => {
 			try {
-				// Ownership check
-				await service.getDeployment(params.companyId, Number(params.deploymentId));
+				// Ownership: LOCAL DB only — never require hawkBit here. The data fetch
+				// below is already resilient (reads target_ids from the local record +
+				// frozen snapshot; every hawkBit call is try/catch), so a local
+				// deployment returns its state even when hawkBit is down.
+				await service.requireDeploymentOwnership(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentTargetStatuses(Number(params.deploymentId), {
 					offset: query?.offset,
 					limit: query?.limit,
 				});
 				return { data: result.content, total: result.total };
 			} catch (error) {
-				appLogger.warn(
-					'[DEPLOYMENTS] target-statuses failed: %s',
-					error instanceof Error ? error.message : String(error),
-				);
-				set.status = 503;
-				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+				const { status, ...body } = classifyDeploymentError(error);
+				appLogger.warn('[DEPLOYMENTS] target-statuses %s: %s', String(status), body.message);
+				set.status = status;
+				return body;
 			}
 		},
 		{
@@ -103,6 +104,7 @@ export const deploymentDeviceRoutes = withAuth(
 			response: {
 				200: TargetStatusesResponseSchema,
 				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},
@@ -113,8 +115,7 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/targets/:targetId/status-trail',
 		async ({ params, set }) => {
 			try {
-				// Ownership check
-				await service.getDeployment(params.companyId, Number(params.deploymentId));
+				await service.requireDeploymentOwnership(params.companyId, Number(params.deploymentId));
 				const trail = await service.getTargetStatusTrail(params.targetId);
 				if (!trail) {
 					set.status = 404;
@@ -122,12 +123,10 @@ export const deploymentDeviceRoutes = withAuth(
 				}
 				return { data: trail };
 			} catch (error) {
-				appLogger.warn(
-					'[DEPLOYMENTS] status-trail failed: %s',
-					error instanceof Error ? error.message : String(error),
-				);
-				set.status = 503;
-				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+				const { status, ...body } = classifyDeploymentError(error);
+				appLogger.warn('[DEPLOYMENTS] status-trail %s: %s', String(status), body.message);
+				set.status = status;
+				return body;
 			}
 		},
 		{
@@ -160,20 +159,17 @@ export const deploymentDeviceRoutes = withAuth(
 		'/:deploymentId/targets',
 		async ({ params, query, set }) => {
 			try {
-				// Ownership check
-				await service.getDeployment(params.companyId, Number(params.deploymentId));
+				await service.requireDeploymentOwnership(params.companyId, Number(params.deploymentId));
 				const result = await service.getDeploymentTargets(Number(params.deploymentId), {
 					offset: query?.offset,
 					limit: query?.limit,
 				});
 				return { data: result.content, total: result.total };
 			} catch (error) {
-				appLogger.warn(
-					'[DEPLOYMENTS] list targets failed: %s',
-					error instanceof Error ? error.message : String(error),
-				);
-				set.status = 503;
-				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
+				const { status, ...body } = classifyDeploymentError(error);
+				appLogger.warn('[DEPLOYMENTS] list targets %s: %s', String(status), body.message);
+				set.status = status;
+				return body;
 			}
 		},
 		{
@@ -188,6 +184,7 @@ export const deploymentDeviceRoutes = withAuth(
 			response: {
 				200: RawTargetListResponseSchema,
 				403: ErrorResponseSchema,
+				404: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},

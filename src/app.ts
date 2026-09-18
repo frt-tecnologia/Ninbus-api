@@ -14,6 +14,9 @@ import { designationRoutes } from '@modules/companies/designation-routes';
 import { companyMemberRoutes } from '@modules/companies/member-routes';
 import { deploymentsModule } from '@modules/deployments';
 import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
+import { firmwareAdminRoutes } from '@modules/firmware/routes';
+import { firmwareGateRoutes } from '@modules/firmware/gate-routes';
+import { firmwareStatusRoutes } from '@modules/firmware/status-routes';
 import { devicesModule } from '@modules/devices';
 import { deviceCategoryRoutes } from '@modules/devices/category-routes';
 import { deviceConnectionsRoutes } from '@modules/devices/connections-routes';
@@ -173,6 +176,9 @@ export const createApp = () => {
 		.use(artifactsModule)
 		.use(artifactManageRoutes)
 		.use(artifactCategoryRoutes)
+		.use(firmwareAdminRoutes)
+		.use(firmwareGateRoutes)
+		.use(firmwareStatusRoutes)
 		.use(sseModule)
 		.use(sseGlobalModule)
 		.use(sseTestModule);

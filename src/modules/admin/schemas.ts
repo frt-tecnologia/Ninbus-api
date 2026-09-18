@@ -59,6 +59,16 @@ export const AdminDeviceSchema = t.Object({
 	serialDisplay: t.Union([t.String(), t.Null()]),
 	status: t.String(),
 	connectionStatus: t.Union([t.String(), t.Null()]),
+	/** Firmware version of the device — reported via DDI, synced by the engine. */
+	firmwareVersion: t.Union([t.String(), t.Null()]),
+	/** Firmware version of the attached controller (LightDot peripheral). */
+	controllerFirmwareVersion: t.Union([t.String(), t.Null()]),
+	/** hawkBit update status — 'error' means the last OTA attempt failed. */
+	hawkbitUpdateStatus: t.Union([t.String(), t.Null()]),
+	/** Latest factory firmware version at query time (null = none published). */
+	latestFirmwareVersion: t.Union([t.String(), t.Null()]),
+	/** up_to_date | update_available | unknown | error | no_release */
+	firmwareStatus: t.String(),
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
 	lastSeenAt: t.Union([dateTimeString, t.Null()]),

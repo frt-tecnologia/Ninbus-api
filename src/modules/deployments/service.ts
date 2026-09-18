@@ -1,12 +1,8 @@
-import { randomUUID } from 'crypto';
 import { db } from '@common/db';
-import { artifacts, deployments, user } from '@common/db/schema';
+import { deployments, user } from '@common/db/schema';
 import {
 	type NinbusArtifactType,
-	getOrCreateDistributionSetType,
 	hawkbitDistributionSets,
-	hawkbitSoftwareModules,
-	hawkbitTargets,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
@@ -22,23 +18,20 @@ export { deleteDeployment, requireDeploymentOwnership } from './delete';
 import { requireDeploymentOwnership } from './delete';
 export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
 export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
-import { forceCloseActiveActions, forceCloseCancelActions } from './actions';
 export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
 import { findSoftwareModule, getLocalDeployment, resolveHawkbitTargetIds } from './helpers';
+import { deploySoftwareModuleToTargets } from './deploy';
+
+export { deploySoftwareModuleToTargets, verifySoftwareModuleHasArtifacts } from './deploy';
 
 export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
 
 // ---------------------------------------------------------------------------
-// Error classes
+// Error classes (defined in ./errors to avoid a circular import with delete.ts)
 // ---------------------------------------------------------------------------
 
-export class DeploymentNotFoundError extends Error {
-	constructor(message = 'Deployment not found') {
-		super(message);
-		this.name = 'DeploymentNotFoundError';
-	}
-}
+export { DeploymentNotFoundError } from './errors';
 
 // ---------------------------------------------------------------------------
 // CRUD — all scoped by companyId
@@ -77,128 +70,9 @@ export async function createDeployment(
 		);
 	}
 
-	// Verify SM has at least one artifact (binary file)
-	let smHasArtifacts = true;
-	try {
-		const smFiles = await hawkbitSoftwareModules.listArtifacts(sm.id);
-		if (smFiles.length === 0) smHasArtifacts = false;
-	} catch {
-		smHasArtifacts = false;
-	}
-	if (!smHasArtifacts) {
-		throw new Error(
-			`Software Module "${sm.name}" (#${sm.id}) has no artifacts (binary files). ` +
-				'Upload the artifact file first. DDI will not offer deploymentBase for an incomplete DS.',
-		);
-	}
-
-	const dsType = await getOrCreateDistributionSetType(data.artifactType);
-	const dsUuid = randomUUID();
-	const ds = await hawkbitDistributionSets.create({
-		name: `ds-${dsUuid}`,
-		version: `v-${Date.now()}`,
-		description: `${data.name} | artifact: ${sm.name} (${data.artifactType}) | uuid: ${dsUuid}`,
-		type: dsType.typeKey,
-		modules: [{ id: sm.id }],
-	});
-
-	appLogger.info(
-		`[DEPLOY] Created DS #${ds.id} (type=${dsType.typeKey}) with SM #${sm.id} (${sm.name}). Assigning to ${targetIds.length} targets...`,
-	);
-
-	// Step 1: Force-close ALL pre-existing active actions.
-	await forceCloseActiveActions(targetIds);
-
-	// Step 2: Assign targets to the new DS.
-	await hawkbitDistributionSets.assignTargets(ds.id, targetIds);
-
-	// Step 3: Force-close auto-created cancel actions.
-	await forceCloseCancelActions(targetIds);
-
-	// Step 4: Verify deployment is properly offered via DDI.
-	const { checkDDiReadiness } = await import('./ddi-diagnostics');
-	let verifiedCount = 0;
-	const failedTargets: string[] = [];
-
-	for (const targetId of targetIds) {
-		try {
-			const targetActions = await hawkbitTargets.getActions(targetId, { limit: 10 });
-			const activeUpdate = targetActions.content.find(
-				(a: { active: boolean; type: string }) => a.active && a.type === 'update',
-			);
-			if (activeUpdate) {
-				verifiedCount++;
-			} else {
-				failedTargets.push(targetId);
-			}
-		} catch {
-			failedTargets.push(targetId);
-		}
-	}
-
-	if (failedTargets.length > 0) {
-		appLogger.warn(
-			'[DEPLOY] %d/%d targets FAILED verification.',
-			failedTargets.length,
-			targetIds.length,
-		);
-		for (const targetId of failedTargets.slice(0, 3)) {
-			try {
-				const diag = await checkDDiReadiness(targetId);
-				appLogger.error({ targetId, ...diag }, '[DEPLOY] DDI Diagnostic');
-			} catch {
-				/* diagnostic failed */
-			}
-		}
-	}
-
-	// Write-through: register in local DB with audit data
-	// Resolve artifact metadata for audit trail
-	let artifactDisplayName = data.artifactName;
-	let artifactOrigFile: string | null = null;
-	try {
-		const [localArtifact] = await db
-			.select({ name: artifacts.name, originalFilename: artifacts.originalFilename })
-			.from(artifacts)
-			.where(eq(artifacts.hawkbitSmId, sm.id));
-		if (localArtifact) {
-			artifactDisplayName = localArtifact.name;
-			artifactOrigFile = localArtifact.originalFilename ?? null;
-		}
-	} catch {
-		/* non-critical */
-	}
-
-	await db.insert(deployments).values({
-		companyId,
-		hawkbitDsId: ds.id,
-		name: data.name,
-		artifactType: data.artifactType,
-		artifactName: artifactDisplayName,
-		artifactVersion: sm.version,
-		artifactOriginalFile: artifactOrigFile,
-		targetCount: targetIds.length,
-		targetIds: JSON.stringify(targetIds),
-		createdBy: userId,
-	});
-
-	appLogger.info('[DEPLOY] Registered DS %d for company %s', ds.id, companyId);
-
-	appLogger.info(
-		`[DEPLOY] "${data.name}" (DS #${ds.id}): ${verifiedCount}/${targetIds.length} verified.`,
-	);
-
-	return {
-		dsId: ds.id,
-		name: data.name,
-		version: ds.version,
-		targetsAssigned: targetIds.length,
-		artifactType: data.artifactType,
-		smId: sm.id,
-		smName: sm.name,
-		verified: verifiedCount,
-		failed: failedTargets.length,
-	};
+	// Shared execution: DS creation, target assignment, DDI verification,
+	// local audit record. See ./deploy — also used by the factory firmware flow.
+	return deploySoftwareModuleToTargets(companyId, userId, sm, data.artifactType, data.name, targetIds);
 }
 
 /** Get deployment — verify ownership first. Enriched with local audit data. */

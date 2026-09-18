@@ -19,6 +19,7 @@ export default defineConfig({
 		'companies', 'company_members', 'pending_company_members',
 		'categories', 'devices', 'device_category_assignments',
 		'posts', 'artifacts', 'artifact_category_assignments', 'deployments',
+		'firmware_releases',
 		'activity_log', 'device_connections',
 	],
 	verbose: true,

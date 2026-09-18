@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Package, Cpu, Settings2 } from 'lucide-react';
+import { Package, Cpu, Settings2, CircuitBoard } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Section } from '@/components/system';
 import { DeploymentDonut, type DonutSegment } from '@/components/system/charts';
@@ -10,6 +11,7 @@ import { CompanyPicker } from '@/components/domain/deployments/company-picker';
 import { useFetch } from '@/hooks/useFetch';
 import { useAllDeployments } from '@/hooks/use-all-deployments';
 import { companyService } from '@/lib/api';
+import { ROUTES } from '@/lib/routes';
 import { cn } from '@/lib/utils';
 
 /**
@@ -67,6 +69,7 @@ export default function DeploymentsPage() {
 	const [companyId, setCompanyId] = useState<string>(''); // '' = all (grouped)
 	const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
 	const isAll = companyId === '';
+	const router = useRouter();
 
 	// Apply company + type filters.
 	const filtered = useMemo(() => {
@@ -105,6 +108,17 @@ export default function DeploymentsPage() {
 			<PageHeader
 				title="Deployments"
 				description="Observabilidade das atualizações OTA por empresa."
+				action={
+					<button
+						type="button"
+						onClick={() => router.push(ROUTES.firmware)}
+						title="Catálogo de releases de firmware da fábrica"
+						className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+					>
+						<CircuitBoard className="h-4 w-4" />
+						Firmware
+					</button>
+				}
 			/>
 
 			<Section title="Funil de atualização" description={description} className="mb-4">

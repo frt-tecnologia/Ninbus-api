@@ -122,6 +122,59 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (entry.tag === '0016_firmware_releases') {
+				// Table+column-level check — CREATE TABLE / ALTER ADD COLUMN are not
+				// idempotent. Table exists AND devices.firmware_version present means
+				// the migration was fully applied (e.g. manually on cloud databases).
+				const fwTable =
+					await client`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='firmware_releases'`;
+				const fwCol = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema='public' AND table_name='devices'
+					AND column_name='firmware_version'`;
+				if (fwTable.length > 0 && fwCol.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0017_firmware_activity_enums') {
+				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
+				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'activity_action' AND e.enumlabel = 'firmware.published'`;
+				if (enumVals.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (/^0018_/.test(entry.tag)) {
+				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
+				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'activity_action' AND e.enumlabel = 'firmware.deploy_forced'`;
+				if (enumVals.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (/^0019_/.test(entry.tag)) {
+				// Column check — CREATE TYPE/ADD COLUMN would fail if re-run.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_name = 'firmware_releases' AND column_name = 'status'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (/^0020_/.test(entry.tag)) {
+				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
+				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'activity_action' AND e.enumlabel = 'firmware.unpublished'`;
+				if (enumVals.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);

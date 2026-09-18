@@ -106,9 +106,11 @@ export async function getAllUsersWithCounts() {
 
 /**
  * Lists all devices across all companies (for the admin device inventory).
+ * Enriched with firmware versions (DDI-reported) + update status vs the
+ * latest factory release.
  */
 export async function getAllDevices() {
-	return await db
+	const rows = await db
 		.select({
 			id: devices.id,
 			companyId: devices.companyId,
@@ -118,10 +120,16 @@ export async function getAllDevices() {
 			serialDisplay: devices.serialDisplay,
 			status: devices.status,
 			connectionStatus: devices.connectionStatus,
+			firmwareVersion: devices.firmwareVersion,
+			controllerFirmwareVersion: devices.controllerFirmwareVersion,
+			hawkbitUpdateStatus: devices.hawkbitUpdateStatus,
 			createdAt: devices.createdAt,
 			updatedAt: devices.updatedAt,
 			lastSeenAt: devices.lastSeenAt,
 		})
 		.from(devices)
 		.orderBy(desc(devices.createdAt));
+
+	const { enrichDevicesWithFirmwareStatus } = await import('@modules/firmware/status-service');
+	return enrichDevicesWithFirmwareStatus(rows);
 }

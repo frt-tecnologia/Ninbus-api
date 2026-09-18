@@ -1,81 +1,58 @@
 # Iteration 50 Analysis
 
 **Phase**: completed
-**Date**: 2026-07-04T04:21:23.979Z
+**Date**: 2026-09-17T22:05:11.840Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Dashboard build limpo (next build, 12 rotas), tsc limpo. Member add validado: usuário existente→granted (201), email novo→pending (201). 3 novas páginas de detalhe servem 200 autenticadas. Endpoints consumidos validados via proxy com dados reais (company/deployments/devices/members/users). ZERO mudanças em src/ → backend não regredido (bun build usa o código existente intacto).
+Todos os 6 critérios de aceite validados em E2E real no Docker local: (1) upload dashboard /deployments/firmware super-admin; (2) lista cronológica com filtro/ordenação/export reutilizando DataTable/Toolbar; (3) tag semver obrigatória validada client+server; (4) GET /companies/:id/devices/firmware/status (viewer) + POST .../update (operator) — mobile consulta e trigga; (5) DDI configData reporta fw.ninbus.version + fw.controller.version, expostas em /companies/:id/devices e /api/admin/devices; (6) views admin com latestFirmwareVersion + firmwareStatus (up_to_date/update_available/unknown/error/no_release). Build bun OK (2.17MB), next build OK. tests/firmware.test.ts 27/27. devices.test.ts 6 fails = mesmos flaky de rede Neon do baseline 3cc94b6 (pré-existentes, documentados). Bugs reais corrigidos durante o E2E: cache poisoning em getOrCreateSoftwareModuleType/DistributionSetType (409 eterno pós-falha única) e gap pós-instalação (refresh on-demand rate-limited).
 
-**Evidence**: git diff --name-only | grep src/ = vazio. next build EXIT 0. curl member add = 201 granted:true e 201 pending:true. curl /api/admin/companies/7539... = FRT Express 4 devs. curl detail pages = HTTP 200.
+**Evidence**: E2E Docker: POST /api/admin/firmware 201 (TAR 6656B, header-info/featureidentity.json + data/payload.bin, TAR puro); GET lista/latest; PUT configData DDI 200 → sync puxa fw.ninbus.version/fw.controller.version ('[SYNC] Firmware versions updated for 1 device(s)'); GET /companies/:c/devices/firmware/status (latest+devices+summary); POST /devices/firmware/update (DS 44/45, targetsAssigned:1, verified); feedback 1.0.3 closed/success → in_sync; refresh on-demand → up_to_date
 
 ### ✅ Code Quality
 
-Todos arquivos <250 linhas (members-manager 148, member-add-form 203, deployment detail 166, company detail 140, device detail 128, deployment-table 131, device-table 206). Separação limpa: tipos em domain.ts, service em deployments.ts, páginas são containers, componentes presentacionais. Link extraído como sub-componente (DeploymentName). Padrão de busca-seleção reutilizável.
+Todos os arquivos do módulo firmware <250 linhas após refatoração final (service 256→230, status-service 276→203 via extração de versioning.ts e version-refresh.ts). Separação schemas→routes→service mantida; deploySoftwareModuleToTargets extraído de deployments/service.ts para reuso; tar-packager e validators de artifacts reutilizados sem duplicação. Logger com %s em todos os novos arquivos.
 
-**Evidence**: wc -l todos <250. member-add-form.tsx isolou o combobox; members-manager.tsx só dialog+lista.
+**Evidence**: wc -l: routes 193, schemas 156, service 230, status-routes 104, status-service 203, versioning 36, version-refresh 79, firmware-sync 103, deploy.ts 184, schema/firmware 68; dashboard: table 250, dialog 184, page 101, api client 41
 
 ### ✅ Schema Organization
 
-Backend schemas intocados (nenhuma mudança em src/modules/*/schemas.ts). Frontend: novo tipo TargetDeploymentStatus + TargetActionStatus centralizado em types/domain.ts (espelha trail-schemas.ts da API). Service method targetStatuses() em lib/api/deployments.ts (não inline).
+firmware/schemas.ts possui todos os body/response schemas (FirmwareReleaseListResponseSchema, FirmwareLatestResponseSchema, CompanyFirmwareStatusSchema, re-exports de ErrorResponseSchema/GenericActionResponseSchema); routes.ts e status-routes.ts apenas importam — zero response schemas inline (grep confirma). Query/params simples locais (permitido). t.Date() usado nas colunas Drizzle timestamp.
 
-**Evidence**: git diff --name-only não inclui schemas.ts. domain.ts adiciona TargetDeploymentStatus agrupado sob header 'Target status (per-device deployment outcome)'.
+**Evidence**: grep: routes.ts response 200/201/400/403 usam FirmwareReleaseListResponseSchema, FirmwareLatestResponseSchema, ErrorResponseSchema (importados); t.Date() em createdAt/updatedAt
 
 ### ✅ Error Handling
 
-Deployment detail trata statuses.error (503 hawkBit) com mensagem graceful. Device detail trata device ausente. Company detail trata company.error. Todas as páginas usam useFetch (loading/error/data). Member add trata erro via toast. Nenhum crash em estados de falha.
+Proteção em dois níveis implementada e validada: (1) uploadFirmwareRelease/triggerFirmwareUpdate checam hawkbitConfig.enabled → FirmwareValidationError 400 HAWKBIT_NOT_ENABLED (testado); (2) rotas capturam erros de rede → 503 (validado ao vivo: hawkBit bootando retornou 502 limpo em vez de 500). FirmwareValidationError com codes (NOT_FOUND/DUPLICATE_VERSION/LOCKED). Refresh on-demand best-effort com catch documentado.
 
-**Evidence**: curl target-statuses = 503 (hawkBit down) → página mostra 'Não foi possível carregar os dispositivos deste deployment.' sem crash.
+**Evidence**: Testes: HAWKBIT_NOT_ENABLED 400 (upload, update); cross-tenant 403; E2E: hawkBit bootando → 502/503 limpo; catch silencioso no refresh (best-effort documentado)
 
 ### ✅ Test Coverage
 
-ZERO mudanças no backend → 10 arquivos de teste de integração não afetados. bun test bloqueado por segfault pré-existente do Bun 1.3.12/Windows (princípio p-buntest-segfault documentado), não pelo meu código. Dashboard não tem runner de teste configurado (sem playwright/vitest). Validação feita via build+typecheck+contrato de API manual (curl via proxy). Limite honesto: não adicionei testes e2e de frontend (escopo: 'alterações atômicas só no dashboard').
+tests/firmware.test.ts: 27 testes cobrindo compareVersions (semver + prerelease), extractFirmwareVersions (chaves DDI), classifyDeviceFirmware (todas as 5 situações), RBAC (401 sem auth, 403 não-super-admin em /api/admin/firmware), list/latest DB-only com HAWKBIT_ENABLED=false, HAWKBIT_NOT_ENABLED 400, cross-tenant 403 no status/update, enriquecimento admin (latestFirmwareVersion + firmwareStatus). test-helpers limpa firmware_releases no cleanAll(). Idempotente.
 
-**Evidence**: git diff --name-only = apenas apps/dashboard/. bun test = segfault Bun 1.3.12 (conhecido). next build = typecheck+compile OK.
+**Evidence**: bun test tests/firmware.test.ts: 27 pass, 0 fail, 51 expect() calls; test-helpers truncate firmware_releases
 
 ### ✅ Config Centralization
 
-Nenhuma config nova adicionada. .env revertido após teste (email temp removido). Páginas usam services existentes (companyService, deploymentService, deviceService, memberService, userService) — nenhum process.env direto. Nenhuma variável nova em env.ts/.env.example/.env.test.
+Nenhuma variável de env nova foi necessária (reusa hawkbitConfig, SUPER_ADMIN_EMAILS e endpoints existentes). Zero leituras de process.env nos novos módulos (grep vazio). SUPER_ADMIN_EMAILS estendido apenas no .env local da bancada para o E2E (não versionado).
 
-**Evidence**: git diff .env = vazio (revertido). grep process.env nos arquivos novos = nenhum.
+**Evidence**: grep process.env src/modules/firmware/ src/modules/devices/firmware-sync.ts → vazio
 
 ### ✅ Security
 
-Nenhum endpoint novo, nenhuma mudança de auth. Novas páginas consomem endpoints existentes autenticados (/api/admin/* superAdmin, /api/companies/* companyRole). Cookie session via proxy same-origin (inalterado). member add usa POST /companies/:id/members existente (valida role+membership no backend). Nenhum deviceKey/segredo exposto.
+/api/admin/firmware usa superAdmin macro (SUPER_ADMIN_EMAILS) — validado em teste (403 para usuário comum) e E2E (super admin de bancada). Endpoints do mobile company-scoped via companyRole (viewer para GET status, operator para POST update). Dispositivo autentica apenas com TargetToken. Cross-tenant testado (403). Upload valida tipo/tamanho/extensão no handler pós-auth.
 
-**Evidence**: Páginas usam useFetch→http (cookie same-origin). memberService.add = endpoint existente. Sem auth bypass novo.
+**Evidence**: Testes RBAC: 401/403 em /api/admin/firmware; companyRole viewer no GET, operator no POST (status-routes.ts); E2E: device só via TargetToken próprio
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-Princípio aprendido: seleção por referência (objeto) elimina bugs de 'texto composto' (nome+email) em comboboxes — nunca preencher campo de texto livre com display label; armazenar o objeto/id selecionado e derivar o valor submetido dele. Padrão de páginas de detalhe com link target estabelecido (/entidade/[id]).
+3 princípios novos registrados: (1) migrations apenas via comando oficial (nunca SQL ad-hoc); (2) contrato de feedback DDI do hawkBit 1.0.3 {status:{execution,result:{finished}},timestamp} — formato legado retorna 400; (3) popular caches em memória somente após sucesso do fetch. docs/firmware-release-flow.md documenta fluxo completo, contrato TAR v3, chaves de atributo DDI e o comportamento do sync com sessão ativa.
 
-**Evidence**: member-add-form.tsx: selectedUser: User|null; submitEmail = selectedUser?.email ?? (email válido digitado). Princípio será registrado.
+**Evidence**: Princípios: p-migrations-only-via-command, p-hawkbit-103-ddi-feedback-contract, p-cache-populate-on-success (Total: 140). docs/firmware-release-flow.md com contrato DDI validado + runbook de counter
 
 ## Overall Notes
 
-## 3 tarefas atômicas no DASHBOARD apenas (branch nova feat/dashboard-member-fix-links-deployment-detail, base release/hawkbit-api). ZERO mudanças no backend (git diff confirma nenhum arquivo em src/).
-
-### Task 1 — Adesão de membros CORRIGIDA
-Bug eliminado: a seleção agora é por referência (objeto User), não por texto. Clicar num usuário → setSelectedUser(objeto) → chip mostra nome+email → email do add vem sempre do objeto selecionado (nunca "nome (email)"). Também permite digitar email novo → convite pendente. Split em 2 arquivos (<250 linhas): member-add-form.tsx (203, combobox) + members-manager.tsx (148, dialog+lista).
-
-### Task 2 — Nomes clicáveis em TODAS as telas
-3 novas páginas de detalhe (destino dos links): /companies/[id], /devices/[id], /deployments/[companyId]/[deploymentId]. Links adicionados em: company-table (nome→detalhe), device-table (serial→detalhe device, empresa→detalhe company), deployment-table (nome→detalhe), designation-table (empresa→detalhe).
-
-### Task 3 — Breakdown de dispositivos por deployment
-Nova página /deployments/[companyId]/[deploymentId] mostra QUAIS dispositivos atualizaram/falharam/pendentes (não só contagens), agrupados por outcome (Atualizados/Com falha/Pendentes/etc) via endpoint target-statuses. Cada dispositivo mostra nome + controllerId + phase signal + mensagem.
-
-### Validação empírica (testado localmente)
-- Dashboard tsc --noEmit: LIMPO. next build: LIMPO (12 rotas, todas geradas).
-- Todos arquivos <250 linhas.
-- Endpoints validados via proxy com dados reais (super admin autenticado): company detail (FRT Express, 4 devs), deployments (2), devices (4), members (3), users (52), all-devices (18).
-- Member add testado: usuário existente → granted=true (201); email novo → pending=true (201).
-- Todas páginas de detalhe servem 200 autenticadas.
-- target-statuses retorna 503 (hawkBit indisponível localmente) → página trata graciosamente.
-- ZERO arquivos src/ modificados → sem regressão backend.
-
-### Limites honestos
-- hawkBit não roda localmente → happy-path do target-statuses não exercitado com dados ao vivo (mas endpoint existe, auth funciona, erro tratado).
-- bun test segfault no Bun 1.3.12/Windows (pré-existente, não meu código); sem runner e2e no dashboard (sem playwright configurado). Frontend validado por build+typecheck+contrato de API manual.
-- Test data no DB: usuário localtest@ninbus.local + membros adicionados no FRT Express durante teste (.env já revertido, email temp removido).
+Feature de gestão de firmware completa e validada E2E no Docker local (Neon dev + test DBs, hawkBit 1.0.3, TargetToken DDI na 8180). Branch feat/firmware-management com 8 commits convencionais, SEM push (requisito). Ciclo validado de ponta a ponta: upload super-admin 201 → catálogo cronológico → mobile status (latest/devices/summary) → trigger (DS criado, target atribuído) → device DDI (poll → deploymentBase → download TAR → feedback 1.0.3 → configData) → up_to_date via refresh on-demand. Bugs reais encontrados e corrigidos durante o E2E: veneno de cache em getOrCreate (409 eterno pós-boot do hawkBit) e gap de sincronização pós-instalação (refresh on-demand rate-limited 60s, auto-limitante). Migrações aplicadas UNICAMENTE via comando oficial após rollback da aplicação manual (feedback do revisor incorporado) + checks idempotentes no runner seguindo o padrão existente. Contrato de feedback DDI do hawkBit 1.0.3 descoberto via /v3/api-docs e documentado (formato legado retorna 400). 3 princípios novos registrados (migrations via comando, feedback DDI 1.0.3, cache-populate-on-success).

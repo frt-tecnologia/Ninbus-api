@@ -209,7 +209,18 @@ export async function getLatestRelease(type: string, publishedOnly = true) {
 // Delete
 // ---------------------------------------------------------------------------
 
-/** Delete a release — hawkBit SM first (may be locked by a DS → 409). */
+/**
+ * Delete a release — catalog × history semantics.
+ *
+ * hawkBit 1.0.3 locks a Software Module FOREVER once it is part of a
+ * Distribution Set assigned to targets (deployment audit trail — cancelling
+ * the action does not unlock it). So:
+ *
+ * - not yet deployed → full delete (hawkBit SM + local row);
+ * - locked (deployed) → the local catalog row is ALWAYS removed; the binary
+ *   stays on hawkBit as history and the response warns about it
+ *   (hawkbitKept: true).
+ */
 export async function deleteFirmwareRelease(releaseId: string) {
 	const [release] = await db
 		.select()
@@ -219,24 +230,29 @@ export async function deleteFirmwareRelease(releaseId: string) {
 		throw new FirmwareValidationError('Firmware release not found', 'NOT_FOUND');
 	}
 
+	let hawkbitKept = false;
 	try {
 		await hawkbitSoftwareModules.delete(release.hawkbitSmId);
 	} catch (error: any) {
 		if (error?.status === 409 || error?.status === 423) {
-			throw new FirmwareValidationError(
-				`Release ${release.version} is locked by an existing deployment (Distribution Set). It cannot be deleted while deployments reference it.`,
-				'LOCKED',
-			);
+			hawkbitKept = true;
+		} else {
+			throw error;
 		}
-		throw error;
 	}
 
 	await db.delete(firmwareReleases).where(eq(firmwareReleases.id, releaseId));
 	appLogger.info(
-		'[FIRMWARE] Release %s (%s v%s) deleted',
+		'[FIRMWARE] Release %s (%s v%s) deleted (hawkbitKept=%s)',
 		releaseId,
 		release.name,
 		release.version,
+		hawkbitKept,
 	);
-	return { message: 'Firmware release deleted successfully' };
+	return hawkbitKept
+		? {
+				message: `Release ${release.version} removed from the catalog. The binary remains on hawkBit as deployment history (it was already assigned to devices).`,
+				hawkbitKept: true,
+			}
+		: { message: 'Firmware release deleted successfully', hawkbitKept: false };
 }

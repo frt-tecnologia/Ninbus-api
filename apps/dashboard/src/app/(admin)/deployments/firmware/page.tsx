@@ -28,22 +28,29 @@ export default function FirmwarePage() {
 	async function handleDelete(release: FirmwareRelease) {
 		if (
 			!window.confirm(
-				`Excluir a release ${release.version} (${release.name})?\n` +
-					'Releases referenciadas por deployments ficam bloqueadas (409).',
+				`Excluir a release ${release.version} (${release.name}) do catálogo?\n` +
+					'Releases já enviadas a dispositivos deixam o catálogo, mas o binário permanece no servidor de atualização como histórico.',
 			)
 		)
 			return;
 		setDeleting(release.id);
-		const err = await firmwareService
+		const result = await firmwareService
 			.remove(release.id)
-			.then(() => null)
-			.catch((e: unknown) => (e instanceof Error ? e.message : 'Falha ao excluir'));
+			.then((res) => res as { message?: string; hawkbitKept?: boolean; error?: undefined })
+			.catch((e: unknown) => ({ error: e instanceof Error ? e.message : 'Falha ao excluir' }) as { error: string; message?: undefined; hawkbitKept?: undefined });
 		setDeleting(null);
-		if (err) {
-			toast.error(err);
+		if ('error' in result && result.error) {
+			toast.error(result.error);
 			return;
 		}
-		toast.success(`Release ${release.version} excluída.`);
+		if (result.hawkbitKept) {
+			toast.warning(
+				result.message ??
+						`Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`,
+			);
+		} else {
+			toast.success(result.message ?? `Release ${release.version} excluída.`);
+		}
 		releases.refetch();
 	}
 

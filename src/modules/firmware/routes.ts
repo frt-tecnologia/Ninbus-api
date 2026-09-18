@@ -2,11 +2,11 @@ import { withAuth } from '@common/middleware/auth-guard';
 import {
 	DeployFirmwareBodySchema,
 	ErrorResponseSchema,
+	FirmwareDeleteResponseSchema,
 	FirmwareDeployResponseSchema,
 	FirmwareLatestResponseSchema,
 	FirmwareReleaseListResponseSchema,
 	FirmwareUploadResponseSchema,
-	GenericActionResponseSchema,
 	UploadFirmwareBodySchema,
 } from '@modules/firmware/schemas';
 import { logActivity } from '@modules/observability/activity-service';
@@ -182,18 +182,14 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 					action: 'firmware.deleted',
 					entityType: 'firmware_release',
 					entityId: params.releaseId,
+					metadata: { hawkbitKept: result.hawkbitKept },
 				});
 				return result;
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : error.code === 'LOCKED' ? 409 : 400;
+					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
 					return {
-						error:
-							error.code === 'NOT_FOUND'
-								? 'Not Found'
-								: error.code === 'LOCKED'
-									? 'Conflict'
-									: 'Bad Request',
+						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Bad Request',
 						message: error.message,
 					};
 				}
@@ -208,14 +204,14 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 				tags: ['Firmware'],
 				summary: 'Delete a firmware release (factory only)',
 				description:
-					'Removes a release from hawkBit and the local catalog. Returns 409 while any ' +
-					'Distribution Set still references the Software Module (deployment history).',
+					'Removes the release from the catalog. When the Software Module is locked ' +
+					'by a Distribution Set (already deployed — audit history), the binary stays ' +
+					'on hawkBit and the response warns with hawkbitKept=true.',
 			},
 			response: {
-				200: GenericActionResponseSchema,
+				200: FirmwareDeleteResponseSchema,
 				403: ErrorResponseSchema,
 				404: ErrorResponseSchema,
-				409: ErrorResponseSchema,
 				503: ErrorResponseSchema,
 			},
 		},

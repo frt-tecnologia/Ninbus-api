@@ -1,9 +1,9 @@
 {
-  "currentIteration": 52,
+  "currentIteration": 53,
   "maxIterations": 3,
   "phase": "analysis",
   "results": [],
   "overallNotes": "",
-  "humanFeedback": "Nova extensão da feature de firmware: GATE DE PUBLICAÇÃO. Hoje toda release subida já fica disponível no endpoint de status que o mobile consulta — o cliente pode aplicar imediatamente. Desejado: release só fica visível/disponível para o usuário final quando EXPLICITAMENTE marcada como disponível (published). Upload cria como draft; super admin publica (e despublica) via endpoint próprio. Isso cria a camada de testes: fábrica sobe draft → valida em dispositivos piloto via force deploy do console (que pode usar draft, inclusive com releaseId explícito) → publica → só então o mobile vê update_available e o cliente pode opt-in. Entregar: coluna status (migration via db:generate, aplicada via comando oficial), endpoints publish/unpublish, getLatestRelease/trigger/filter published-only, force deploy com releaseId opcional, UI dashboard (status badge, publicar/despublicar, testar draft), testes, E2E Docker, docs, commit sem push.",
-  "lastUpdated": "2026-09-17T23:26:11.347Z"
+  "humanFeedback": "Exclusão de release bloqueada: DELETE /api/admin/firmware/:id retorna 409 LOCKED quando o Software Module já participou de um Distribution Set atribuído (imutabilidade de auditoria do hawkBit 1.0.3 — mesmo cancelando a action o DS fica locked). Releases de teste ficam presas no catálogo para sempre. Corrigir com semântica catálogo × histórico: DELETE remove SEMPRE a linha do catálogo Ninbus; se o SM estiver locked no hawkBit, o fallback mantém o binário lá (histórico) e a resposta avisa (200 com warning hawkbitKept); full-delete no hawkBit continua acontecendo quando não há deployments. Atualizar mensagem do confirm na dashboard, docs, teste do caminho 404, E2E no Docker (full-delete de release sem deployment + fallback local de release locked), commit sem push.",
+  "lastUpdated": "2026-09-18T00:01:35.774Z"
 }

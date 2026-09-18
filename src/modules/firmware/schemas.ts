@@ -89,6 +89,12 @@ export const FirmwarePublishResponseSchema = t.Object({
 	data: FirmwareReleaseSchema,
 });
 
+export const FirmwareDeleteResponseSchema = t.Object({
+	message: t.String(),
+	/** true when the binary stays on hawkBit (locked DS = deployment history). */
+	hawkbitKept: t.Boolean(),
+});
+
 export const FirmwareUploadResponseSchema = t.Object({
 	message: t.String(),
 	data: t.Optional(

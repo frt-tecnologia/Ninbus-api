@@ -11,9 +11,9 @@ import {
 } from '@modules/firmware/schemas';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
+import { handleAdminForceDeploy } from './force-deploy';
 import { deleteFirmwareRelease, listFirmwareReleases, uploadFirmwareRelease } from './service';
 import { FirmwareValidationError } from './service';
-import { handleAdminForceDeploy } from './force-deploy';
 
 /**
  * Firmware Admin Routes — factory-only firmware catalog.
@@ -43,6 +43,7 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 					version: body.version,
 					artifactType: body.artifactType,
 					description: body?.description,
+					counter: body?.counter,
 				});
 				set.status = 201;
 				await logActivity({
@@ -81,10 +82,13 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 				tags: ['Firmware'],
 				summary: 'Publish a firmware release (factory only)',
 				description:
-					'Uploads a raw firmware file (.fir, .frz, .bin) to the GLOBAL factory catalog. ' +
-					'The API packages it into the device .tar contract (header-info/featureidentity.json + ' +
-					'data/payload.bin, plain TAR — no gzip). The version tag (semver, e.g. "4.0.1") is REQUIRED ' +
-					'and unique per firmware type. Only platform super admins (factory) may publish.',
+					'Uploads a firmware release to the GLOBAL factory catalog. GOLDEN RULE: the device ' +
+					'only accepts the canonical v4 TAR (artifact.info + data/firmware.npm with the signed ' +
+					'NPM manifest — tools/ota_sign.py + ota_pack.py, repo Ninbus-v4). For firmware-ninbus ' +
+					'the .tar is REQUIRED and stored verbatim (the server never signs); raw .bin/.hex/.elf ' +
+					'are rejected. firmware-controller also accepts a raw .fir (packaged into the canonical ' +
+					'tar server-side). The version tag (semver, e.g. "4.0.1") is REQUIRED and unique per ' +
+					'firmware type. Only platform super admins (factory) may publish.',
 			},
 			response: {
 				201: FirmwareUploadResponseSchema,
@@ -145,29 +149,27 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 	)
 
 	// POST /deploy — Admin-forced update (console; no end-user interaction)
-	.post('/deploy', handleAdminForceDeploy,
-		{
-			auth: true,
-			superAdmin: true,
-			body: DeployFirmwareBodySchema,
-			detail: {
-				tags: ['Firmware'],
-				summary: 'Force a firmware update to selected devices (factory console)',
-				description:
-					'Console counterpart of the mobile trigger: the factory pushes the LATEST release ' +
-					'to the given devices without end-user interaction. Devices are grouped by company ' +
-					'(one deployment per company). hawkBit deployments are download/update FORCED — ' +
-					'devices install on their next DDI poll.',
-			},
-			response: {
-				200: FirmwareDeployResponseSchema,
-				400: ErrorResponseSchema,
-				403: ErrorResponseSchema,
-				404: ErrorResponseSchema,
-				503: ErrorResponseSchema,
-			},
+	.post('/deploy', handleAdminForceDeploy, {
+		auth: true,
+		superAdmin: true,
+		body: DeployFirmwareBodySchema,
+		detail: {
+			tags: ['Firmware'],
+			summary: 'Force a firmware update to selected devices (factory console)',
+			description:
+				'Console counterpart of the mobile trigger: the factory pushes the LATEST release ' +
+				'to the given devices without end-user interaction. Devices are grouped by company ' +
+				'(one deployment per company). hawkBit deployments are download/update FORCED — ' +
+				'devices install on their next DDI poll.',
 		},
-	)
+		response: {
+			200: FirmwareDeployResponseSchema,
+			400: ErrorResponseSchema,
+			403: ErrorResponseSchema,
+			404: ErrorResponseSchema,
+			503: ErrorResponseSchema,
+		},
+	})
 
 	// DELETE /:releaseId — Remove a release
 	.delete(

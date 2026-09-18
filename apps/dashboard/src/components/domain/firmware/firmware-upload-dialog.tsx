@@ -27,10 +27,13 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 /**
- * Publish a factory firmware release: raw firmware file + REQUIRED semver
- * version tag + type. The API packages the .tar device contract server-side
- * (header-info/featureidentity.json + data/payload.bin, plain TAR — no gzip)
- * and registers the release in the global catalog.
+ * Publish a factory firmware release. GOLDEN RULE (v4 device contract): the
+ * device only accepts the canonical signed TAR (artifact.info +
+ * data/firmware.npm with the NPM manifest). SAME interface, two paths:
+ *  - .tar (ota_sign.py + ota_pack.py output) → uploaded verbatim
+ *  - raw .bin + counter → the SERVER signs + packs (ota_sign.py parity,
+ *    requires FIRMWARE_SIGNING_KEY on the API)
+ * firmware-controller also accepts a raw .fir (packaged server-side).
  */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -42,9 +45,14 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 	const [version, setVersion] = React.useState('');
 	const [type, setType] = React.useState<FirmwareArtifactType>('firmware-ninbus');
 	const [description, setDescription] = React.useState('');
+	const [counter, setCounter] = React.useState('');
 	const router = useRouter();
 
 	const versionValid = SEMVER_RE.test(version.trim());
+	/** Server-side signing kicks in for raw .bin + firmware-ninbus. */
+	const needsCounter =
+		type === 'firmware-ninbus' && !!file && !file.name.toLowerCase().endsWith('.tar');
+	const counterValid = /^\s*(?:\d+|0x[0-9a-fA-F]+)\s*$/.test(counter);
 
 	const reset = () => {
 		setFile(null);
@@ -52,6 +60,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 		setVersion('');
 		setType('firmware-ninbus');
 		setDescription('');
+		setCounter('');
 	};
 
 	async function submit(e: React.FormEvent) {
@@ -65,6 +74,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 				version: version.trim(),
 				artifactType: type,
 				description: description.trim() || undefined,
+				...(needsCounter ? { counter: counter.trim() } : {}),
 			})
 			.then(() => null)
 			.catch((error: unknown) =>
@@ -106,21 +116,43 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 					</DialogHeader>
 					<FieldGroup>
 						<Field data-required>
-							<FieldLabel htmlFor="fw-file">Arquivo (.fir, .frz, .bin)</FieldLabel>
+							<FieldLabel htmlFor="fw-file">Arquivo</FieldLabel>
 							<Input
 								id="fw-file"
 								type="file"
-								accept=".fir,.frz,.nfx,.bin,.hex,.fw"
+								accept=".tar,.fir,.frz,.bin"
 								required
 								onChange={(e) => setFile(e.target.files?.[0] ?? null)}
 								className="cursor-pointer file:mr-3 file:cursor-pointer"
 							/>
+							<FieldDescription>
+								Ninbus: .tar do ota_pack.py ou .bin (servidor assina) · Controlador: .fir ou .tar
+							</FieldDescription>
 							{file && (
 								<FieldDescription>
 									{file.name} · {(file.size / 1024).toFixed(0)} KB
 								</FieldDescription>
 							)}
 						</Field>
+						{needsCounter && (
+							<Field data-required data-invalid={counter ? !counterValid : undefined}>
+								<FieldLabel htmlFor="fw-counter">Counter anti-downgrade</FieldLabel>
+								<Input
+									id="fw-counter"
+									placeholder="ex.: 7"
+									inputMode="numeric"
+									required
+									value={counter}
+									onChange={(e) => setCounter(e.target.value)}
+									aria-invalid={counter ? !counterValid : undefined}
+								/>
+								<FieldDescription>
+									{counter && !counterValid
+										? 'Inteiro (decimal ou 0x hex).'
+										: 'Acima do piso do ota meta da frota — o bootloader rejeita counters menores.'}
+								</FieldDescription>
+							</Field>
+						)}
 						<Field data-required>
 							<FieldLabel htmlFor="fw-name">Nome</FieldLabel>
 							<Input
@@ -176,7 +208,12 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 						<Button type="button" variant="outline" onClick={() => setOpen(false)}>
 							Cancelar
 						</Button>
-						<Button type="submit" disabled={loading || !file || !name.trim() || !versionValid}>
+						<Button
+							type="submit"
+							disabled={
+								loading || !file || !name.trim() || !versionValid || (needsCounter && !counterValid)
+							}
+						>
 							{loading ? 'Enviando…' : 'Enviar'}
 						</Button>
 					</DialogFooter>

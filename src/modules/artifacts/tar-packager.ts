@@ -1,43 +1,29 @@
 /**
- * Artifact Tar Packager — Creates .tar archives for Ninbus OTA.
+ * Canonical v4 OTA Tar Packager — mirrors tools/ota_pack.py (repo Ninbus-v4).
  *
- * The embedded device (Ninbus v3) expects artifacts in a specific .tar format:
+ * GOLDEN RULE: the device NEVER accepts raw .bin/.hex/.elf or hand-made
+ * tars — only the canonical USTAR below (see docs/firmware-release-flow.md
+ * §5 and tar-validator.ts). Anything else is rejected by the firmware with
+ * closed+failure ("REJEITADO: manifesto sem magic NPM" / "artifact type
+ * desconhecido").
  *
- *   header-info/
- *   header-info/featureidentity.json     ← identifies artifact type
- *   data/
- *   data/payload.bin                     ← the actual firmware file (.frz, .fir, .bin)
+ *   <name>.tar                    (USTAR, mtime=0, deterministic)
+ *   ├── artifact.info             → 'type "<type>"\\n'   (FIRST member, ASCII)
+ *   └── data/firmware.npm         → firmware-ninbus: SIGNED manifest + image
+ *     | data/config.frz           → configuration-nfx: raw payload
+ *     | data/controller.fir       → firmware-controller: raw payload
  *
- * Rules:
- * - MUST be plain .tar (NOT .tar.gz — decompressor is stub on device)
- * - Directory names MUST be exactly "header-info" and "data"
- * - Payload filename MUST be "payload.bin"
- * - featureidentity.json has a single {"type": "..."} field
- *
-### ⚠️ FIRMWARE-NINBUS PAYLOAD REQUIREMENT (critical):
- * For type "firmware-ninbus" the backend uploads the bytes VERBATIM to hawkBit
- * (which stores them in S3); the device later downloads via CloudFront, which
- * serves exactly what was uploaded. No layer in the chain runs CalcCRC.exe or
- * validates the CRC. The uploaded .fir MUST already be the post-CalcCRC binary
- * with the bootloader CRC16 written at offset 1047 (validated by the STM32
- * bootloader as *(U16*)(0x08008000 + 1047)). Uploading a raw pre-CRC .fir /
- * .hex / .axf causes the bootloader to silently reject the image and keep the
- * old firmware. See docs/hawkbit-status-flow-mapping.md "Firmware-Ninbus
- * Self-Update".
- *
- * @see SKILL.md — "DDI Artifact Download" section
+ * ⚠️ firmware-ninbus CANNOT be packaged here: data/firmware.npm requires the
+ * 128 B NPM manifest signed with ECDSA P-256 by tools/ota_sign.py — the key
+ * stays offline with the factory. Upload the ota_pack.py-generated .tar
+ * directly; the API validates its structure (tar-validator.ts) and stores it
+ * VERBATIM in hawkBit. This packager refuses ninbus payloads on purpose.
  */
 
-import tar from 'tar-stream';
-import { Readable } from 'stream';
+import type { Readable } from 'stream';
 import { appLogger } from '@common/logger';
-
-// Artifact type → featureidentity.json type value mapping
-const TYPE_MAP: Record<string, string> = {
-	'firmware-ninbus': 'firmware-ninbus',
-	'firmware-controller': 'firmware-controller',
-	'configuration-nfx': 'configuration-nfx',
-} as const;
+import tar from 'tar-stream';
+import { CANONICAL_DATA_MEMBERS, type CanonicalArtifactType } from '../firmware/tar-validator';
 
 export interface PackagedArtifact {
 	/** The .tar file as a Blob */
@@ -49,53 +35,42 @@ export interface PackagedArtifact {
 }
 
 /**
- * Package a raw firmware file into the .tar format expected by the Ninbus embedded device.
+ * Package a raw controller/NFX payload into the canonical v4 .tar.
  *
- * @param file - The raw firmware file (.frz, .fir, .bin, etc.)
- * @param artifactType - The Ninbus artifact type (e.g., 'configuration-nfx')
- * @returns {PackagedArtifact} The packaged .tar archive
+ * @param file - The raw payload file (.fir / .frz)
+ * @param artifactType - firmware-controller | configuration-nfx
+ * @throws for firmware-ninbus (server cannot sign — use ota_pack.py output)
  */
-export async function packageArtifact(
-	file: File,
-	artifactType: string,
-): Promise<PackagedArtifact> {
-	const ninbusType = TYPE_MAP[artifactType];
-	if (!ninbusType) {
-		throw new Error(`Unknown artifact type: ${artifactType}. Expected one of: ${Object.keys(TYPE_MAP).join(', ')}`);
+export async function packageArtifact(file: File, artifactType: string): Promise<PackagedArtifact> {
+	if (!(artifactType in CANONICAL_DATA_MEMBERS)) {
+		throw new Error(
+			`Unknown artifact type: ${artifactType}. Expected one of: ${Object.keys(CANONICAL_DATA_MEMBERS).join(', ')}`,
+		);
+	}
+	if (artifactType === 'firmware-ninbus') {
+		throw new Error(
+			'firmware-ninbus NÃO pode ser empacotado pelo servidor: data/firmware.npm exige o manifesto NPM assinado (ECDSA P-256) gerado por tools/ota_sign.py + ota_pack.py (repo Ninbus-v4). Suba o update-app.tar gerado pela ferramenta — a API valida e armazena verbatim.',
+		);
 	}
 
-	const featureIdentity = JSON.stringify({ type: ninbusType });
-	const featureIdentityBytes = Buffer.from(featureIdentity, 'utf-8');
+	const type = artifactType as CanonicalArtifactType;
+	const memberName = CANONICAL_DATA_MEMBERS[type];
 
-	// Read the raw firmware file
+	// artifact.info — plain ASCII 'type "<name>"\n', FIRST member (ota_pack.py)
+	const infoBytes = Buffer.from(`type "${type}"\n`, 'ascii');
 	const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-	// Create the tar archive using tar-stream
 	const pack = tar.pack();
-
-	// Add header-info/featureidentity.json
-	pack.entry(
-		{ name: 'header-info/featureidentity.json', size: featureIdentityBytes.length, mode: 0o644 },
-		featureIdentityBytes,
-	);
-
-	// Add data/payload.bin
-	pack.entry(
-		{ name: 'data/payload.bin', size: fileBuffer.length, mode: 0o644 },
-		fileBuffer,
-	);
-
+	pack.entry({ name: 'artifact.info', size: infoBytes.length, mtime: new Date(0) }, infoBytes);
+	pack.entry({ name: memberName, size: fileBuffer.length, mtime: new Date(0) }, fileBuffer);
 	pack.finalize();
 
-	// Convert tar-stream Readable to Buffer
 	const tarBuffer = await readableToBuffer(pack);
-
-	// Generate tar filename from original
 	const baseName = file.name.replace(/\.[^.]+$/, '');
 	const tarFilename = `${baseName}.tar`;
 
 	appLogger.info(
-		`[TAR] Packaged ${file.name} (${fileBuffer.length} bytes) → ${tarFilename} (${tarBuffer.length} bytes) [type=${ninbusType}]`,
+		`[TAR] Packaged ${file.name} (${fileBuffer.length} bytes) → ${tarFilename} (${tarBuffer.length} bytes) [type=${type}, member=${memberName}]`,
 	);
 
 	return {
@@ -114,4 +89,3 @@ function readableToBuffer(readable: Readable): Promise<Buffer> {
 		readable.on('error', reject);
 	});
 }
-

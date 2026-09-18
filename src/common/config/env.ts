@@ -278,6 +278,12 @@ const EnvSchema = Type.Object({
 			'This is NOT a database role — controlled solely via environment variable to prevent privilege escalation.',
 	}),
 
+	/** EC P-256 private key for server-side OTA manifest signing (ota_sign.py
+	 *  parity). Inline PEM content (newlines as \n) or a path to a .pem file.
+	 *  The matching PUBLIC key must be burned into the fleet's bootloader.
+	 *  Leave unset to force tool-generated .tar uploads (key stays offline). */
+	FIRMWARE_SIGNING_KEY: Type.Optional(Type.String()),
+
 	// ── Rate Limiting ──────────────────────────────────────────
 	ENABLE_RATE_LIMITER: Type.Boolean({ default: true }),
 	RATE_LIMIT_WINDOW_MS: Type.Optional(Type.Number({ default: 60000 })),
@@ -363,6 +369,9 @@ export function validateEnv(): Env {
 			? Number(process.env['ARTIFACT_MAX_SIZE_MB'])
 			: 50,
 		SUPER_ADMIN_EMAILS: parseStringArray(process.env['SUPER_ADMIN_EMAILS']),
+		/** Server-side OTA signing key — inline PEM (\\n escaped) or a file path.
+		 *  Undefined → sign-and-pack uploads are rejected with a clear 400. */
+		FIRMWARE_SIGNING_KEY: process.env['FIRMWARE_SIGNING_KEY'] || undefined,
 		SSE_ENABLED: process.env['SSE_ENABLED'] !== 'false',
 		SSE_HEARTBEAT_SEC: process.env['SSE_HEARTBEAT_SEC']
 			? Number(process.env['SSE_HEARTBEAT_SEC'])

@@ -1,16 +1,109 @@
 import { afterAll, describe, expect, it } from 'bun:test';
+import {
+	createHash,
+	createPublicKey,
+	verify as cryptoVerify,
+	generateKeyPairSync,
+} from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import tar from 'tar-stream';
+const tarMod = tar;
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
-import { companies, devices, firmwareReleases } from '../src/common/db/schema';
-import { eq } from 'drizzle-orm';
-import { classifyDeviceFirmware } from '../src/modules/firmware/status-service';
-import { compareVersions } from '../src/modules/firmware/service';
+import { devices, firmwareReleases } from '../src/common/db/schema';
 import { extractFirmwareVersions } from '../src/modules/devices/firmware-sync';
+import {
+	buildNinbusTar,
+	parseCounter,
+	validateDerSignature,
+} from '../src/modules/firmware/ota-signer';
+import { compareVersions } from '../src/modules/firmware/service';
+import { classifyDeviceFirmware } from '../src/modules/firmware/status-service';
+import { validateCanonicalTar } from '../src/modules/firmware/tar-validator';
 import { cleanAll } from './test-helpers';
 
 afterAll(async () => {
 	await cleanAll();
 });
+
+// ---------------------------------------------------------------------------
+// Canonical v4 OTA tar fixture (mirrors tools/ota_pack.py output)
+// ---------------------------------------------------------------------------
+
+/** Build a structurally valid 128 B NPM manifest (fake ECDSA sig — the
+ *  bootloader verifies the real signature; the server checks structure). */
+function buildManifest(image: Buffer, counter = 1, signatureLength = 8): Buffer {
+	const m = Buffer.alloc(128, 0xff);
+	m.write('NPM', 0, 'ascii');
+	m.writeUInt32LE(image.length, 4);
+	m.fill(
+		createHash('sha256').update(image).update(buildLeU32Pair(counter, image.length)).digest(),
+		8,
+		40,
+	);
+	m.writeUInt32LE(counter, 40);
+	m[44] = signatureLength;
+	// signature bytes [45, 45+sigLen) — any bytes pass structural validation
+	for (let i = 45; i < 45 + signatureLength; i++) m[i] = 0xab;
+	return m;
+}
+
+function buildLeU32Pair(a: number, b: number): Buffer {
+	const buf = Buffer.alloc(8);
+	buf.writeUInt32LE(a, 0);
+	buf.writeUInt32LE(b, 4);
+	return buf;
+}
+
+function tarEntryNames(buffer: Buffer): Promise<string[]> {
+	return new Promise((resolve, reject) => {
+		const names: string[] = [];
+		const extract = tar.extract();
+		// @ts-expect-error tar-stream header typing
+		extract.on('entry', (header, stream, next) => {
+			names.push(header.name);
+			stream.resume();
+			next();
+		});
+		extract.on('finish', () => resolve(names));
+		extract.on('error', reject);
+		extract.end(buffer);
+	});
+}
+
+/** Pack a canonical v4 tar exactly like ota_pack.py (USTAR, mtime=0). */
+async function buildCanonicalTar(
+	type: 'firmware-ninbus' | 'firmware-controller' | 'configuration-nfx',
+	payload: Buffer,
+): Promise<Buffer> {
+	const member =
+		type === 'firmware-ninbus'
+			? 'data/firmware.npm'
+			: type === 'firmware-controller'
+				? 'data/controller.fir'
+				: 'data/config.frz';
+	const pack = tar.pack();
+	const info = Buffer.from(
+		`type "${type}"
+`,
+		'ascii',
+	);
+	pack.entry({ name: 'artifact.info', size: info.length, mtime: new Date(0) }, info);
+	pack.entry({ name: member, size: payload.length, mtime: new Date(0) }, payload);
+	pack.finalize();
+	const chunks: Buffer[] = [];
+	await new Promise<void>((resolve, reject) => {
+		pack.on('data', (c: Buffer) => chunks.push(c));
+		pack.on('end', () => resolve());
+		pack.on('error', reject);
+	});
+	return Buffer.concat(chunks);
+}
+
+/** A structurally-valid UNSIGNED ninbus tar fixture (fake signature). */
+async function buildUnsignedNinbusTar(image = Buffer.alloc(1024, 0x55)): Promise<Buffer> {
+	return buildCanonicalTar('firmware-ninbus', Buffer.concat([buildManifest(image), image]));
+}
 
 // ---------------------------------------------------------------------------
 // Unit — pure helpers (no DB, no hawkBit)
@@ -189,11 +282,97 @@ describe('Firmware Module', () => {
 		expect(res.status).toBe(403);
 	});
 
-	it('POST /api/admin/firmware fails cleanly when hawkBit is disabled (400)', async () => {
+	it('POST /api/admin/firmware rejects raw .bin for firmware-ninbus (400, golden rule)', async () => {
 		const form = new FormData();
 		form.append(
 			'file',
 			new File([new Uint8Array(2048)], 'wifi3.bin', { type: 'application/octet-stream' }),
+		);
+		form.append('name', 'wifi3');
+		form.append('version', '1.0.0');
+		form.append('artifactType', 'firmware-ninbus');
+		const res = await app.handle(
+			new Request('http://localhost/api/admin/firmware', {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+				body: form,
+			}),
+		);
+		// v4 golden rule: raw .bin needs the counter (server-side signing) or a .tar.
+		expect(res.status).toBe(400);
+		const body = await res.json();
+		expect(body.code).toBe('COUNTER_REQUIRED');
+		expect(body.message).toContain('counter');
+	});
+
+	it('POST /api/admin/firmware rejects a tar without the NPM manifest magic (400)', async () => {
+		// Old-format tar (featureidentity.json) — or a tampered one — must fail fast.
+		const pack = tar.pack();
+		pack.entry(
+			{ name: 'header-info/featureidentity.json', size: 34, mtime: new Date(0) },
+			Buffer.from('{"type":"firmware-ninbus"}'),
+		);
+		pack.entry({ name: 'data/payload.bin', size: 2048, mtime: new Date(0) }, Buffer.alloc(2048));
+		pack.finalize();
+		const chunks: Buffer[] = [];
+		await new Promise<void>((resolve, reject) => {
+			pack.on('data', (c: Buffer) => chunks.push(c));
+			pack.on('end', () => resolve());
+			pack.on('error', reject);
+		});
+		const form = new FormData();
+		form.append(
+			'file',
+			new File([new Uint8Array(Buffer.concat(chunks))], 'update-app.tar', {
+				type: 'application/x-tar',
+			}),
+		);
+		form.append('name', 'wifi3');
+		form.append('version', '1.0.0');
+		form.append('artifactType', 'firmware-ninbus');
+		const res = await app.handle(
+			new Request('http://localhost/api/admin/firmware', {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+				body: form,
+			}),
+		);
+		expect(res.status).toBe(400);
+		const body = await res.json();
+		expect(body.code).toBe('INVALID_PACKAGE');
+	});
+
+	it('POST /api/admin/firmware .bin + counter without signing key → clear 400', async () => {
+		const form = new FormData();
+		form.append(
+			'file',
+			new File([new Uint8Array(2048)], 'app.bin', { type: 'application/octet-stream' }),
+		);
+		form.append('name', 'wifi3');
+		form.append('version', '1.0.0');
+		form.append('artifactType', 'firmware-ninbus');
+		form.append('counter', '7');
+		const res = await app.handle(
+			new Request('http://localhost/api/admin/firmware', {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+				body: form,
+			}),
+		);
+		// tests run without FIRMWARE_SIGNING_KEY → the server-side pipeline is off
+		expect(res.status).toBe(400);
+		const body = await res.json();
+		expect(['SIGNING_KEY_NOT_CONFIGURED', 'HAWKBIT_NOT_ENABLED']).toContain(body.code);
+	});
+
+	it('POST /api/admin/firmware fails cleanly when hawkBit is disabled (400)', async () => {
+		// VALID canonical tar — must pass package validation and only then hit
+		// the hawkBit-disabled guard (clear 400, not a 500/502).
+		const tarBytes = await buildUnsignedNinbusTar();
+		const form = new FormData();
+		form.append(
+			'file',
+			new File([new Uint8Array(tarBytes)], 'update-app.tar', { type: 'application/x-tar' }),
 		);
 		form.append('name', 'wifi3');
 		form.append('version', '1.0.0');
@@ -328,9 +507,7 @@ describe('Firmware Module', () => {
 		expect(body.latest.ninbus.version).toBe('4.0.1');
 		expect(body.summary).toEqual({ total: 4, upToDate: 1, outdated: 1, unknown: 1, error: 1 });
 
-		const byName = Object.fromEntries(
-			body.devices.map((d: { name: string }) => [d.name, d]),
-		);
+		const byName = Object.fromEntries(body.devices.map((d: { name: string }) => [d.name, d]));
 		expect(byName['outdated-device'].firmwareStatus).toBe('update_available');
 		expect(byName['outdated-device'].firmwareVersion).toBe('3.9.0');
 		expect(byName['current-device'].firmwareStatus).toBe('up_to_date');
@@ -440,10 +617,13 @@ describe('Firmware Module', () => {
 
 	it('publish returns 404 for unknown release', async () => {
 		const res = await app.handle(
-			new Request('http://localhost/api/admin/firmware/00000000-0000-0000-0000-000000000000/publish', {
-				method: 'POST',
-				headers: { Cookie: superAdminCookie },
-			}),
+			new Request(
+				'http://localhost/api/admin/firmware/00000000-0000-0000-0000-000000000000/publish',
+				{
+					method: 'POST',
+					headers: { Cookie: superAdminCookie },
+				},
+			),
 		);
 		expect(res.status).toBe(404);
 	});
@@ -495,5 +675,148 @@ describe('Firmware Module', () => {
 			}),
 		);
 		expect((await latest.json()).data.version).toBe('4.0.1');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Canonical v4 tar validator (unit — mirror of ota_pack.py contract)
+// ---------------------------------------------------------------------------
+
+describe('validateCanonicalTar (v4 golden rule)', () => {
+	it('accepts a tool-equivalent ninbus tar and reports image size', async () => {
+		const image = Buffer.alloc(4096, 0xaa);
+		const info = await validateCanonicalTar(await buildUnsignedNinbusTar(image), 'firmware-ninbus');
+		expect(info.imageSize).toBe(4096);
+		expect(info.payloadSize).toBe(4096 + 128);
+	});
+
+	it('accepts a controller tar with raw .fir payload', async () => {
+		const info = await validateCanonicalTar(
+			await buildCanonicalTar('firmware-controller', Buffer.alloc(512, 0x01)),
+			'firmware-controller',
+		);
+		expect(info.payloadSize).toBe(512);
+	});
+
+	it('rejects payload without NPM magic (deployment-657 class)', async () => {
+		const raw = await buildCanonicalTar('firmware-ninbus', Buffer.alloc(2048));
+		await expect(validateCanonicalTar(raw, 'firmware-ninbus')).rejects.toThrow(/magic NPM/);
+	});
+
+	it('rejects a manifest whose digest does not match the image', async () => {
+		const image = Buffer.alloc(1024, 0x55);
+		const manifest = buildManifest(image);
+		manifest[10] ^= 0xff; // corrupt the digest
+		const raw = await buildCanonicalTar('firmware-ninbus', Buffer.concat([manifest, image]));
+		await expect(validateCanonicalTar(raw, 'firmware-ninbus')).rejects.toThrow(/digest/);
+	});
+
+	it('rejects the legacy featureidentity format', async () => {
+		const pack = tar.pack();
+		pack.entry(
+			{ name: 'header-info/featureidentity.json', size: 34, mtime: new Date(0) },
+			Buffer.from('{"type":"firmware-ninbus"}'),
+		);
+		pack.entry({ name: 'data/payload.bin', size: 16, mtime: new Date(0) }, Buffer.alloc(16));
+		pack.finalize();
+		const chunks: Buffer[] = [];
+		await new Promise<void>((resolve, reject) => {
+			pack.on('data', (c: Buffer) => chunks.push(c));
+			pack.on('end', () => resolve());
+			pack.on('error', reject);
+		});
+		await expect(validateCanonicalTar(Buffer.concat(chunks), 'firmware-ninbus')).rejects.toThrow(
+			/artifact\.info/,
+		);
+	});
+
+	it('rejects artifact.info with a mismatched type', async () => {
+		// tar says firmware-controller but validated as firmware-ninbus
+		const raw = await buildCanonicalTar('firmware-controller', Buffer.alloc(64));
+		await expect(validateCanonicalTar(raw, 'firmware-ninbus')).rejects.toThrow(
+			/data\/firmware\.npm/,
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Server-side signer (ota_sign.py parity)
+// ---------------------------------------------------------------------------
+
+describe('ota-signer (server-side sign + pack)', () => {
+	const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+
+	it('parseCounter mirrors ota_sign.py (decimal, hex, bounds)', () => {
+		expect(parseCounter('7')).toBe(7);
+		expect(parseCounter('0x07')).toBe(7);
+		expect(parseCounter(' 12 ')).toBe(12);
+		expect(() => parseCounter('-1')).toThrow();
+		expect(() => parseCounter('4294967296')).toThrow();
+		expect(() => parseCounter('abc')).toThrow();
+	});
+
+	it('produces a canonical tar that passes validateCanonicalTar', async () => {
+		const image = Buffer.alloc(8192, 0x5a);
+		const tar = await buildNinbusTar(image, 9, privateKey);
+		const info = await validateCanonicalTar(tar, 'firmware-ninbus');
+		expect(info.imageSize).toBe(8192);
+		expect(info.payloadSize).toBe(8192 + 128);
+	});
+
+	it('signature verifies against the PUBLIC key (ota_sign.py parity)', async () => {
+		const image = Buffer.alloc(300, 0x33);
+		const counter = 42;
+		const tar = await buildNinbusTar(image, counter, privateKey);
+
+		// extract manifest from the tar (validator already proved the layout)
+		const entries = await new Promise<Array<Buffer>>((resolve, reject) => {
+			const bufs: Array<Buffer> = [];
+			const extract = tarMod.extract();
+			// @ts-expect-error tar-stream header typing
+			extract.on('entry', (_h: unknown, stream: NodeJS.ReadableStream, next: () => void) => {
+				const chunks: Buffer[] = [];
+				stream.on('data', (c: Buffer) => chunks.push(c));
+				stream.on('end', () => {
+					bufs.push(Buffer.concat(chunks));
+					next();
+				});
+			});
+			extract.on('finish', () => resolve(bufs));
+			extract.on('error', reject);
+			extract.end(tar);
+		});
+		const payload = entries[1]!;
+		const manifest = payload.subarray(0, 128);
+		const embeddedImage = payload.subarray(128);
+		expect(embeddedImage.length).toBe(image.length);
+
+		// digest = SHA-256(image ‖ LE32(counter) ‖ LE32(size)) — same as the validator
+		const trailer = Buffer.alloc(8);
+		trailer.writeUInt32LE(counter, 0);
+		trailer.writeUInt32LE(image.length, 4);
+		const digest = createHash('sha256').update(image).update(trailer).digest();
+		expect(manifest.subarray(8, 40).equals(digest)).toBe(true);
+
+		// signature @ [45, 45+sigLen) verifies with the PUBLIC half — what the
+		// bootloader does. cryptoVerify hashes the digest with SHA-256 first
+		// (Prehashed(SHA256) in ota_sign.py).
+		const sigLen = manifest[44]!;
+		const signature = manifest.subarray(45, 45 + sigLen);
+		validateDerSignature(signature);
+		expect(cryptoVerify('sha256', digest, publicKey, signature)).toBe(true);
+		expect(() =>
+			cryptoVerify(
+				'sha256',
+				digest,
+				createPublicKey(publicKey),
+				Buffer.from(signature.toString('hex')),
+			),
+		).toThrow();
+	});
+
+	it('rejects oversized images (≤ 192 KiB)', async () => {
+		await expect(buildNinbusTar(Buffer.alloc(0x30001), 1, privateKey)).rejects.toThrow(
+			/192 KiB|1\.\./,
+		);
 	});
 });

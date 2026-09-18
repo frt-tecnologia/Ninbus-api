@@ -16,10 +16,16 @@ import {
 	hawkbitSoftwareModules,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { validateFileExtension, validateFileSize } from '@modules/artifacts/service';
+import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
-import { compareVersions } from './versioning';
 import { and, desc, eq } from 'drizzle-orm';
+import { OtaSignerError, buildNinbusTar, parseCounter } from './ota-signer';
+import {
+	type CanonicalArtifactType,
+	InvalidPackageError,
+	validateCanonicalTar,
+} from './tar-validator';
+import { compareVersions } from './versioning';
 
 /** Firmware types accepted in the factory catalog (no configuration-nfx —
  *  that one is company-scoped operational data, not a firmware release). */
@@ -40,7 +46,14 @@ export class FirmwareValidationError extends Error {
 			| 'NOT_FOUND'
 			| 'DUPLICATE_VERSION'
 			| 'LOCKED'
-			| 'INVALID_STATUS',
+			| 'INVALID_STATUS'
+			| 'INVALID_PACKAGE'
+			| 'COUNTER_REQUIRED'
+			| 'SIGNING_KEY_NOT_CONFIGURED'
+			| 'INVALID_KEY'
+			| 'INVALID_IMAGE'
+			| 'INVALID_COUNTER'
+			| 'INVALID_SIGNATURE',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -61,6 +74,10 @@ export interface FirmwareUploadInput {
 	version: string;
 	artifactType: (typeof FIRMWARE_TYPES)[number];
 	description?: string;
+	/** Anti-downgrade counter (above the fleet's "ota meta" floor) — REQUIRED
+	 *  for firmware-ninbus raw .bin uploads: the server signs + packs the
+	 *  canonical tar (ota_sign.py parity). Ignored for .tar uploads. */
+	counter?: string;
 }
 
 /** Upload a factory firmware release to hawkBit + register in the local catalog. */
@@ -69,8 +86,57 @@ export async function uploadFirmwareRelease(
 	file: File,
 	input: FirmwareUploadInput,
 ) {
-	validateFileExtension(file.name);
+	const isTar = file.name.toLowerCase().endsWith('.tar');
+	// Device contract (v4 golden rule): firmware-ninbus ONLY as the canonical
+	// signed .tar. Two equivalent paths, SAME interface:
+	//   A) factory ran ota_sign.py + ota_pack.py → upload the .tar (verbatim)
+	//   B) raw .bin + counter → the server signs + packs (ota-signer.ts,
+	//      ota_sign.py parity — requires FIRMWARE_SIGNING_KEY)
+	const isNinbus = input.artifactType === 'firmware-ninbus';
+	let signCounter: number | null = null;
+	if (isNinbus && !isTar) {
+		if (input.counter === undefined || input.counter.trim() === '') {
+			throw new FirmwareValidationError(
+				`firmware-ninbus .bin exige o counter anti-downgrade (acima do piso do "ota meta" da frota) para o servidor assinar e empacotar — ou suba o .tar gerado por ota_pack.py. Recebido: ${file.name}.`,
+				'COUNTER_REQUIRED',
+			);
+		}
+		signCounter = parseCounter(input.counter);
+	}
 	validateFileSize(file.size);
+
+	// Validate the canonical tar structure BEFORE any external call — a
+	// malformed package must fail fast, never reach a device.
+	let fileBuffer: Buffer = Buffer.from(await file.arrayBuffer());
+	let tarInfo: Awaited<ReturnType<typeof validateCanonicalTar>> | null = null;
+	if (signCounter !== null) {
+		// Server-side pipeline: sign + pack, then validate our OWN output
+		// (defense in depth — same validator the .tar path goes through).
+		try {
+			fileBuffer = await buildNinbusTar(fileBuffer, signCounter);
+			tarInfo = await validateCanonicalTar(fileBuffer, 'firmware-ninbus');
+		} catch (e) {
+			if (e instanceof OtaSignerError) {
+				throw new FirmwareValidationError(e.message, e.code);
+			}
+			if (e instanceof InvalidPackageError) {
+				throw new FirmwareValidationError(e.message, 'INVALID_PACKAGE');
+			}
+			throw e;
+		}
+	} else if (isTar) {
+		try {
+			tarInfo = await validateCanonicalTar(fileBuffer, input.artifactType as CanonicalArtifactType);
+		} catch (e) {
+			// Surface package-validation failures through the route's
+			// FirmwareValidationError handling (400 with the validator message).
+			if (e instanceof InvalidPackageError) {
+				throw new FirmwareValidationError(e.message, 'INVALID_PACKAGE');
+			}
+			throw e;
+		}
+	}
+
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
 			'Firmware operations require hawkBit to be enabled',
@@ -104,8 +170,28 @@ export async function uploadFirmwareRelease(
 		input.version,
 	);
 
-	// Same device contract as artifacts: plain .tar with header-info + data/.
-	const packaged = await packageArtifact(file, input.artifactType);
+	// firmware-ninbus: store the tool-generated tar VERBATIM (signed manifest
+	// inside data/firmware.npm — the server never signs). Controller: .tar
+	// verbatim or raw .fir packaged into the canonical format.
+	let tarBlob: Blob;
+	let tarFilename: string;
+	let tarSize: number;
+	let payloadBytes: number;
+	if (isTar || signCounter !== null) {
+		tarBlob = new Blob([fileBuffer], { type: 'application/x-tar' });
+		tarFilename =
+			signCounter !== null
+				? file.name.replace(/\.[^.]+$/, '') + '.tar' // server-packaged from .bin
+				: file.name;
+		tarSize = fileBuffer.length;
+		payloadBytes = tarInfo!.imageSize;
+	} else {
+		const packaged = await packageArtifact(file, input.artifactType);
+		tarBlob = packaged.blob;
+		tarFilename = packaged.filename;
+		tarSize = packaged.size;
+		payloadBytes = file.size;
+	}
 
 	const smType = await getOrCreateSoftwareModuleType(input.artifactType);
 	const smUuid = randomUUID();
@@ -117,13 +203,13 @@ export async function uploadFirmwareRelease(
 			input.description ?? `Ninbus firmware release: ${input.artifactType}`,
 			`releaseName: ${input.name}`,
 			`originalFile: ${file.name}`,
-			`payloadBytes: ${file.size}`,
+			`payloadBytes: ${payloadBytes}`,
 		].join(' | '),
 	});
 
 	appLogger.info('[FIRMWARE] Created SM %d (release: %s)', sm.id, input.name);
 
-	const tarFile = new File([packaged.blob], packaged.filename, { type: 'application/x-tar' });
+	const tarFile = new File([tarBlob], tarFilename, { type: 'application/x-tar' });
 	const artifact = await hawkbitSoftwareModules.uploadArtifact(sm.id, tarFile);
 
 	const [release] = await db
@@ -135,8 +221,8 @@ export async function uploadFirmwareRelease(
 			artifactType: input.artifactType,
 			description: input.description ?? null,
 			originalFilename: file.name,
-			payloadSize: file.size,
-			packageSize: packaged.size,
+			payloadSize: payloadBytes,
+			packageSize: tarSize,
 			createdBy: userId,
 		})
 		.returning();
@@ -164,8 +250,8 @@ export async function uploadFirmwareRelease(
 		name: release.name,
 		version: release.version,
 		type: release.artifactType,
-		size: packaged.size,
-		payloadSize: file.size,
+		size: tarSize,
+		payloadSize: payloadBytes,
 	};
 }
 

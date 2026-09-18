@@ -1,13 +1,9 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import {
-	createHash,
-	createPublicKey,
-	verify as cryptoVerify,
-	generateKeyPairSync,
-} from 'node:crypto';
+import { createHash, verify as cryptoVerify, generateKeyPairSync } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import tar from 'tar-stream';
 const tarMod = tar;
+import { p256 } from '@noble/curves/nist.js';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
 import { devices, firmwareReleases } from '../src/common/db/schema';
@@ -799,20 +795,30 @@ describe('ota-signer (server-side sign + pack)', () => {
 		expect(manifest.subarray(8, 40).equals(digest)).toBe(true);
 
 		// signature @ [45, 45+sigLen) verifies with the PUBLIC half — what the
-		// bootloader does. cryptoVerify hashes the digest with SHA-256 first
-		// (Prehashed(SHA256) in ota_sign.py).
+		// bootloader does (psa_verify_hash over the RAW manifest digest).
 		const sigLen = manifest[44]!;
 		const signature = manifest.subarray(45, 45 + sigLen);
 		validateDerSignature(signature);
-		expect(cryptoVerify('sha256', digest, publicKey, signature)).toBe(true);
-		expect(() =>
-			cryptoVerify(
-				'sha256',
-				digest,
-				createPublicKey(publicKey),
-				Buffer.from(signature.toString('hex')),
-			),
-		).toThrow();
+		// PREHASHED contract: the manifest digest IS the hash. noble verify with
+		// prehash:false — same math as psa_verify_hash/Prehashed(SHA256). Proven
+		// against the Python tools (ota_pack/ota_sign) in the round-trip.
+		const jwk = publicKey.export({ format: 'jwk' }) as { x: string; y: string };
+		const pubBytes = new Uint8Array(
+			Buffer.concat([
+				Buffer.from([0x04]),
+				Buffer.from(jwk.x, 'base64url'),
+				Buffer.from(jwk.y, 'base64url'),
+			]),
+		);
+		expect(
+			p256.verify(new Uint8Array(signature), new Uint8Array(digest), pubBytes, {
+				prehash: false,
+				format: 'der',
+			}),
+		).toBe(true);
+		// REGRESSION GUARD: hashing the digest AGAIN (crypto 'sha256') must NOT
+		// verify — the double-hash bug caught by the Python round-trip.
+		expect(cryptoVerify('sha256', digest, publicKey, signature)).toBe(false);
 	});
 
 	it('rejects oversized images (≤ 192 KiB)', async () => {

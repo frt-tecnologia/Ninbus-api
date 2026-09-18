@@ -288,9 +288,14 @@ Regras críticas:
 3. Imagem ≤ 192 KiB (0x30000); `<APP>.bin` = build-prod/zephyr (nunca
    bootloader, nunca .hex, nunca .elf).
 4. **Counter > piso do bootloader** (anti-downgrade, ver `ota meta` no shell
-   do device). Counter ≤ piso → o download passa mas o bootloader rejeita
-   após o reboot (sela/rollback) — o pior caminho. Política: incrementar a
-   cada release e não reutilizar counter de build rejeitada.
+   do device). Counter ≤ piso → o bootloader descarta o staging ANTES de
+   programar qualquer coisa (app intacta), reinicia na versão antiga e ela
+   reporta `closed failure "firmware was not applied by bootloader"` no
+   próximo ciclo — visível como ERROR no dashboard, nunca um falso success
+   (mas é o pior caminho: ciclo desperdiçado). O bootloader TAMBÉM verifica
+   `manifest.counter <= accepted_counter` → downgrade/replay rejeitado.
+   Política: incrementar a cada release e não reutilizar counter de build
+   rejeitada — o backend faz isso automaticamente (max do catálogo + 1).
 5. A pubkey correspondente à `dev-ec256.pem` tem que estar no bootloader
    gravado (produção exigirá chave própria — gate pendente).
 6. `firmware-controller` aceita `.tar` (verbatim) OU `.fir` cru — o backend

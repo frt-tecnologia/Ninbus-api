@@ -37,8 +37,12 @@ export async function runStartupMigrations(databaseUrl?: string) {
 			const sqlFile = `${migrationsDir}/${entry.tag}.sql`;
 
 			if (!fs.existsSync(sqlFile)) {
-				appLogger.info('[MIGRATION] Skipping %s (no SQL file)', entry.tag);
-				continue;
+				// PR #35 squash once shipped a journal entry without its SQL file —
+				// silently skipping left the column missing and every query 500'd.
+				// Fail FAST instead: a journal entry without its file is a broken tree.
+				throw new Error(
+					`[MIGRATION] Journal entry ${entry.tag} has no SQL file on disk (${sqlFile}). Broken deploy tree — refusing to boot.`,
+				);
 			}
 
 			// Check if this migration's tables already exist
@@ -165,6 +169,16 @@ export async function runStartupMigrations(databaseUrl?: string) {
 					continue;
 				}
 			}
+			if (/^0021_/.test(entry.tag)) {
+				// Column-level check — ADD COLUMN counter (anti-downgrade). Plain ALTER
+				// (no IF NOT EXISTS), so skip when present to keep re-runs idempotent.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+				WHERE table_name = 'firmware_releases' AND column_name = 'counter'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 			if (/^0020_/.test(entry.tag)) {
 				// Enum-value check — ALTER TYPE ADD VALUE is not idempotent.
 				const enumVals = await client`SELECT e.enumlabel FROM pg_enum e
@@ -190,8 +204,14 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				try {
 					await client.unsafe(stmt);
 				} catch (err: any) {
-					// Ignore "already exists" errors
-					if (err?.code === '42P07' || err?.code === '42710' || err?.code === '42P06') {
+					// Ignore "already exists" errors (42P07 duplicate table, 42710 duplicate
+					// object/constraint, 42P06 duplicate schema, 42701 duplicate column)
+					if (
+						err?.code === '42P07' ||
+						err?.code === '42710' ||
+						err?.code === '42P06' ||
+						err?.code === '42701'
+					) {
 						// already exists — fine
 					} else {
 						throw err;

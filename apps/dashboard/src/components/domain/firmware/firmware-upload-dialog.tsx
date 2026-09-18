@@ -45,14 +45,10 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 	const [version, setVersion] = React.useState('');
 	const [type, setType] = React.useState<FirmwareArtifactType>('firmware-ninbus');
 	const [description, setDescription] = React.useState('');
-	const [counter, setCounter] = React.useState('');
 	const router = useRouter();
 
 	const versionValid = SEMVER_RE.test(version.trim());
-	/** Server-side signing kicks in for raw .bin + firmware-ninbus. */
-	const needsCounter =
-		type === 'firmware-ninbus' && !!file && !file.name.toLowerCase().endsWith('.tar');
-	const counterValid = /^\s*(?:\d+|0x[0-9a-fA-F]+)\s*$/.test(counter);
+	/** Counter is 100% server-side: max(catalog)+1, signed into the manifest. */
 
 	const reset = () => {
 		setFile(null);
@@ -60,7 +56,6 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 		setVersion('');
 		setType('firmware-ninbus');
 		setDescription('');
-		setCounter('');
 	};
 
 	async function submit(e: React.FormEvent) {
@@ -74,7 +69,6 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 				version: version.trim(),
 				artifactType: type,
 				description: description.trim() || undefined,
-				...(needsCounter ? { counter: counter.trim() } : {}),
 			})
 			.then(() => null)
 			.catch((error: unknown) =>
@@ -134,25 +128,6 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 								</FieldDescription>
 							)}
 						</Field>
-						{needsCounter && (
-							<Field data-required data-invalid={counter ? !counterValid : undefined}>
-								<FieldLabel htmlFor="fw-counter">Counter anti-downgrade</FieldLabel>
-								<Input
-									id="fw-counter"
-									placeholder="ex.: 7"
-									inputMode="numeric"
-									required
-									value={counter}
-									onChange={(e) => setCounter(e.target.value)}
-									aria-invalid={counter ? !counterValid : undefined}
-								/>
-								<FieldDescription>
-									{counter && !counterValid
-										? 'Inteiro (decimal ou 0x hex).'
-										: 'Acima do piso do ota meta da frota — o bootloader rejeita counters menores.'}
-								</FieldDescription>
-							</Field>
-						)}
 						<Field data-required>
 							<FieldLabel htmlFor="fw-name">Nome</FieldLabel>
 							<Input
@@ -208,12 +183,7 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 						<Button type="button" variant="outline" onClick={() => setOpen(false)}>
 							Cancelar
 						</Button>
-						<Button
-							type="submit"
-							disabled={
-								loading || !file || !name.trim() || !versionValid || (needsCounter && !counterValid)
-							}
-						>
+						<Button type="submit" disabled={loading || !file || !name.trim() || !versionValid}>
 							{loading ? 'Enviando…' : 'Enviar'}
 						</Button>
 					</DialogFooter>

@@ -73,10 +73,6 @@ export interface FirmwareUploadInput {
 	version: string;
 	artifactType: (typeof FIRMWARE_TYPES)[number];
 	description?: string;
-	/** Anti-downgrade counter (above the fleet's "ota meta" floor) — REQUIRED
-	 *  for firmware-ninbus raw .bin uploads: the server signs + packs the
-	 *  canonical tar (ota_sign.py parity). Ignored for .tar uploads. */
-	counter?: string;
 }
 
 /** Upload a factory firmware release to hawkBit + register in the local catalog. */

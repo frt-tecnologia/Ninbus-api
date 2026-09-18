@@ -139,6 +139,10 @@ services:
       # Observability (telemetry retention; audit log is never expired)
       OBS_CONNECTIONS_RETENTION_DAYS: ${OBS_CONNECTIONS_RETENTION_DAYS:-90}
 
+      # Server-side OTA signing — inline PEM (\n escapes) or file path.
+      # EC P-256 key whose pubkey is burned into the bootloader.
+      FIRMWARE_SIGNING_KEY: ${FIRMWARE_SIGNING_KEY:-}
+
 
     depends_on:
       hawkbit:

@@ -1143,6 +1143,22 @@
       "category": "security",
       "learnedAt": "2026-09-18T13:16:50.278Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-docker-build-failure-silent",
+      "rule": "`docker compose build svc 2>&1 | tail` esconde o exit code do build (o pipe retorna o exit do tail). Um build falhando + `docker compose up` = container continua rodando IMAGEM VELHA silenciosamente. Sempre use `set -o pipefail` ao pipar builds e verifique o timestamp da imagem (`docker images`) após o build. Um erro de syntax no bundle de entrada bloqueia TODOS os builds — nenhum código novo chega ao container enquanto o velho continua \"healthy\".",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-18T21:43:16.590Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-migration-runner-skip-checks",
+      "rule": "TODA migration do runner de boot (src/scripts/migrate.ts) precisa de skip-check per-tag no information_schema. Mesmo statements idempotentes (ADD COLUMN IF NOT EXISTS, DROP NOT NULL) pegam ACCESS EXCLUSIVE lock em tabelas vivas e travam o boot; RENAME COLUMN re-executado lança 42703 (undefined_column) que NÃO está na lista de erros ignorados. Sem o check, o runner espera lock eternamente atrás de SELECTs da API em produção.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-18T21:43:17.040Z",
+      "reinforcementCount": 1
     }
   ]
 }

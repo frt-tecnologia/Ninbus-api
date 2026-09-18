@@ -1,10 +1,10 @@
-import { http } from './http';
 import type {
 	ActionResponse,
 	FirmwareRelease,
 	FirmwareUploadInput,
 	ListResponse,
 } from '@/types/domain';
+import { http } from './http';
 
 /**
  * Firmware service — factory firmware catalog (super admin only).
@@ -29,13 +29,14 @@ export const firmwareService = {
 
 	async upload(input: FirmwareUploadInput): Promise<ActionResponse> {
 		// Multipart upload — the API expects a binary file field, not JSON.
+		// http.post passes FormData through verbatim (see http.ts).
 		const form = new FormData();
 		form.append('file', input.file);
 		form.append('name', input.name);
 		form.append('version', input.version);
 		form.append('artifactType', input.artifactType);
 		if (input.description) form.append('description', input.description);
-		return http.post<ActionResponse>('/admin/firmware', form as unknown as Record<string, unknown>);
+		return http.post<ActionResponse>('/admin/firmware', form);
 	},
 
 	async remove(releaseId: string): Promise<ActionResponse> {
@@ -43,7 +44,11 @@ export const firmwareService = {
 	},
 
 	/** Force firmware to the given devices (console path). releaseId → test a specific DRAFT. */
-	async deploy(deviceIds: string[], artifactType?: string, releaseId?: string): Promise<ActionResponse> {
+	async deploy(
+		deviceIds: string[],
+		artifactType?: string,
+		releaseId?: string,
+	): Promise<ActionResponse> {
 		return http.post<ActionResponse>('/admin/firmware/deploy', {
 			deviceIds,
 			...(artifactType ? { artifactType } : {}),
@@ -53,11 +58,17 @@ export const firmwareService = {
 
 	/** Publish a draft — makes it the latest version visible to end users. */
 	async publish(releaseId: string): Promise<ActionResponse> {
-		return http.post<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}/publish`, {});
+		return http.post<ActionResponse>(
+			`/admin/firmware/${encodeURIComponent(releaseId)}/publish`,
+			{},
+		);
 	},
 
 	/** Unpublish — emergency brake: hides the release from end users. */
 	async unpublish(releaseId: string): Promise<ActionResponse> {
-		return http.post<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}/unpublish`, {});
+		return http.post<ActionResponse>(
+			`/admin/firmware/${encodeURIComponent(releaseId)}/unpublish`,
+			{},
+		);
 	},
 };

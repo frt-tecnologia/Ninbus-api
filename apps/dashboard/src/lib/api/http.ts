@@ -1,5 +1,5 @@
-import ky, { HTTPError } from 'ky';
 import type { ApiError } from '@/types/domain';
+import ky, { HTTPError } from 'ky';
 
 /**
  * Low-level API client — built on `ky` (https://github.com/sindresorhus/ky),
@@ -53,8 +53,11 @@ async function request<T>(
 			method,
 			// ky drops undefined/null entries automatically.
 			searchParams: opts?.query,
-			// `json` makes ky set Content-Type + serialize the body.
-			json: opts?.body,
+			// Multipart passthrough: `json:` would JSON.stringify a FormData into
+			// `{}` (destroying the file) and send it as application/json. For
+			// FormData, pass the raw body — fetch sets the multipart Content-Type
+			// with the boundary automatically (required by t.File() endpoints).
+			...(opts?.body instanceof FormData ? { body: opts.body as BodyInit } : { json: opts?.body }),
 		});
 		// 204 No Content (or empty body) → nothing to parse.
 		if (res.status === 204) return undefined as T;

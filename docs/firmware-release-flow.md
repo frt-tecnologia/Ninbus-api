@@ -25,7 +25,7 @@ Campos:
 
 | Campo | Obrigatório | Descrição |
 |-------|-------------|-----------|
-| `file` | ✅ | Firmware raw (.fir/.frz/.bin) — o **binário pós-CalcCRC** para firmware-ninbus |
+| `file` | ✅ | TAR canônico do ota_pack.py (.tar) — obrigatório para firmware-ninbus; .fir cru aceito para firmware-controller |
 | `name` | ✅ | Nome de exibição (ex.: "wifi3 — estabilidade CAN") |
 | `version` | ✅ | **Tag semver da atualização** (ex.: `4.0.1`, `4.1.0-rc.2`) — única por tipo |
 | `artifactType` | ✅ | `firmware-ninbus` \| `firmware-controller` |
@@ -238,31 +238,50 @@ com dialog de confirmação mostrando `versão atual → versão alvo`.
   filtro por tipo, ordenação por coluna, export e publicação via dialog
   (arquivo + tag semver obrigatória).
 
-## 5. Contrato de empacotamento (v3/v4 — paridade com o legado)
+## 5. Contrato de empacotamento (v4 canônico — ferramentas do repo Ninbus-v4)
 
-O backend empacota automaticamente (ver `src/modules/artifacts/tar-packager.ts`):
+> **Regra de ouro:** o dispositivo NUNCA recebe .bin/.hex/.elf crus. Ele
+> recebe o **TAR canônico assinado** gerado por `tools/ota_pack.py`
+> (repo Ninbus-v4). Qualquer outra coisa (bin renomeado, tar montado à mão,
+> zip) o firmware descarta com `closed/failure` — caso real: deployment 657,
+> "REJEITADO: manifesto sem magic NPM".
+
+Pipeline obrigatório (fábrica, Windows):
 
 ```
-firmware.tar
-├── header-info/featureidentity.json   {"type": "firmware-ninbus"}
-└── data/payload.bin                   binário do firmware
+py tools\ota_sign.py <APP>.bin <COUNTER> tools\keys\dev-ec256.pem manifest.bin
+py tools\ota_pack.py <APP>.bin manifest.bin update-app.tar --type firmware-ninbus
+# subir o update-app.tar (o backend valida a estrutura e armazena VERBATIM)
 ```
 
-Regras críticas (do agente do sistema embarcado):
+Estrutura (USTAR, mtime=0, determinístico — validada server-side por
+`src/modules/firmware/tar-validator.ts`, port de `ota_pack.py`):
 
-1. **TAR puro, sem gzip** — v4 não implementa inflate; comprimir quebra o parse.
-2. Diretórios exatamente `header-info/` e `data/`; payload nomeado `payload.bin`.
-3. O `type` do `featureidentity.json` é o que decide a bifurcação no device:
-   `firmware-ninbus` → self-update + reboot; `firmware-controller` /
-   `configuration-nfx` → CAN, sem reboot.
-4. **firmware-ninbus: o binário deve ser o pós-CalcCRC** (CRC16 do bootloader
-   no offset 1047). O backend faz upload VERBATIM — nenhum estágio recalcula
-   o CRC.
-5. **Manifesto assinado com counter > piso do bootloader** (anti-downgrade).
-   Counter ≤ piso → o bootloader NÃO aplica → restore → o servidor verá
-   ROLLED_BACK / "firmware was not applied by bootloader". É comportamento
-   correto do anti-downgrade — o runbook de counter deve ser seguido na
-   geração do binário pela fábrica.
+```
+update-app.tar
+├── artifact.info          → 'type "firmware-ninbus"' (primeiro membro)
+└── data/firmware.npm      → manifesto NPM (128 B) + imagem (.bin)
+```
+
+Regras críticas:
+
+1. **O membro de dados varia por tipo**: `data/firmware.npm` (ninbus) |
+   `data/config.frz` (nfx) | `data/controller.fir` (controller).
+2. **firmware-ninbus: o .tar é OBRIGATÓRIO** — o manifesto NPM de 128 B
+   (magic `NPM`, digest SHA-256(imagem‖counter‖size), assinatura DER
+   ECDSA P-256 8–72 B, padding 0xFF) é gerado pela ferramenta; o servidor
+   NÃO assina e armazena o tar verbatim. Upload de .bin cru → 400
+   INVALID_EXTENSION com a mensagem do pipeline.
+3. Imagem ≤ 192 KiB (0x30000); `<APP>.bin` = build-prod/zephyr (nunca
+   bootloader, nunca .hex, nunca .elf).
+4. **Counter > piso do bootloader** (anti-downgrade, ver `ota meta` no shell
+   do device). Counter ≤ piso → o download passa mas o bootloader rejeita
+   após o reboot (sela/rollback) — o pior caminho. Política: incrementar a
+   cada release e não reutilizar counter de build rejeitada.
+5. A pubkey correspondente à `dev-ec256.pem` tem que estar no bootloader
+   gravado (produção exigirá chave própria — gate pendente).
+6. `firmware-controller` aceita `.tar` (verbatim) OU `.fir` cru — o backend
+   empacota no formato canônico (`tar-packager.ts`).
 
 ## 6. Modelo de dados
 

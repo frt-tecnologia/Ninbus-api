@@ -27,10 +27,11 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 /**
- * Publish a factory firmware release: raw firmware file + REQUIRED semver
- * version tag + type. The API packages the .tar device contract server-side
- * (header-info/featureidentity.json + data/payload.bin, plain TAR — no gzip)
- * and registers the release in the global catalog.
+ * Publish a factory firmware release. GOLDEN RULE (v4 device contract): the
+ * device only accepts the canonical TAR signed by the Ninbus-v4 tools —
+ * ota_sign.py + ota_pack.py (artifact.info + data/firmware.npm with the
+ * signed NPM manifest). firmware-ninbus REQUIRES that .tar (stored verbatim;
+ * the server never signs); firmware-controller also accepts a raw .fir.
  */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -106,15 +107,18 @@ export function FirmwareUploadDialog({ onDone }: { onDone?: () => void }) {
 					</DialogHeader>
 					<FieldGroup>
 						<Field data-required>
-							<FieldLabel htmlFor="fw-file">Arquivo (.fir, .frz, .bin)</FieldLabel>
+							<FieldLabel htmlFor="fw-file">Arquivo</FieldLabel>
 							<Input
 								id="fw-file"
 								type="file"
-								accept=".fir,.frz,.nfx,.bin,.hex,.fw"
+								accept=".tar,.fir,.frz,.bin"
 								required
 								onChange={(e) => setFile(e.target.files?.[0] ?? null)}
 								className="cursor-pointer file:mr-3 file:cursor-pointer"
 							/>
+							<FieldDescription>
+								Ninbus: TAR do ota_pack.py (assinado) — bin cru é rejeitado.
+							</FieldDescription>
 							{file && (
 								<FieldDescription>
 									{file.name} · {(file.size / 1024).toFixed(0)} KB

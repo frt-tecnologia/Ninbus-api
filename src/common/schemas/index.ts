@@ -26,6 +26,9 @@ export const nullableDateTimeString = t.Union([t.Date(), t.Null()]);
 export const ErrorResponseSchema = t.Object({
 	error: t.String({ description: 'Error type (e.g. "Not Found", "Forbidden")' }),
 	message: t.String({ description: 'Human-readable error detail' }),
+	/** Machine-readable error code (e.g. INVALID_PACKAGE, DUPLICATE_VERSION) —
+	 *  present when the handler provides one (kept for the mobile/console UX). */
+	code: t.Optional(t.String({ description: 'Machine-readable error code' })),
 });
 
 /** Standard success response with message only */

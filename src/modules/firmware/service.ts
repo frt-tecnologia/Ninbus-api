@@ -16,10 +16,15 @@ import {
 	hawkbitSoftwareModules,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { validateFileExtension, validateFileSize } from '@modules/artifacts/service';
+import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
-import { compareVersions } from './versioning';
 import { and, desc, eq } from 'drizzle-orm';
+import {
+	type CanonicalArtifactType,
+	InvalidPackageError,
+	validateCanonicalTar,
+} from './tar-validator';
+import { compareVersions } from './versioning';
 
 /** Firmware types accepted in the factory catalog (no configuration-nfx —
  *  that one is company-scoped operational data, not a firmware release). */
@@ -40,7 +45,8 @@ export class FirmwareValidationError extends Error {
 			| 'NOT_FOUND'
 			| 'DUPLICATE_VERSION'
 			| 'LOCKED'
-			| 'INVALID_STATUS',
+			| 'INVALID_STATUS'
+			| 'INVALID_PACKAGE',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -69,8 +75,35 @@ export async function uploadFirmwareRelease(
 	file: File,
 	input: FirmwareUploadInput,
 ) {
-	validateFileExtension(file.name);
+	const isTar = file.name.toLowerCase().endsWith('.tar');
+	// Device contract (v4 golden rule): firmware-ninbus ONLY as the canonical
+	// .tar signed by the Ninbus-v4 tools (ota_sign.py + ota_pack.py). The
+	// controller firmware may arrive as .tar OR as a raw .fir (packaged here).
+	if (input.artifactType === 'firmware-ninbus' && !isTar) {
+		throw new FirmwareValidationError(
+			`firmware-ninbus exige o TAR canônico gerado por tools/ota_sign.py + ota_pack.py (repo Ninbus-v4) — o dispositivo rejeita .bin/.hex/.elf crus ("REJEITADO: manifesto sem magic NPM"). Recebido: ${file.name}.`,
+			'INVALID_EXTENSION',
+		);
+	}
 	validateFileSize(file.size);
+
+	// Validate the canonical tar structure BEFORE any external call — a
+	// malformed package must fail fast, never reach a device.
+	const fileBuffer = Buffer.from(await file.arrayBuffer());
+	let tarInfo: Awaited<ReturnType<typeof validateCanonicalTar>> | null = null;
+	if (isTar) {
+		try {
+			tarInfo = await validateCanonicalTar(fileBuffer, input.artifactType as CanonicalArtifactType);
+		} catch (e) {
+			// Surface package-validation failures through the route's
+			// FirmwareValidationError handling (400 with the validator message).
+			if (e instanceof InvalidPackageError) {
+				throw new FirmwareValidationError(e.message, 'INVALID_PACKAGE');
+			}
+			throw e;
+		}
+	}
+
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
 			'Firmware operations require hawkBit to be enabled',
@@ -104,8 +137,25 @@ export async function uploadFirmwareRelease(
 		input.version,
 	);
 
-	// Same device contract as artifacts: plain .tar with header-info + data/.
-	const packaged = await packageArtifact(file, input.artifactType);
+	// firmware-ninbus: store the tool-generated tar VERBATIM (signed manifest
+	// inside data/firmware.npm — the server never signs). Controller: .tar
+	// verbatim or raw .fir packaged into the canonical format.
+	let tarBlob: Blob;
+	let tarFilename: string;
+	let tarSize: number;
+	let payloadBytes: number;
+	if (isTar) {
+		tarBlob = new Blob([fileBuffer], { type: 'application/x-tar' });
+		tarFilename = file.name;
+		tarSize = fileBuffer.length;
+		payloadBytes = tarInfo!.imageSize;
+	} else {
+		const packaged = await packageArtifact(file, input.artifactType);
+		tarBlob = packaged.blob;
+		tarFilename = packaged.filename;
+		tarSize = packaged.size;
+		payloadBytes = file.size;
+	}
 
 	const smType = await getOrCreateSoftwareModuleType(input.artifactType);
 	const smUuid = randomUUID();
@@ -117,13 +167,13 @@ export async function uploadFirmwareRelease(
 			input.description ?? `Ninbus firmware release: ${input.artifactType}`,
 			`releaseName: ${input.name}`,
 			`originalFile: ${file.name}`,
-			`payloadBytes: ${file.size}`,
+			`payloadBytes: ${payloadBytes}`,
 		].join(' | '),
 	});
 
 	appLogger.info('[FIRMWARE] Created SM %d (release: %s)', sm.id, input.name);
 
-	const tarFile = new File([packaged.blob], packaged.filename, { type: 'application/x-tar' });
+	const tarFile = new File([tarBlob], tarFilename, { type: 'application/x-tar' });
 	const artifact = await hawkbitSoftwareModules.uploadArtifact(sm.id, tarFile);
 
 	const [release] = await db
@@ -135,8 +185,8 @@ export async function uploadFirmwareRelease(
 			artifactType: input.artifactType,
 			description: input.description ?? null,
 			originalFilename: file.name,
-			payloadSize: file.size,
-			packageSize: packaged.size,
+			payloadSize: payloadBytes,
+			packageSize: tarSize,
 			createdBy: userId,
 		})
 		.returning();
@@ -164,8 +214,8 @@ export async function uploadFirmwareRelease(
 		name: release.name,
 		version: release.version,
 		type: release.artifactType,
-		size: packaged.size,
-		payloadSize: file.size,
+		size: tarSize,
+		payloadSize: payloadBytes,
 	};
 }
 

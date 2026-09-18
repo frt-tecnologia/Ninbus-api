@@ -54,6 +54,71 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
 				continue;
 			}
+			if (entry.tag === '0003_mender_to_hawkbit_migration') {
+				// Column-rename check. Re-running RENAME throws 42703 (old column is
+				// gone) AND waits for an exclusive lock on live tables first. Skip when
+				// the renamed column is present.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'devices'
+					AND column_name = 'hawkbit_target_id'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0004_unclaimed_devices') {
+				// Nullability check — ALTER TYPE / DROP NOT NULL re-runs are idempotent
+				// but still take locks on live tables. Skip when already nullable.
+				const cols = await client`SELECT is_nullable FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'devices'
+					AND column_name = 'company_id'`;
+				if (cols.length > 0 && cols[0].is_nullable === 'YES') {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0005_serial_display') {
+				// Column check — ADD COLUMN IF NOT EXISTS is idempotent, but the
+				// backfill UPDATE scans devices on every boot. Skip when present.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'devices'
+					AND column_name = 'serial_display'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0006_created_by_nullable') {
+				// Nullability check — same lock-avoidance as 0004.
+				const cols = await client`SELECT is_nullable FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'devices'
+					AND column_name = 'created_by'`;
+				if (cols.length > 0 && cols[0].is_nullable === 'YES') {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0007_hawkbit_sync_columns') {
+				// Column check — a re-run would rely on ignored 42710/42701 errors,
+				// each still taking exclusive locks on live tables. Skip when present.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'devices'
+					AND column_name = 'connection_status'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+			if (entry.tag === '0009_deployment_audit_trail') {
+				// Column check — same ignored-error/lock-avoidance as 0007.
+				const cols = await client`SELECT column_name FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'deployments'
+					AND column_name = 'artifact_name'`;
+				if (cols.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
 			if (
 				entry.tag === '0008_artifacts_deployments_isolation' &&
 				tableSet.has('artifacts') &&
@@ -194,11 +259,21 @@ export async function runStartupMigrations(databaseUrl?: string) {
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);
 			const sql = fs.readFileSync(sqlFile, 'utf8');
 
-			// Split by statement breakpoint and execute each
+			// Split by statement breakpoint and execute each. Strip comment LINES
+			// (not whole chunks): 0021 ships leading comments + one ALTER with NO
+			// breakpoint — dropping chunks starting with '--' silently skipped the
+			// ALTER while still logging '✓ Applied', leaving the column missing and
+			// every firmware_releases query 500-ing in production.
 			const statements = sql
 				.split('--> statement-breakpoint')
+				.map((chunk: string) =>
+					chunk
+						.split('\n')
+						.filter((line: string) => !line.trim().startsWith('--'))
+						.join('\n'),
+				)
 				.map((s: string) => s.trim())
-				.filter((s: string) => s.length > 0 && !s.startsWith('--'));
+				.filter((s: string) => s.length > 0);
 
 			for (const stmt of statements) {
 				try {

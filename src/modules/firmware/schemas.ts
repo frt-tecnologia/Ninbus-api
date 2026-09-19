@@ -184,6 +184,10 @@ export const FirmwareDeploymentResultSchema = t.Object({
 	smName: t.String(),
 	verified: t.Number(),
 	failed: t.Number(),
+	// Operational guard (bench incident: rollout served the OLD published build
+	// because the owner's fresh upload was still DRAFT). Present when deploying
+	// the latest PUBLISHED release while a NEWER DRAFT exists in the catalog.
+	draftWarning: t.Optional(t.String()),
 });
 
 /** POST /api/admin/firmware/deploy — admin body (global device selection). */

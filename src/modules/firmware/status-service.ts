@@ -8,6 +8,7 @@
  * (refreshStaleFirmwareVersions) pulls hawkBit attributes for stale devices so
  * post-install reports are visible without waiting for the next sync cycle.
  */
+import { appLogger } from '@common/logger';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
@@ -200,7 +201,26 @@ export async function triggerFirmwareUpdate(
 	// Resolve the SM fresh from hawkBit (validates it still exists).
 	const sm = await hawkbitSoftwareModules.get(release.hawkbitSmId);
 
-	return deploySoftwareModuleToTargets(
+	// Operational guard: when the caller resolves the latest PUBLISHED release
+	// but a NEWER DRAFT sits in the catalog, surface it instead of silently
+	// shipping the old artifact (bench incident: rollout 660 served the 182 KB
+	// debug build because the owner's 4.0.4 upload was still draft).
+	let draftWarning: string | undefined;
+	if (!opts?.releaseId) {
+		const latestAny = await getLatestRelease(artifactType, false);
+		if (
+			latestAny &&
+			latestAny.id !== release.id &&
+			compareVersions(latestAny.version, release.version) > 0
+		) {
+			draftWarning =
+				`Deployed PUBLISHED ${release.version}, but a NEWER DRAFT ${latestAny.version} ` +
+				`(${latestAny.name}) exists in the catalog. Publish it if it should ship.`;
+			appLogger.warn('[FIRMWARE] %s', draftWarning);
+		}
+	}
+
+	const result = await deploySoftwareModuleToTargets(
 		companyId,
 		userId,
 		{ id: sm.id, name: sm.name, version: sm.version },
@@ -212,4 +232,5 @@ export async function triggerFirmwareUpdate(
 			artifactOriginalFile: release.originalFilename,
 		},
 	);
+	return draftWarning ? { ...result, draftWarning } : result;
 }

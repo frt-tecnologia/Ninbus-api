@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
-import { firmwareReleases } from '@common/db/schema';
+import { deployments, firmwareReleases } from '@common/db/schema';
 import {
 	NINBUS_ARTIFACT_TYPES,
 	getOrCreateSoftwareModuleType,
@@ -18,7 +18,7 @@ import {
 import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { OtaSignerError, buildNinbusTar } from './ota-signer';
 import {
 	type CanonicalArtifactType,
@@ -52,7 +52,8 @@ export class FirmwareValidationError extends Error {
 			| 'INVALID_KEY'
 			| 'INVALID_IMAGE'
 			| 'INVALID_COUNTER'
-			| 'INVALID_SIGNATURE',
+			| 'INVALID_SIGNATURE'
+			| 'COUNTER_FLOOR_BURNED',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -317,6 +318,49 @@ export async function deleteFirmwareRelease(releaseId: string) {
 		.where(eq(firmwareReleases.id, releaseId));
 	if (!release) {
 		throw new FirmwareValidationError('Firmware release not found', 'NOT_FOUND');
+	}
+
+	// Anti-replay floor preservation (bootloader contract): the manifest
+	// counter of a SERVED release is burned into every device that accepted
+	// the apply — readback/trial failures and rollbacks do NOT give it back.
+	// Deleting the catalog's sole holder of the max served counter would lower
+	// the floor, making the next max+1 upload re-sign an already-burned
+	// counter (guaranteed replay rejection). Block and point at the runbook.
+	if (release.artifactType === 'firmware-ninbus' && release.counter != null) {
+		const [served] = await db
+			.select({ id: deployments.id })
+			.from(deployments)
+			.where(
+				and(
+					eq(deployments.artifactType, 'firmware-ninbus'),
+					eq(deployments.artifactVersion, release.version),
+				),
+			)
+			.limit(1);
+		if (served) {
+			const [maxRow] = await db
+				.select({ maxCounter: sql<number>`coalesce(max(${firmwareReleases.counter}), 0)` })
+				.from(firmwareReleases)
+				.where(eq(firmwareReleases.artifactType, 'firmware-ninbus'));
+			if ((maxRow?.maxCounter ?? 0) === release.counter) {
+				const [sameCounter] = await db
+					.select({ n: sql<number>`count(*)` })
+					.from(firmwareReleases)
+					.where(
+						and(
+							eq(firmwareReleases.artifactType, 'firmware-ninbus'),
+							eq(firmwareReleases.counter, release.counter),
+							ne(firmwareReleases.id, releaseId),
+						),
+					);
+				if (Number(sameCounter?.n ?? 0) === 0) {
+					throw new FirmwareValidationError(
+						`Release ${release.version} (counter ${release.counter}) was already SERVED to devices and is the catalog's sole holder of that counter. The bootloader anti-replay floor does not roll back — deleting it would make the next upload re-sign a burned counter (guaranteed replay rejection). Re-align the floor first: set counter=${release.counter} on an older release of the same type (or re-sign above it), then delete this one.`,
+					'COUNTER_FLOOR_BURNED',
+				);
+				}
+			}
+		}
 	}
 
 	let hawkbitKept = false;

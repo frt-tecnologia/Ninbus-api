@@ -1167,6 +1167,14 @@
       "category": "process",
       "learnedAt": "2026-09-18T23:20:21.184Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-ota-signed-fields-not-typed",
+      "rule": "Campos cobertos por assinatura (counter, version, flags de manifesto OTA) têm como FONTE o artefato assinado em si — valores digitados em upload/serviço são apenas CONFERÊNCIA (mismatch = bloqueio, nunca sobrescreve). Nunca re-assinar com valor derivado de input não-confiável, e jamais deixar um campo assinável fora do digest.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-21T00:42:11.720Z",
+      "reinforcementCount": 1
     }
   ]
 }

@@ -77,6 +77,14 @@ export const FirmwareReleaseSchema = t.Object({
 	packageSize: t.Union([t.Number(), t.Null()]),
 	/** Anti-downgrade manifest counter (firmware-ninbus only). Auto: max+1. */
 	counter: t.Union([t.Number(), t.Null()]),
+	/** NPM manifest v2 packed version u32 — null = v1 legacy/non-ninbus. */
+	manifestVersion: t.Union([t.Number(), t.Null()]),
+	/** NPM manifest v2 flags (bit0 = allow_downgrade) — null = v1/non-ninbus. */
+	manifestFlags: t.Union([t.Number(), t.Null()]),
+	/** Publication gate evidence (checks + verdict + image sha256) — null until
+	 * the gate runs; REQUIRED to pass before status='published'. */
+	gate: t.Union([t.Unknown(), t.Null()]),
+	gateAt: t.Union([t.String({ format: 'date-time' }), t.Null()]),
 	createdBy: t.Union([t.String(), t.Null()]),
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,
@@ -201,9 +209,14 @@ export const DeployFirmwareBodySchema = t.Object({
 	artifactType: t.Optional(
 		t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')]),
 	),
-	// Explicit release (any status — allows testing a DRAFT on pilot devices).
+	// Explicit release (must be PUBLISHED — the publication gate must have
+	// passed; no assignment ever resolves a draft).
 	// Omitted → latest PUBLISHED release of the type.
 	releaseId: t.Optional(t.String({ format: 'uuid' })),
+	// Escape hatch for REJECTED_ARTIFACT: retry the same release after a
+	// transient failure (e.g. devices were offline). The anti-replay floor
+	// still applies on the devices themselves.
+	force: t.Optional(t.Boolean()),
 });
 
 export const FirmwareDeployResponseSchema = t.Object({

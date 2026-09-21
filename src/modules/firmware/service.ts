@@ -19,7 +19,7 @@ import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
-import { OtaSignerError, buildNinbusTar } from './ota-signer';
+import { OtaSignerError, buildNinbusTar, packVersionString } from './ota-signer';
 import {
 	type CanonicalArtifactType,
 	InvalidPackageError,
@@ -53,7 +53,10 @@ export class FirmwareValidationError extends Error {
 			| 'INVALID_IMAGE'
 			| 'INVALID_COUNTER'
 			| 'INVALID_SIGNATURE'
-			| 'COUNTER_FLOOR_BURNED',
+			| 'INVALID_VERSION'
+			| 'COUNTER_FLOOR_BURNED'
+			| 'GATE_FAILED'
+			| 'REJECTED_ARTIFACT',
 	) {
 		super(message);
 		this.name = 'FirmwareValidationError';
@@ -91,14 +94,18 @@ export async function uploadFirmwareRelease(
 	//      anti-downgrade counter: max(catalog counter) + 1 (monotonic —
 	//      never reused, never below a previous release; embedded policy).
 	const isNinbus = input.artifactType === 'firmware-ninbus';
-	let signCounter: number | null = null;
-	if (isNinbus && !isTar) {
-		const [row] = await db
-			.select({ maxCounter: sql<number>`coalesce(max(${firmwareReleases.counter}), 0)` })
-			.from(firmwareReleases)
-			.where(eq(firmwareReleases.artifactType, 'firmware-ninbus'));
-		signCounter = Number(row?.maxCounter ?? 0) + 1;
-	}
+	// Monotonic catalog counter (firmware-ninbus only): the server-sign path
+	// ALWAYS uses max+1; the factory-.tar path validates its embedded counter
+	// against the same floor (strictly greater — see below). Includes drafts,
+	// so a deleted draft's counter can not be silently re-signed.
+	const [maxCounterRow] = isNinbus
+		? await db
+				.select({ maxCounter: sql<number>`coalesce(max(${firmwareReleases.counter}), 0)` })
+				.from(firmwareReleases)
+				.where(eq(firmwareReleases.artifactType, 'firmware-ninbus'))
+		: [];
+	const catalogMaxCounter = Number(maxCounterRow?.maxCounter ?? 0);
+	const signCounter = isNinbus && !isTar ? catalogMaxCounter + 1 : null;
 	validateFileSize(file.size);
 
 	// Validate the canonical tar structure BEFORE any external call — a
@@ -110,12 +117,18 @@ export async function uploadFirmwareRelease(
 		// (defense in depth — same validator the .tar path goes through).
 		try {
 			appLogger.info(
-				'[FIRMWARE] Server-side signing: %s (%d KB) counter=%d → canonical tar',
+				'[FIRMWARE] Server-side signing: %s (%d KB) counter=%d version=%s → canonical tar v2',
 				file.name,
 				Math.round(fileBuffer.length / 1024),
 				signCounter,
+				input.version,
 			);
-			fileBuffer = await buildNinbusTar(fileBuffer, signCounter);
+			// v2 (version-piso): the typed version is packed into the manifest and
+			// covered by the signature. STRICT X.Y.Z[.B] — suffixes must come via the
+			// factory .tar (ota_sign.py --version) or a clean-version re-tag.
+			fileBuffer = await buildNinbusTar(fileBuffer, signCounter, {
+				version: packVersionString(input.version),
+			});
 			tarInfo = await validateCanonicalTar(fileBuffer, 'firmware-ninbus');
 		} catch (e) {
 			if (e instanceof OtaSignerError) {
@@ -136,6 +149,25 @@ export async function uploadFirmwareRelease(
 				throw new FirmwareValidationError(e.message, 'INVALID_PACKAGE');
 			}
 			throw e;
+		}
+		if (isNinbus) {
+			// Version CONFERÊNCIA (v2 contract): the signed manifest is the SOURCE
+			// of truth — the typed version may only MATCH it, never override it.
+			if (tarInfo.manifestFormat === 2 && tarInfo.versionText !== input.version) {
+				throw new FirmwareValidationError(
+					`Versão digitada (${input.version}) difere da versão ASSINADA no manifesto v2 (${tarInfo.versionText}). O manifesto é a fonte — re-uploade com a versão correta ou re-assine o .tar (ota_sign.py --version ${tarInfo.versionText}).`,
+					'INVALID_VERSION',
+				);
+			}
+			// Counter floor (anti-replay): a re-offered factory .tar must carry a
+			// counter STRICTLY greater than the catalog max — devices burn the
+			// served counter even on failed applies (bench: 660–664).
+			if ((tarInfo.counter ?? 0) <= catalogMaxCounter) {
+				throw new FirmwareValidationError(
+					`Counter do manifesto (${tarInfo.counter}) deve ser ESTRITAMENTE maior que o máximo do catálogo (${catalogMaxCounter}) — o piso anti-replay dos devices não regride. Re-assine com ota_sign.py usando counter ≥ ${catalogMaxCounter + 1}.`,
+					'INVALID_COUNTER',
+				);
+			}
 		}
 	}
 
@@ -227,6 +259,8 @@ export async function uploadFirmwareRelease(
 			packageSize: tarSize,
 			// ninbus: signed counter (server path) or the manifest counter (.tar)
 			counter: signCounter ?? tarInfo?.counter ?? null,
+			manifestVersion: tarInfo?.versionPacked ?? null,
+			manifestFlags: tarInfo && tarInfo.allowDowngrade !== null ? (tarInfo.allowDowngrade ? 0x1 : 0x0) : null,
 			createdBy: userId,
 		})
 		.returning();

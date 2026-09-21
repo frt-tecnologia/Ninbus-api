@@ -3,6 +3,7 @@ import {
 	check,
 	index,
 	integer,
+	jsonb,
 	pgEnum,
 	pgTable,
 	text,
@@ -49,6 +50,16 @@ export const firmwareReleases = pgTable(
 		 *  manifest). Drives the automatic nextCounter = max+1 policy — releases
 		 *  created before this column are treated as 0. */
 		counter: integer('counter'),
+		/** NPM manifest v2 packed version u32 (major<<24|minor<<16|patch<<8|build).
+		 * NULL = v1 legacy manifest (no version-piso) or non-ninbus type. */
+		manifestVersion: integer('manifest_version'),
+		/** NPM manifest v2 flags (bit0 = allow_downgrade). NULL = v1/non-ninbus. */
+		manifestFlags: integer('manifest_flags'),
+		/** Pre-publish verification gate evidence (checks, verdict, sha256,
+		 * fleet floor) — required before status='published' for v2 releases. */
+		gate: jsonb('gate'),
+		/** When the publication gate last ran and passed. */
+		gateAt: timestamp('gate_at', { withTimezone: true }),
 		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

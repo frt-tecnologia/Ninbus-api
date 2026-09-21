@@ -67,13 +67,15 @@ export const GateCheckSchema = t.Object({
 });
 
 export const GateResultSchema = t.Object({
-	mode: t.Union([t.Literal('publish'), t.Literal('pilot')]),
+	// Read-tolerant: evidence persisted BEFORE a field existed must still
+	// serialize (JSONB has no schema migration). Only 'passed' is required.
 	passed: t.Boolean(),
-	checkedAt: t.String(),
-	checks: t.Array(GateCheckSchema),
-	imageSha256: t.Union([t.String(), t.Null()]),
-	fleetFloorVersion: t.Union([t.String(), t.Null()]),
-	catalogMaxCounter: t.Union([t.Number(), t.Null()]),
+	mode: t.Optional(t.Union([t.Literal('publish'), t.Literal('pilot')])),
+	checkedAt: t.Optional(t.String()),
+	checks: t.Optional(t.Array(GateCheckSchema)),
+	imageSha256: t.Optional(t.Union([t.String(), t.Null()])),
+	fleetFloorVersion: t.Optional(t.Union([t.String(), t.Null()])),
+	catalogMaxCounter: t.Optional(t.Union([t.Number(), t.Null()])),
 });
 
 export const FirmwareReleaseSchema = t.Object({

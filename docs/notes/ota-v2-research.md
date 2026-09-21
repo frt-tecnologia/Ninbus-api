@@ -59,3 +59,48 @@ Data: 2025-04 (iteração 54) · Repo API: `E:/develop/Ninbus-api` · Firmware: 
 1. **Fonte da versão**: factory → `apps/*/VERSION` (west/CMake) via `ota_sign.py --version`; server-sign .bin → campo do upload empacotado (dev). F6: imagem não auto-descreve versão hoje.
 2. **Fonte do counter**: `max(firmware_releases.counter)+1` no server-sign (inclui drafts); .tar verbatim com counter do manifesto — e a partir de agora validado `> max(catálogo)`. Falhou 4× porque não houve re-assinatura: o mesmo artifact foi re-servido (H-A) + releaseId explícito aceitava draft (F10).
 3. **Registro do gate**: `firmware_releases.gate` JSONB + `gate_at` (evidência anexada à release, retornada pela API).
+
+---
+
+## Incidente 673 — "o backend está servindo um binário que não é nosso" (17/04)
+
+### Evidência do embarcado (probe DDI independente, token key-test)
+- tar 182.784 B sha `2247bec1…`; manifesto v2 counter=3 version=4.0.4 flags=0
+- imagem interna 179.794 B sha `c0aaca9d067e…` — não bate com nenhuma build conhecida
+  (4.0.4=116.928 B `1f3309f8…`, 4.0.5 errada=f59982c6…, antiga=004c8da8…)
+- software module `sm-9cfb2e5e-…`
+- Histórico de tamanhos: 79.360 (665) → 182.272 → 182.784
+
+### Árvore de hipóteses (confiança calibrada)
+- **H1 (~85%): upload de `.bin` errado via server-sign, de novo.** O backend não
+  builda nada (grep: zero refs a zephyr/west/cmake/toolchain em src/). O server-sign
+  assina OS BYTES RECEBIDOS com a versão DIGITADA e counter max+1. Imagem 179.794 B
+  = o arquivo que ALGUÉM subiu (perfil HIL/debug da bancada); "4.0.4" = o que essa
+  pessoa digitou; counter 3 = max+1 na hora. Os pares 182.272/182.784 = re-upload do
+  mesmo arquivo (conters 3 e 4). Mesma classe de falha do 665, arquivo diferente.
+- **H2 (<5%): tar de fábrica assinado por terceiro** — exigiria a chave dev fora do
+  time embarcado. Counter/version do manifesto bateriam exatamente (batem), mas
+  `original_filename` terminaria em `.tar`.
+- **H3 (~0%): "o backend builda firmware próprio"** — impossível por construção
+  (sem toolchain, sem checkout do repo de firmware, sem rede de build; código
+  auditado).
+- **Discriminador DECISIVO (uma query)**: `original_filename`, `created_by`,
+  `payload_size` da row que aponta o SM. `.bin` + 179.794 + usuário da bancada ⇒ H1.
+
+### Sobre "o gate não pega isso" — correto e documentado desde o 665
+O gate valida **consistência** (re-download, sha recomputado, v2==declarada, counter
+monotônico, piso da frota), não **procedência** — a imagem não se auto-descreve.
+Mitigações na fila: struct de versão em offset fixo (embarcado), surfar
+imageSize/sha no console + resposta do deploy, `FIRMWARE_ALLOW_BIN_SIGN=false` em
+produção (mata o server-sign de .bin cru).
+
+### Bundle de diagnóstico na EC2 (rodar e colar o output)
+```bash
+cd ~/Ninbus-api && docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+"SELECT version, status, counter, manifest_version mv, original_filename, payload_size,
+        package_size, hawkbit_sm_id, created_by, created_at, gate_at,
+        gate->>'imageSha256' img_sha, left(gate::text,200) gate_head
+ FROM firmware_releases ORDER BY created_at DESC LIMIT 8;"
+```
+(SEM psql no container: `docker compose exec -T api node -e` com o postgres do
+node_modules, ou rodar o SQL via Neon console com o DATABASE_URL do .env da EC2.)

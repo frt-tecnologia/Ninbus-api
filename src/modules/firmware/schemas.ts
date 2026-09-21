@@ -209,9 +209,9 @@ export const DeployFirmwareBodySchema = t.Object({
 	artifactType: t.Optional(
 		t.Union([t.Literal('firmware-ninbus'), t.Literal('firmware-controller')]),
 	),
-	// Explicit release (must be PUBLISHED — the publication gate must have
-	// passed; no assignment ever resolves a draft).
-	// Omitted → latest PUBLISHED release of the type.
+	// Explicit release — may be a DRAFT: the admin-console PILOT channel
+	// (bench test on assigned devices, guarded by the structural gate).
+	// Omitted → latest PUBLISHED release of the type (never a draft).
 	releaseId: t.Optional(t.String({ format: 'uuid' })),
 	// Escape hatch for REJECTED_ARTIFACT: retry the same release after a
 	// transient failure (e.g. devices were offline). The anti-replay floor

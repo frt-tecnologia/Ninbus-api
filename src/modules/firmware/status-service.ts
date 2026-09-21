@@ -16,7 +16,7 @@ import { deployments } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { deploySoftwareModuleToTargets } from '@modules/deployments/deploy';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
-import { getFirmwareReleaseById } from './release-gate';
+import { getFirmwareReleaseById, runPublicationGate } from './release-gate';
 import { compareVersions, getLatestRelease } from './service';
 import { FirmwareValidationError } from './service';
 import { refreshStaleFirmwareVersions } from './version-refresh';
@@ -180,11 +180,27 @@ export async function triggerFirmwareUpdate(
 			'NOT_FOUND',
 		);
 	}
+	// DRAFT + explicit releaseId = PILOT channel (admin console bench test):
+	// the documented factory workflow — validate on assigned pilot devices
+	// BEFORE publishing to the whole fleet. Guarded by the STRUCTURAL gate
+	// (artifact re-download + tar integrity + v2 version match) so a corrupt
+	// or mistyped artifact never reaches even a bench device; the official
+	// rollout semantics (counter-vs-published, fleet floor) stay publish-only.
+	// The DEFAULT path (no releaseId) still resolves PUBLISHED only — the
+	// silent-stale-artifact hole of 660–664 remains closed.
+	let draftPilot: string | undefined;
 	if (release.status !== 'published') {
-		throw new FirmwareValidationError(
-			`Release ${release.version} is still ${release.status} — publish it first (the publication gate must pass). No assignment ever resolves a draft.`,
-			'INVALID_STATUS',
-		);
+		const gate = await runPublicationGate(release.id, 'pilot');
+		if (!gate.passed) {
+			const failed = gate.checks.filter((c) => !c.passed).map((c) => `${c.name}: ${c.detail}`);
+			throw new FirmwareValidationError(
+				`Pilot gate FAILED for draft ${release.version} — ${failed.join(' | ')}`,
+				'GATE_FAILED',
+			);
+		}
+		draftPilot =
+			`PILOT: draft ${release.version} deployed to assigned test devices only — NOT published; companies will not see it until the publication gate passes.`;
+		appLogger.warn('[FIRMWARE] %s', draftPilot);
 	}
 
 	// Anti re-offer (OTA v2 contract): when the LATEST deployment of this
@@ -280,5 +296,8 @@ export async function triggerFirmwareUpdate(
 			artifactOriginalFile: release.originalFilename,
 		},
 	);
-	return draftWarning ? { ...result, draftWarning } : result;
+	const flags: Record<string, string> = {};
+	if (draftWarning) flags['draftWarning'] = draftWarning;
+	if (draftPilot) flags['draftPilot'] = draftPilot;
+	return Object.keys(flags).length ? { ...result, ...flags } : result;
 }

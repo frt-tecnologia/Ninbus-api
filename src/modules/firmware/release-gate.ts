@@ -17,6 +17,9 @@ export interface GateCheck {
 }
 
 export interface PublicationGateResult {
+	/** 'publish' — full contract (counter monotonic + fleet floor).
+	 *  'pilot' — structural only (draft bench tests via explicit releaseId). */
+	mode: 'publish' | 'pilot';
 	/** Verdict — publishing requires every check to pass. */
 	passed: boolean;
 	checkedAt: string;
@@ -59,11 +62,15 @@ export async function getFirmwareReleaseById(releaseId: string) {
  *      firmware version), unless the manifest carries allow_downgrade.
  * The verdict is persisted on the release (gate + gate_at) as evidence.
  */
-export async function runPublicationGate(releaseId: string): Promise<PublicationGateResult> {
+export async function runPublicationGate(
+	releaseId: string,
+	mode: 'publish' | 'pilot' = 'publish',
+): Promise<PublicationGateResult> {
 	const release = await getFirmwareReleaseById(releaseId);
 	if (release.artifactType !== 'firmware-ninbus') {
 		// Gate only applies to the signed self-update artifact.
 		const result: PublicationGateResult = {
+			mode,
 			passed: true,
 			checkedAt: new Date().toISOString(),
 			checks: [
@@ -101,6 +108,7 @@ export async function runPublicationGate(releaseId: string): Promise<Publication
 		);
 	} catch (e: any) {
 		const result: PublicationGateResult = {
+			mode,
 			passed: false,
 			checkedAt: new Date().toISOString(),
 			checks: [
@@ -159,7 +167,13 @@ export async function runPublicationGate(releaseId: string): Promise<Publication
 	}
 
 	// (d): counter strictly greater than the max PUBLISHED counter (others).
-	const [maxPub] = await db
+	// PILOT mode skips (d)+(e): they are official-rollout semantics — a bench
+	// draft test may legitimately sit below them; the device-side anti-replay
+	// floor is the hard protection for the bench device itself.
+	const [maxPub] =
+		mode === 'pilot'
+			? [{ maxCounter: release.counter ?? 0 }]
+			: await db
 		.select({ maxCounter: sql<number>`coalesce(max(${firmwareReleases.counter}), 0)` })
 		.from(firmwareReleases)
 		.where(
@@ -185,9 +199,12 @@ export async function runPublicationGate(releaseId: string): Promise<Publication
 	}
 
 	// (e): version > fleet floor, unless allow_downgrade is signed.
-	const [fleet] = await db
-		.select({ maxVersion: sql<string | null>`max(${devices.firmwareVersion})` })
-		.from(devices);
+	const [fleet] =
+		mode === 'pilot'
+			? [{ maxVersion: null as string | null }]
+			: await db
+					.select({ maxVersion: sql<string | null>`max(${devices.firmwareVersion})` })
+					.from(devices);
 	const fleetFloorVersion = fleet?.maxVersion ?? null;
 	const allowDowngrade = ((release.manifestFlags ?? 0) & 0x1) === 0x1;
 	if (fleetFloorVersion && !allowDowngrade) {
@@ -210,6 +227,7 @@ export async function runPublicationGate(releaseId: string): Promise<Publication
 	}
 
 	const result: PublicationGateResult = {
+		mode,
 		passed: checks.every((c) => c.passed),
 		checkedAt: new Date().toISOString(),
 		checks,

@@ -84,7 +84,7 @@ export const FirmwareReleaseSchema = t.Object({
 	/** Publication gate evidence (checks + verdict + image sha256) — null until
 	 * the gate runs; REQUIRED to pass before status='published'. */
 	gate: t.Union([t.Unknown(), t.Null()]),
-	gateAt: t.Union([t.String({ format: 'date-time' }), t.Null()]),
+	gateAt: t.Union([dateTimeString, t.Null()]),
 	createdBy: t.Union([t.String(), t.Null()]),
 	createdAt: dateTimeString,
 	updatedAt: dateTimeString,

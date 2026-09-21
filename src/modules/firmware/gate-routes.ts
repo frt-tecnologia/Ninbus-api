@@ -34,9 +34,15 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					set.status =
+						error.code === 'NOT_FOUND' ? 404 : error.code === 'GATE_FAILED' ? 409 : 400;
 					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
+						error:
+							error.code === 'NOT_FOUND'
+								? 'Not Found'
+								: error.code === 'GATE_FAILED'
+									? 'Conflict'
+									: 'Validation error',
 						message: error.message,
 						code: error.code,
 					};
@@ -87,9 +93,15 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					set.status =
+						error.code === 'NOT_FOUND' ? 404 : error.code === 'GATE_FAILED' ? 409 : 400;
 					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
+						error:
+							error.code === 'NOT_FOUND'
+								? 'Not Found'
+								: error.code === 'GATE_FAILED'
+									? 'Conflict'
+									: 'Validation error',
 						message: error.message,
 						code: error.code,
 					};

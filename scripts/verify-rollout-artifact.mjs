@@ -128,14 +128,39 @@ async function parseTar(buf) {
 		}
 		if (name.endsWith('data/firmware.npm') || name.endsWith('firmware.npm')) {
 			const magic = data.subarray(0, 4).toString('latin1');
+			const format = magic.charCodeAt(3); // 1 | 2
 			const imgSize = data.readUInt32LE(4);
 			const counter = data.readUInt32LE(40);
 			const image = data.subarray(128);
 			const imgSha = createHash('sha256').update(image).digest('hex');
-			console.log(`    manifest: magic=${JSON.stringify(magic)} imageBytes=${imgSize} counter=${counter}`);
+			let extra = '';
+			if (format === 2) {
+				const packed = data.readUInt32LE(44);
+				const flags = data.readUInt32LE(48);
+				const major = (packed >>> 24) & 0xff;
+				const minor = (packed >>> 16) & 0xff;
+				const patch = (packed >>> 8) & 0xff;
+				const build = packed & 0xff;
+				extra = ` version=${major}.${minor}.${patch}${build ? `.${build}` : ''} (0x${packed.toString(16).padStart(8, '0')}) flags=0x${flags.toString(16)}${flags & 0x1 ? ' [allow_downgrade]' : ''}${flags & ~0x1 ? ' [RESERVED BITS SET]' : ''}`;
+				// digest re-computation (v2): image ‖ counter ‖ size ‖ version ‖ flags
+				const trailer = Buffer.alloc(16);
+				trailer.writeUInt32LE(counter, 0);
+				trailer.writeUInt32LE(imgSize, 4);
+				trailer.writeUInt32LE(packed, 8);
+				trailer.writeUInt32LE(flags, 12);
+				const expect = createHash('sha256').update(image).update(trailer).digest('hex');
+				extra += ` | digest ${expect === data.subarray(8, 40).toString('hex') ? 'OK' : 'MISMATCH'}`;
+			} else {
+				const trailer = Buffer.alloc(8);
+				trailer.writeUInt32LE(counter, 0);
+				trailer.writeUInt32LE(imgSize, 4);
+				const expect = createHash('sha256').update(image).update(trailer).digest('hex');
+				extra = ` (v1) | digest ${expect === data.subarray(8, 40).toString('hex') ? 'OK' : 'MISMATCH'}`;
+			}
+			console.log(`    manifest: magic=${JSON.stringify(magic)} imageBytes=${imgSize} counter=${counter}${extra}`);
 			console.log(`    image actual=${image.length} B | sha256=${imgSha}`);
 			console.log(
-				`    verdict: magic ${magic === 'NPM\x01' ? 'OK' : 'WRONG'} | size ${imgSize === image.length ? 'OK' : `MISMATCH (decl ${imgSize} vs actual ${image.length})`}`,
+				`    verdict: magic ${(magic === 'NPM\x01' || magic === 'NPM\x02') ? 'OK' : 'WRONG'} | size ${imgSize === image.length ? 'OK' : `MISMATCH (decl ${imgSize} vs actual ${image.length})`}`,
 			);
 		}
 	}

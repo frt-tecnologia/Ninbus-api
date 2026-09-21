@@ -198,6 +198,7 @@ export async function triggerFirmwareUpdate(
 		.select({
 			id: deployments.id,
 			artifactVersion: deployments.artifactVersion,
+			createdAt: deployments.createdAt,
 			snapshot: deployments.targetStatusSnapshot,
 		})
 		.from(deployments)
@@ -207,7 +208,12 @@ export async function triggerFirmwareUpdate(
 	if (
 		lastDeploy &&
 		lastDeploy.artifactVersion === release.version &&
-		!opts?.force
+		!opts?.force &&
+		// Identity discriminator: only block when THIS release row predates the
+		// failed deployment — i.e. it IS the artifact that was offered. A
+		// re-uploaded same-version release (created AFTER the failure, carrying a
+		// new counter) is the sanctioned v2 re-sign path (contract item 6).
+		release.createdAt <= lastDeploy.createdAt
 	) {
 		const snap = lastDeploy.snapshot as Record<string, { phase?: string }> | null;
 		const entries = snap ? Object.values(snap) : [];

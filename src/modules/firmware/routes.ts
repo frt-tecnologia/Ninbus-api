@@ -173,9 +173,11 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 	// DELETE /:releaseId — Remove a release
 	.delete(
 		'/:releaseId',
-		async ({ params, user, set }) => {
+		async ({ params, query, user, set }) => {
 			try {
-				const result = await deleteFirmwareRelease(params.releaseId);
+				const result = await deleteFirmwareRelease(params.releaseId, {
+					realignFloor: query?.realignFloor === 'true' || query?.realignFloor === true,
+				});
 				await logActivity({
 					actorUserId: user.id,
 					actorEmail: user.email,
@@ -205,6 +207,11 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 			auth: true,
 			superAdmin: true,
 			params: t.Object({ releaseId: t.String({ format: 'uuid' }) }),
+			query: t.Object({
+				realignFloor: t.Optional(
+					t.String({ description: "'true' — when the release holds the sole served counter, transfer the anti-replay floor to the newest older release before deleting (automated runbook)." }),
+				),
+			}),
 			detail: {
 				tags: ['Firmware'],
 				summary: 'Delete a firmware release (factory only)',

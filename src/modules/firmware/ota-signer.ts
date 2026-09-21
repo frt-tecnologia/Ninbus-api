@@ -176,10 +176,7 @@ function otaDigest(
  */
 export function packVersionString(text: string): number {
 	const parts = text.trim().split('.');
-	if (
-		(parts.length !== 3 && parts.length !== 4) ||
-		!parts.every((p) => /^\d+$/.test(p))
-	) {
+	if ((parts.length !== 3 && parts.length !== 4) || !parts.every((p) => /^\d+$/.test(p))) {
 		throw new OtaSignerError(
 			`versão inválida ("${text}") — v2 exige X.Y.Z[.B] estrito, sem sufixos (-dev, -rc1): use o .tar assinado pela fábrica (ota_sign.py --version) para builds com sufixo, ou publique uma versão sem sufixo`,
 			'INVALID_VERSION',
@@ -192,9 +189,7 @@ export function packVersionString(text: string): number {
 			'INVALID_VERSION',
 		);
 	}
-	return (
-		(numbers[0]! << 24) | (numbers[1]! << 16) | (numbers[2]! << 8) | (numbers[3] ?? 0)
-	);
+	return (numbers[0]! << 24) | (numbers[1]! << 16) | (numbers[2]! << 8) | (numbers[3] ?? 0);
 }
 
 /** Parse the counter like ota_sign.py parse_counter (decimal or 0x hex). */

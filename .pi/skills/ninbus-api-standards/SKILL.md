@@ -199,15 +199,68 @@ GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
 
 **Scalability:** Max 50 devices/ciclo com round-robin, cache de action para skip de polls redundantes, deduplicação por controllerId, concurrency limit 10.
 
-### Artifact Tar Packaging
+### Firmware OTA — Tar Canônico v4 + Manifesto NPM (v1/v2)
 
-Firmware empacotado em `.tar` antes do upload ao hawkBit:
+Firmware de device viaja SEMPRE como `.tar` canônico (USTAR, mtime=0, 2 membros na ordem):
+
 ```
-├── header-info/featureidentity.json    {"type": "configuration-nfx"}
-└── data/payload.bin                    firmware raw
+update-app.tar
+├── artifact.info        → 'type "<artifactType>"\n'   (ASCII, primeiro membro)
+└── data/firmware.npm    → ninbus: manifesto assinado (128 B) + imagem
+    └── data/controller.fir / data/config.frz → payload raw nos demais tipos
 ```
 
-Tipos: `firmware-ninbus` (HIGH), `firmware-controller` (MED), `configuration-nfx` (LOW)
+Tipos de release no catálogo: `firmware-ninbus` (self-update) · `firmware-controller` (CAN). `configuration-nfx` é dado operacional company-scoped (módulo artifacts), NÃO entra no catálogo de firmware.
+
+**Manifesto NPM (128 B)** — o formato antigo `header-info/featureidentity.json` foi rejeitado pelo firmware v4 (incidente deployment 657):
+
+| Offset | v1 (legado) | v2 (version-piso) |
+|---|---|---|
+| 0..3 | `NPM\x01` | `NPM\x02` |
+| 4..7 | size u32 LE | idem |
+| 8..39 | digest | digest ESTENDIDO |
+| 40..43 | counter u32 LE | idem |
+| 44..47 | — | **version u32 LE** (major≪24\|minor≪16\|patch≪8\|build) |
+| 48..51 | — | **flags u32 LE** (bit0=allow_downgrade; demais bits = 0) |
+| 52/44 | len(DER) | len(DER) em v2 (@52) |
+| 53/45.. | DER ECDSA-P-256 (prehashed) + pad 0xFF | idem (@53) |
+
+digest v1 = `SHA256(imagem ‖ counter ‖ size)` · v2 = `SHA256(imagem ‖ counter ‖ size ‖ version ‖ flags)` — version e flags são ASSINADOS (tamper quebra o digest). Oracle: `Ninbus-v4/tools/ota_sign.py` (`--version`, `--allow-downgrade`). Device v2: rejeita `counter ≤ piso` OU (`version ≤ piso` E `!allow_downgrade`). Versões v2 são `X.Y.Z[.B]` estritas — sem sufixos (`-dev`/`-rc`).
+
+### Firmware — Ciclo de Vida da Release (draft → pilot → published)
+
+```
+upload (draft) ──▶ deploy piloto (releaseId explícito, console admin) ──▶ publish (gate completo)
+   │                      │                                                │
+   │                      │ gate 'pilot' (estrutural)                      │ companies veem update_available
+   │                      │ resposta: draftPilot flag                     │ opt-in install via trigger
+   └──────────────────────┴── sem releaseId → resolve SÓ published (nunca draft)
+```
+
+**Regras do contrato (incidentes 660–664):**
+- **Upload .tar de fábrica**: versão assinada no manifesto é a FONTE; a digitada é CONFERÊNCIA (mismatch = 400). Counter deve ser estritamente > max do catálogo.
+- **Upload .bin**: server assina v2 (FIRMWARE_SIGNING_KEY) com counter = max+1 automático (inclui drafts).
+- **Publish**: exige o gate completo — re-download do artefato servido, integridade do tar, sha256 da imagem recomputado, v2 com version == declarada, counter > max published, version > piso da frota (salvo allow_downgrade assinado). Veredito persistido em `firmware_releases.gate` (JSONB) + `gateAt`.
+- **Anti-replay floor (bootloader)**: counter servido é queimado nos devices mesmo em falha/rollback. Delete da única portadora do counter servido → 409 `COUNTER_FLOOR_BURNED`; `?realignFloor=true` transfere o piso pra release mais antiga (runbook automatizado).
+- **Re-oferecimento**: última deployment do tipo com todos os targets em `error` + mesma versão + release ANTERIOR à deployment → 409 `REJECTED_ARTIFACT` (escape: `force: true` para falha transitória).
+
+### Firmware — Mapa do Módulo (`src/modules/firmware/`)
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `errors.ts` | `FirmwareValidationError` + mapa canônico código→HTTP (toda rota usa `firmwareErrorResponse()`) |
+| `catalog.ts` | leituras (list/latest/byId) + `catalogCounterFloor()` (fonte única do max(counter)) |
+| `upload.ts` | pipeline de upload (sign/validate/hawkBit/insert) |
+| `delete.ts` | delete + guard de piso + realign |
+| `publication-gate.ts` | gate (publish/pilot) + evidência + status flip |
+| `deploy-trigger.ts` | trigger (resolução de release, piloto, re-offer, draftWarning) |
+| `status-service.ts` | leitura company (status mobile + enrichment) |
+| `ota-signer.ts` · `tar-validator.ts` · `versioning.ts` | contrato cripto/formato + semver |
+| `service.ts` | barrel (re-exports — import sites estáveis) |
+
+**HTTP canônico dos erros**: `NOT_FOUND`→404 · `DUPLICATE_VERSION`/`INVALID_STATUS`/`COUNTER_FLOOR_BURNED`/`GATE_FAILED`/`REJECTED_ARTIFACT`→409 · demais→400.
+
+**Testes**: ciclo draft⇄published testa com tipo `firmware-controller` (gate é no-op pass) sob `HAWKBIT_ENABLED=false`; suíte pura do contrato v2 em `tests/firmware-manifest-v2.test.ts` (layout, digest estendido, tamper, flags, v1 compat).
 
 ---
 
@@ -297,6 +350,7 @@ Pushado a cada ciclo de sync quando existem devices com `hawkbitUpdateStatus='pe
 - **Logger:** `%s/%d/%j` format strings em hot-path. Template literals OK em startup
 - **Drizzle dates:** usar `t.Date()` em response schemas (aceita Date objects), nunca `t.String({ format: 'date-time' })`
 - **Params:** schema deve incluir TODOS os path parameters (companyId + outros)
+- **Comentários:** código enxuto — JSDoc de 1 linha por export; rationale/histórico de decisões e contratos vivem AQUI (skill) e em `docs/notes/`, NUNCA acumulados em comentários de bloco no código (stale comments mentem)
 
 ---
 

@@ -1,7 +1,7 @@
 import { withAuth } from '@common/middleware/auth-guard';
-import { setFirmwareReleaseStatus } from '@modules/firmware/release-gate';
+import { FirmwareValidationError, firmwareErrorResponse } from '@modules/firmware/errors';
+import { setFirmwareReleaseStatus } from '@modules/firmware/publication-gate';
 import { ErrorResponseSchema, FirmwarePublishResponseSchema } from '@modules/firmware/schemas';
-import { FirmwareValidationError } from '@modules/firmware/service';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 
@@ -34,18 +34,9 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status =
-						error.code === 'NOT_FOUND' ? 404 : error.code === 'GATE_FAILED' ? 409 : 400;
-					return {
-						error:
-							error.code === 'NOT_FOUND'
-								? 'Not Found'
-								: error.code === 'GATE_FAILED'
-									? 'Conflict'
-									: 'Validation error',
-						message: error.message,
-						code: error.code,
-					};
+					const r = firmwareErrorResponse(error);
+					set.status = r.status;
+					return r.body;
 				}
 				throw error;
 			}
@@ -93,18 +84,9 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status =
-						error.code === 'NOT_FOUND' ? 404 : error.code === 'GATE_FAILED' ? 409 : 400;
-					return {
-						error:
-							error.code === 'NOT_FOUND'
-								? 'Not Found'
-								: error.code === 'GATE_FAILED'
-									? 'Conflict'
-									: 'Validation error',
-						message: error.message,
-						code: error.code,
-					};
+					const r = firmwareErrorResponse(error);
+					set.status = r.status;
+					return r.body;
 				}
 				throw error;
 			}

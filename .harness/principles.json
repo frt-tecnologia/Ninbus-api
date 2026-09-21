@@ -1175,6 +1175,14 @@
       "category": "security",
       "learnedAt": "2026-09-21T00:42:11.720Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-comments-centralized-not-in-code",
+      "rule": "Código fica enxuto: JSDoc de 1 linha por export no máximo. Rationale, histórico de incidentes e contratos vivem centralizados na SKILL.md do projeto e em docs/notes/ — nunca acumulados em comentários de bloco no código, que ficam stale e contraditórios após edits incrementais. Comentário de bloco que explica \"por que\" uma decisão = documento; se o código precisa de narrativa, o design está errado.",
+      "origin": "learned",
+      "category": "quality",
+      "learnedAt": "2026-09-21T02:39:20.515Z",
+      "reinforcementCount": 1
     }
   ]
 }

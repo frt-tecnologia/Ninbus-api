@@ -3,8 +3,8 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { logActivity } from '@modules/observability/activity-service';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { FirmwareValidationError } from './service';
-import { triggerFirmwareUpdate } from './status-service';
+import { triggerFirmwareUpdate } from './deploy-trigger';
+import { FirmwareValidationError, firmwareErrorResponse } from './errors';
 
 /**
  * Admin-forced update — POST /api/admin/firmware/deploy (super admin).
@@ -95,10 +95,15 @@ export async function handleAdminForceDeploy(ctx: any) {
 		set: { status?: number | undefined };
 	};
 	try {
-		const result = await deployFirmwareToDevices(user.id, body.deviceIds, body?.artifactType ?? 'firmware-ninbus', {
-			releaseId: body?.releaseId,
-			force: body?.force,
-		});
+		const result = await deployFirmwareToDevices(
+			user.id,
+			body.deviceIds,
+			body?.artifactType ?? 'firmware-ninbus',
+			{
+				releaseId: body?.releaseId,
+				force: body?.force,
+			},
+		);
 		await logActivity({
 			actorUserId: user.id,
 			actorEmail: user.email,
@@ -115,12 +120,9 @@ export async function handleAdminForceDeploy(ctx: any) {
 		};
 	} catch (error) {
 		if (error instanceof FirmwareValidationError) {
-			set.status = error.code === 'NOT_FOUND' ? 404 : 400;
-			return {
-				error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
-				message: error.message,
-				code: error.code,
-			};
+			const r = firmwareErrorResponse(error);
+			set.status = r.status;
+			return r.body;
 		}
 		throw error;
 	}

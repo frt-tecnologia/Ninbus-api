@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Section } from '@/components/system';
 import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { useFetch } from '@/hooks/useFetch';
-import { firmwareService } from '@/lib/api';
+import { ApiClientError, firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
 import { ArrowLeft, Cpu, HardDrive } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -26,36 +26,47 @@ export default function FirmwarePage() {
 	const releases = useFetch(useCallback(() => firmwareService.list(), []));
 	const [deleting, setDeleting] = useState<string | null>(null);
 	const [toDelete, setToDelete] = useState<FirmwareRelease | null>(null);
+	const [realignPending, setRealignPending] = useState<FirmwareRelease | null>(null);
 
 	async function handleDelete() {
 		const release = toDelete;
 		if (!release) return;
 		setDeleting(release.id);
-		const result = await firmwareService
-			.remove(release.id)
-			.then((res) => res as { message?: string; hawkbitKept?: boolean; error?: undefined })
-			.catch(
-				(e: unknown) =>
-					({ error: e instanceof Error ? e.message : 'Falha ao excluir' }) as {
-						error: string;
-						message?: undefined;
-						hawkbitKept?: undefined;
-					},
-			);
-		setDeleting(null);
-		if ('error' in result && result.error) {
-			toast.error(result.error);
-			return;
+		try {
+			const res = await firmwareService.remove(release.id);
+			if (res?.hawkbitKept) {
+				toast.warning(res.message ?? `Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`);
+			} else {
+				toast.success(res?.message ?? `Release ${release.version} excluída.`);
+			}
+			setToDelete(null);
+		} catch (e) {
+			if (e instanceof ApiClientError && (e.raw as { code?: string } | undefined)?.code === 'COUNTER_FLOOR_BURNED') {
+				setRealignPending(release);
+			} else {
+				toast.error(e instanceof Error ? e.message : 'Falha ao excluir');
+			}
+		} finally {
+			setDeleting(null);
+			releases.refetch();
 		}
-		if (result.hawkbitKept) {
-			toast.warning(
-				result.message ??
-					`Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`,
-			);
-		} else {
-			toast.success(result.message ?? `Release ${release.version} excluída.`);
+	}
+
+	async function handleDeleteRealign() {
+		const release = realignPending;
+		if (!release) return;
+		setDeleting(release.id);
+		try {
+			const res = await firmwareService.remove(release.id, { realignFloor: true });
+			toast.success(res?.message ?? `Release ${release.version} excluída (piso do counter transferido para a release mais antiga).`);
+			setRealignPending(null);
+			setToDelete(null);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'Falha ao excluir com realinhamento');
+		} finally {
+			setDeleting(null);
+			releases.refetch();
 		}
-		releases.refetch();
 	}
 
 	const list = releases.data?.data ?? [];
@@ -115,6 +126,15 @@ export default function FirmwarePage() {
 				description="Já enviada a dispositivos, a release sai do catálogo, mas o binário permanece como histórico."
 				confirmLabel="Excluir"
 				onConfirm={handleDelete}
+			/>
+			<ConfirmDialog
+				open={realignPending !== null}
+				onOpenChange={(o) => !o && setRealignPending(null)}
+				destructive
+				title={`Excluir ${realignPending?.version ?? ''} transferindo o piso do counter?`}
+				description="Esta release foi servida aos devices e é a única portadora do counter — o bootloader não devolve o piso. A exclusão transfere o counter para a release mais antiga do mesmo tipo, preservando a proteção anti-replay."
+				confirmLabel="Excluir transferindo o piso"
+				onConfirm={handleDeleteRealign}
 			/>
 			{deleting && <p className="sr-only">Excluindo release…</p>}
 		</>

@@ -241,7 +241,7 @@ upload (draft) ──▶ deploy piloto (releaseId explícito, console admin) ─
 - **Upload .tar de fábrica**: versão assinada no manifesto é a FONTE; a digitada é CONFERÊNCIA (mismatch = 400). Counter deve ser estritamente > max do catálogo.
 - **Upload .bin**: server assina v2 (FIRMWARE_SIGNING_KEY) com counter = max+1 automático (inclui drafts).
 - **Publish**: exige o gate completo — re-download do artefato servido, integridade do tar, sha256 da imagem recomputado, v2 com version == declarada, counter > max published, version > piso da frota (salvo allow_downgrade assinado). Veredito persistido em `firmware_releases.gate` (JSONB) + `gateAt`.
-- **Anti-replay floor (bootloader)**: counter servido é queimado nos devices mesmo em falha/rollback. Delete da única portadora do counter servido → 409 `COUNTER_FLOOR_BURNED`; `?realignFloor=true` transfere o piso pra release mais antiga (runbook automatizado).
+- **Anti-replay floor (bootloader)**: counter servido é queimado nos devices mesmo em falha/rollback. Delete da única portadora do counter servido → 409 `COUNTER_FLOOR_BURNED`; `?realignFloor=true` transfere o piso pra release mais antiga (runbook automatizado). **Console (dashboard)**: o 409 abre um 2º ConfirmDialog oferecendo "excluir transferindo o piso" — `firmwareService.remove(id, {realignFloor})` via `http.delete(path, query)`. Nunca exiba toast de sucesso sem o resolve real do fetch (bug clássico: bundle stale do browser mente — Ctrl+Shift+R após deploys do dashboard).
 - **Re-oferecimento**: última deployment do tipo com todos os targets em `error` + mesma versão + release ANTERIOR à deployment → 409 `REJECTED_ARTIFACT` (escape: `force: true` para falha transitória).
 
 ### Firmware — Mapa do Módulo (`src/modules/firmware/`)

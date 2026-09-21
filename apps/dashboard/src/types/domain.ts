@@ -247,6 +247,8 @@ export interface DetailResponse<T> {
 export interface ActionResponse {
 	message: string;
 	error?: string;
+	/** Firmware delete: binary kept on hawkBit as deployment history. */
+	hawkbitKept?: boolean;
 }
 
 // ── Errors ─────────────────────────────────────────────────────────────

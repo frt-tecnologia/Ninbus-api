@@ -118,6 +118,16 @@ export const hawkbitSoftwareModules = {
 		});
 	},
 
+	/** Download the artifact BINARY (pre-publish gate re-verification). */
+	downloadArtifact(smId: number, artifactId: number): Promise<ArrayBuffer> {
+		return hawkbitRequest({
+			method: 'GET',
+			path: `/rest/v1/softwaremodules/${smId}/artifacts/${artifactId}/download`,
+			// Binary response — bypass any JSON parsing expectations upstream.
+			raw: true,
+		});
+	},
+
 	deleteArtifact(smId: number, artifactId: number): Promise<void> {
 		return hawkbitRequest({
 			method: 'DELETE',

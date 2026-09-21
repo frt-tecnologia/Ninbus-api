@@ -22,7 +22,7 @@ export async function deployFirmwareToDevices(
 	userId: string,
 	deviceIds: string[],
 	artifactType: 'firmware-ninbus' | 'firmware-controller' = 'firmware-ninbus',
-	releaseId?: string,
+	opts?: { releaseId?: string; force?: boolean },
 ) {
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
@@ -30,6 +30,7 @@ export async function deployFirmwareToDevices(
 			'HAWKBIT_NOT_ENABLED',
 		);
 	}
+	const { releaseId, force } = opts ?? {};
 
 	// Global selection: any claimed, hawkBit-linked device of any company.
 	const rows = await db
@@ -63,7 +64,10 @@ export async function deployFirmwareToDevices(
 	for (const [companyId, ids] of byCompany) {
 		deployments.push({
 			companyId,
-			result: await triggerFirmwareUpdate(companyId, userId, ids, artifactType, { releaseId }),
+			result: await triggerFirmwareUpdate(companyId, userId, ids, artifactType, {
+				releaseId,
+				force,
+			}),
 		});
 	}
 	return { companies: deployments.length, devices: rows.length, deployments };
@@ -85,17 +89,16 @@ export async function handleAdminForceDeploy(ctx: any) {
 			deviceIds: string[];
 			artifactType?: 'firmware-ninbus' | 'firmware-controller';
 			releaseId?: string;
+			force?: boolean;
 		};
 		user: { id: string; email: string };
 		set: { status?: number | undefined };
 	};
 	try {
-		const result = await deployFirmwareToDevices(
-			user.id,
-			body.deviceIds,
-			body?.artifactType ?? 'firmware-ninbus',
-			body?.releaseId,
-		);
+		const result = await deployFirmwareToDevices(user.id, body.deviceIds, body?.artifactType ?? 'firmware-ninbus', {
+			releaseId: body?.releaseId,
+			force: body?.force,
+		});
 		await logActivity({
 			actorUserId: user.id,
 			actorEmail: user.email,

@@ -6,19 +6,30 @@ import { type KeyObject, createHash, createPrivateKey } from 'node:crypto';
  * Lets the dashboard accept a raw .bin + counter and produce the SAME signed
  * canonical .tar the factory tools would, keeping one upload interface:
  *
- *   manifest (128 B):
+ *   manifest (128 B) — v1 (legacy):
  *     [0:4]   magic "NPM\x01"
  *     [4:8]   image size (LE32)
  *     [8:40]  SHA-256(image ‖ LE32(counter) ‖ LE32(size))
  *     [40:44] counter (LE32) — anti-downgrade, must exceed the bootloader floor
  *     [44]    DER signature length (8..72)
- *     [45:]   DER ECDSA P-256 signature over SHA-256(digest), then 0xFF padding
+ *     [45:]   DER ECDSA P-256 signature over the digest, then 0xFF padding
+ *
+ *   manifest (128 B) — v2 (version-piso, tools/ota_sign.py --version):
+ *     [0:4]   magic "NPM\x02"
+ *     [4:8]   image size (LE32)
+ *     [8:40]  SHA-256(image ‖ counter_le ‖ size_le ‖ version_le ‖ flags_le)
+ *     [40:44] counter (LE32)
+ *     [44:48] version (LE32) — major<<24|minor<<16|patch<<8|build
+ *     [48:52] flags (LE32) — bit0 = allow_downgrade; other bits MUST be 0
+ *     [52]    DER signature length (8..72)
+ *     [53:]   DER signature, then 0xFF padding
  *
  *   tar (USTAR, mtime=0): artifact.info ('type "firmware-ninbus"') +
  *   data/firmware.npm (manifest + image).
  *
  * Cryptographic parity with ota_sign.py:
- *   digest = SHA256(image ‖ counter_le ‖ size_le)
+ *   digest v1 = SHA256(image ‖ counter_le ‖ size_le)
+ *   digest v2 = SHA256(image ‖ counter_le ‖ size_le ‖ version_le ‖ flags_le)
  *   sig    = ECDSA_P-256_sign_RAW(priv, digest)   ← Prehashed: e = digest,
  *           NOT SHA256(digest) — the bootloader's psa_verify_hash consumes
  *           the manifest digest directly. In Node: crypto.sign(null, digest).
@@ -43,7 +54,20 @@ import tar from 'tar-stream';
 
 const MANIFEST_SIZE = 128;
 const MAX_IMAGE_SIZE = 0x30000; // 192 KiB
-const MANIFEST_MAGIC = Buffer.from('NPM\x01', 'ascii');
+const MANIFEST_MAGIC_V1 = Buffer.from('NPM\x01', 'ascii');
+const MANIFEST_MAGIC_V2 = Buffer.from('NPM\x02', 'ascii');
+/** v2 flags: only bit0 (allow_downgrade) is defined — mirrors the oracle. */
+const FLAG_ALLOW_DOWNGRADE = 0x1;
+
+/** Extra options for the v2 (version-piso) manifest. */
+export interface ManifestV2Options {
+	/** Packed version u32 (see packVersionString) — v2 when present. */
+	version: number;
+	/** bit0 = allow_downgrade. Any other bit is rejected. */
+	flags?: number;
+	/** Test hook: explicit private key. */
+	key?: KeyObject;
+}
 
 /** Signing configuration error — surfaces as 400 (not a crash). */
 export class OtaSignerError extends Error {
@@ -54,6 +78,7 @@ export class OtaSignerError extends Error {
 			| 'INVALID_KEY'
 			| 'INVALID_IMAGE'
 			| 'INVALID_COUNTER'
+			| 'INVALID_VERSION'
 			| 'INVALID_SIGNATURE' = 'SIGNING_KEY_NOT_CONFIGURED',
 	) {
 		super(message);
@@ -128,12 +153,48 @@ function validateDerInteger(data: Buffer, offset: number): number {
 	return end;
 }
 
-/** digest = SHA-256(image ‖ LE32(counter) ‖ LE32(size)) — shared with the validator. */
-function otaDigest(image: Buffer, counter: number): Buffer {
-	const trailer = Buffer.alloc(8);
+/** digest = SHA-256(image ‖ LE32(counter) ‖ LE32(size)[ ‖ LE32(version) ‖ LE32(flags)]) — shared with the validator. */
+function otaDigest(
+	image: Buffer,
+	counter: number,
+	v2?: { version: number; flags?: number },
+): Buffer {
+	const trailer = Buffer.alloc(v2 ? 16 : 8);
 	trailer.writeUInt32LE(counter, 0);
 	trailer.writeUInt32LE(image.length, 4);
+	if (v2) {
+		trailer.writeUInt32LE(v2.version, 8);
+		trailer.writeUInt32LE(v2.flags ?? 0, 12);
+	}
 	return createHash('sha256').update(image).update(trailer).digest();
+}
+
+/**
+ * Pack 'X.Y.Z' or 'X.Y.Z.B' into u32 (major<<24|minor<<16|patch<<8|build) —
+ * direct port of ota_sign.py parse_version. STRICT: digits only, each
+ * component 0..255 (no -dev/-rc suffixes: v2 versions never carry one).
+ */
+export function packVersionString(text: string): number {
+	const parts = text.trim().split('.');
+	if (
+		(parts.length !== 3 && parts.length !== 4) ||
+		!parts.every((p) => /^\d+$/.test(p))
+	) {
+		throw new OtaSignerError(
+			`versão inválida ("${text}") — v2 exige X.Y.Z[.B] estrito, sem sufixos (-dev, -rc1): use o .tar assinado pela fábrica (ota_sign.py --version) para builds com sufixo, ou publique uma versão sem sufixo`,
+			'INVALID_VERSION',
+		);
+	}
+	const numbers = parts.map((p) => Number(p));
+	if (numbers.some((n) => n > 255)) {
+		throw new OtaSignerError(
+			`versão inválida ("${text}") — cada componente deve caber em 8 bits (0..255)`,
+			'INVALID_VERSION',
+		);
+	}
+	return (
+		(numbers[0]! << 24) | (numbers[1]! << 16) | (numbers[2]! << 8) | (numbers[3] ?? 0)
+	);
 }
 
 /** Parse the counter like ota_sign.py parse_counter (decimal or 0x hex). */
@@ -152,12 +213,23 @@ export function parseCounter(text: string): number {
 /**
  * Build the signed 128 B NPM manifest for (image, counter) — port of
  * ota_sign.py build_manifest + sign_digest, including self-verification.
+ * Pass v2 options to emit the version-piso format; omit for legacy v1.
  */
 export function buildSignedManifest(
 	image: Buffer,
 	counter: number,
-	keyOverride?: KeyObject,
+	keyOverrideOrV2?: KeyObject | ManifestV2Options,
 ): Buffer {
+	// Backwards-compatible overload: (image, counter, key) or (image, counter, {version, flags, key}).
+	const v2 =
+		keyOverrideOrV2 && 'version' in keyOverrideOrV2
+			? (keyOverrideOrV2 as ManifestV2Options)
+			: undefined;
+	const keyOverride = v2 ? v2.key : (keyOverrideOrV2 as KeyObject | undefined);
+	const flags = v2?.flags ?? 0;
+	if (v2 && flags & ~FLAG_ALLOW_DOWNGRADE) {
+		throw new OtaSignerError('flags: somente bit0 (allow_downgrade) é válido', 'INVALID_VERSION');
+	}
 	if (image.length === 0 || image.length > MAX_IMAGE_SIZE) {
 		throw new OtaSignerError(
 			`imagem deve ter 1..${MAX_IMAGE_SIZE} bytes — recebidos ${image.length}`,
@@ -165,7 +237,7 @@ export function buildSignedManifest(
 		);
 	}
 	const key = loadSigningKey(keyOverride);
-	const digest = otaDigest(image, counter);
+	const digest = otaDigest(image, counter, v2);
 	// PREHASHED contract (boot_verify.c psa_verify_hash + ota_sign.py
 	// Prehashed(SHA256)): e = digest — the manifest digest IS the message hash.
 	// Node: algorithm=null signs the RAW digest (crypto.sign('sha256', digest)
@@ -191,22 +263,30 @@ export function buildSignedManifest(
 	validateDerSignature(signature);
 
 	const manifest = Buffer.alloc(MANIFEST_SIZE, 0xff);
-	MANIFEST_MAGIC.copy(manifest, 0);
+	const magic = v2 ? MANIFEST_MAGIC_V2 : MANIFEST_MAGIC_V1;
+	magic.copy(manifest, 0);
 	manifest.writeUInt32LE(image.length, 4);
 	digest.copy(manifest, 8);
 	manifest.writeUInt32LE(counter, 40);
-	manifest[44] = signature.length;
-	signature.copy(manifest, 45);
+	if (v2) {
+		manifest.writeUInt32LE(v2.version, 44);
+		manifest.writeUInt32LE(flags, 48);
+		manifest[52] = signature.length;
+		signature.copy(manifest, 53);
+	} else {
+		manifest[44] = signature.length;
+		signature.copy(manifest, 45);
+	}
 	return manifest;
 }
 
-/** Pack the canonical v4 tar (artifact.info + data/firmware.npm). */
+/** Pack the canonical v4 tar (artifact.info + data/firmware.npm) — v2 when opts carry a version. */
 export async function buildNinbusTar(
 	image: Buffer,
 	counter: number,
-	keyOverride?: KeyObject,
+	keyOverrideOrV2?: KeyObject | ManifestV2Options,
 ): Promise<Buffer> {
-	const payload = Buffer.concat([buildSignedManifest(image, counter, keyOverride), image]);
+	const payload = Buffer.concat([buildSignedManifest(image, counter, keyOverrideOrV2), image]);
 	const pack = tar.pack();
 	const info = Buffer.from('type "firmware-ninbus"\n', 'ascii');
 	pack.entry({ name: 'artifact.info', size: info.length, mtime: new Date(0) }, info);

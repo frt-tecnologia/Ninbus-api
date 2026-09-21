@@ -188,10 +188,14 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 				return result;
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
+					// COUNTER_FLOOR_BURNED → 409: conflicts with the device-side
+				// anti-replay floor (bootloader contract), not with the request body.
+					const conflict = error.code === 'COUNTER_FLOOR_BURNED';
+					set.status = error.code === 'NOT_FOUND' ? 404 : conflict ? 409 : 400;
 					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Bad Request',
+						error: error.code === 'NOT_FOUND' ? 'Not Found' : conflict ? 'Conflict' : 'Bad Request',
 						message: error.message,
+						code: error.code,
 					};
 				}
 				throw error;

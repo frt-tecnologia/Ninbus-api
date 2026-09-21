@@ -43,8 +43,18 @@ export class InvalidPackageError extends Error {
 
 /** Manifest constants — mirror ota_pack.py. */
 const MANIFEST_SIZE = 128;
-const MANIFEST_MAGIC = Buffer.from('NPM\x01', 'ascii');
+const MANIFEST_MAGIC_V1 = Buffer.from('NPM\x01', 'ascii');
+const MANIFEST_MAGIC_V2 = Buffer.from('NPM\x02', 'ascii');
 const MAX_IMAGE_SIZE = 0x30000; // 192 KiB
+
+/** Unpack a v2 packed u32 version into its canonical text form. */
+export function unpackVersionText(packed: number): string {
+	const major = (packed >>> 24) & 0xff;
+	const minor = (packed >>> 16) & 0xff;
+	const patch = (packed >>> 8) & 0xff;
+	const build = packed & 0xff;
+	return build === 0 ? `${major}.${minor}.${patch}` : `${major}.${minor}.${patch}.${build}`;
+}
 
 /** Canonical data member per artifact type — mirror of CANONICAL_MEMBERS. */
 export const CANONICAL_DATA_MEMBERS = {
@@ -63,6 +73,14 @@ export interface CanonicalTarInfo {
 	imageSize: number;
 	/** Manifest anti-downgrade counter (ninbus only; null otherwise). */
 	counter: number | null;
+	/** NPM manifest format: 1 (legacy) | 2 (version-piso); null for non-ninbus. */
+	manifestFormat: 1 | 2 | null;
+	/** Packed version u32 (v2 only; null for v1/non-ninbus). */
+	versionPacked: number | null;
+	/** Canonical version text (v2 only, e.g. "4.0.4"). */
+	versionText: string | null;
+	/** v2 bit0: downgrade explicitly allowed by a signed manifest. */
+	allowDowngrade: boolean | null;
 }
 
 const invalid = (message: string): InvalidPackageError =>
@@ -71,7 +89,11 @@ const invalid = (message: string): InvalidPackageError =>
 /**
  * Validate the NPM signed-manifest prefix of a firmware-ninbus payload —
  * direct port of ota_pack.py validate_manifest() (digest included; the
- * ECDSA signature itself is bootloader-only).
+ * ECDSA signature itself is bootloader-only). Accepts BOTH formats:
+ *   v1 — magic "NPM\x01", digest over image‖counter‖size, counter @40.
+ *   v2 — magic "NPM\x02", version @44 + flags @48 (bit0 only), digest over
+ *        image‖counter‖size‖version‖flags (version/flags are signed — a
+ *        tampered version or an enabled allow_downgrade breaks the digest).
  */
 export function validateNinbusManifest(payload: Buffer, type: string): number {
 	if (payload.length < MANIFEST_SIZE) {
@@ -82,14 +104,31 @@ export function validateNinbusManifest(payload: Buffer, type: string): number {
 	const manifest = payload.subarray(0, MANIFEST_SIZE);
 	const image = payload.subarray(MANIFEST_SIZE);
 
-	if (!manifest.subarray(0, 4).equals(MANIFEST_MAGIC)) {
+	const magic = manifest.subarray(0, 4);
+	const isV1 = magic.equals(MANIFEST_MAGIC_V1);
+	const isV2 = magic.equals(MANIFEST_MAGIC_V2);
+	if (!isV1 && !isV2) {
 		throw invalid(
-			`Pacote ${type} inválido: manifesto sem magic NPM\\x01 (começa com 0x${manifest.subarray(0, 4).toString('hex')}). O firmware rejeita na hora — assine a imagem com tools/ota_sign.py antes de subir.`,
+			`Pacote ${type} inválido: manifesto sem magic NPM\\x01/NPM\\x02 (começa com 0x${magic.toString('hex')}). O firmware rejeita na hora — assine a imagem com tools/ota_sign.py antes de subir.`,
 		);
 	}
 	const size = manifest.readUInt32LE(4);
 	const counter = manifest.readUInt32LE(40);
-	const signatureLength = manifest[44] ?? 0; // 0 fails the 8–72 range check below
+	let version: number | null = null;
+	let flags = 0;
+	let signatureLength: number;
+	if (isV2) {
+		version = manifest.readUInt32LE(44);
+		flags = manifest.readUInt32LE(48);
+		signatureLength = manifest[52] ?? 0; // 0 fails the 8–72 range check below
+		if (flags & ~0x1) {
+			throw invalid(
+				`Pacote ${type} inválido: flags do manifesto v2 usam bits reservados (0x${flags.toString(16)}) — apenas bit0 (allow_downgrade) existe.`,
+			);
+		}
+	} else {
+		signatureLength = manifest[44] ?? 0; // 0 fails the 8–72 range check below
+	}
 
 	if (size !== image.length || size <= 0 || size > MAX_IMAGE_SIZE) {
 		throw invalid(
@@ -101,17 +140,22 @@ export function validateNinbusManifest(payload: Buffer, type: string): number {
 			`Pacote ${type} inválido: tamanho DER da assinatura (${signatureLength}) fora do intervalo 8–72 B.`,
 		);
 	}
-	const paddingStart = 45 + signatureLength;
+	const signatureOffset = isV2 ? 53 : 45;
+	const paddingStart = signatureOffset + signatureLength;
 	if (manifest.subarray(paddingStart).some((b: number) => b !== 0xff)) {
 		throw invalid(`Pacote ${type} inválido: padding do manifesto deve ser 0xFF.`);
 	}
-	const trailer = Buffer.alloc(8);
+	const trailer = Buffer.alloc(isV2 ? 16 : 8);
 	trailer.writeUInt32LE(counter, 0);
 	trailer.writeUInt32LE(size, 4);
+	if (isV2) {
+		trailer.writeUInt32LE(version!, 8);
+		trailer.writeUInt32LE(flags, 12);
+	}
 	const expected = createHash('sha256').update(image).update(trailer).digest();
 	if (!manifest.subarray(8, 40).equals(expected)) {
 		throw invalid(
-			`Pacote ${type} inválido: digest SHA-256 do manifesto difere da imagem/counter/tamanho — o artefato foi corrompido ou montado à mão.`,
+			`Pacote ${type} inválido: digest SHA-256 do manifesto difere da imagem/counter/tamanho${isV2 ? '/versão/flags' : ''} — o artefato foi corrompido ou montado à mão.`,
 		);
 	}
 	return image.length;
@@ -161,9 +205,28 @@ export async function validateCanonicalTar(
 
 	if (artifactType === 'firmware-ninbus') {
 		const imageSize = validateNinbusManifest(data.data, artifactType);
-		return { payloadSize: data.data.length, imageSize, counter: data.data.readUInt32LE(40) };
+		const magic = data.data.subarray(0, 4);
+		const isV2 = magic[3] === 0x02;
+		const versionPacked = isV2 ? data.data.readUInt32LE(44) : null;
+		return {
+			payloadSize: data.data.length,
+			imageSize,
+			counter: data.data.readUInt32LE(40),
+			manifestFormat: isV2 ? 2 : 1,
+			versionPacked,
+			versionText: versionPacked !== null ? unpackVersionText(versionPacked) : null,
+			allowDowngrade: isV2 ? (data.data.readUInt32LE(48) & 0x1) === 0x1 : null,
+		};
 	}
-	return { payloadSize: data.data.length, imageSize: data.data.length, counter: null };
+	return {
+		payloadSize: data.data.length,
+		imageSize: data.data.length,
+		counter: null,
+		manifestFormat: null,
+		versionPacked: null,
+		versionText: null,
+		allowDowngrade: null,
+	};
 }
 
 /** Extract all members from a tar buffer (name + content). */

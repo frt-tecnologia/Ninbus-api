@@ -11,9 +11,10 @@ import {
 } from '@modules/firmware/schemas';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
+import { getLatestRelease } from './catalog';
+import { FirmwareValidationError, firmwareErrorResponse } from './errors';
 import { handleAdminForceDeploy } from './force-deploy';
 import { deleteFirmwareRelease, listFirmwareReleases, uploadFirmwareRelease } from './service';
-import { FirmwareValidationError } from './service';
 
 /**
  * Firmware Admin Routes — factory-only firmware catalog.
@@ -63,12 +64,9 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 				return { message: 'Firmware release published successfully', data: result };
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'DUPLICATE_VERSION' ? 409 : 400;
-					return {
-						error: error.code === 'DUPLICATE_VERSION' ? 'Conflict' : 'Validation error',
-						message: error.message,
-						code: error.code,
-					};
+					const r = firmwareErrorResponse(error);
+					set.status = r.status;
+					return r.body;
 				}
 				throw error;
 			}
@@ -126,7 +124,6 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 	.get(
 		'/latest',
 		async ({ query }) => {
-			const { getLatestRelease } = await import('./service');
 			const type = query?.type ?? 'firmware-ninbus';
 			return { data: await getLatestRelease(type) };
 		},
@@ -176,7 +173,7 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 		async ({ params, query, user, set }) => {
 			try {
 				const result = await deleteFirmwareRelease(params.releaseId, {
-					realignFloor: query?.realignFloor === 'true' || query?.realignFloor === true,
+					realignFloor: query?.realignFloor === 'true',
 				});
 				await logActivity({
 					actorUserId: user.id,
@@ -190,15 +187,9 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 				return result;
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					// COUNTER_FLOOR_BURNED → 409: conflicts with the device-side
-				// anti-replay floor (bootloader contract), not with the request body.
-					const conflict = error.code === 'COUNTER_FLOOR_BURNED';
-					set.status = error.code === 'NOT_FOUND' ? 404 : conflict ? 409 : 400;
-					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : conflict ? 'Conflict' : 'Bad Request',
-						message: error.message,
-						code: error.code,
-					};
+					const r = firmwareErrorResponse(error);
+					set.status = r.status;
+					return r.body;
 				}
 				throw error;
 			}
@@ -209,7 +200,10 @@ export const firmwareAdminRoutes = withAuth(new Elysia({ prefix: '/api/admin/fir
 			params: t.Object({ releaseId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
 				realignFloor: t.Optional(
-					t.String({ description: "'true' — when the release holds the sole served counter, transfer the anti-replay floor to the newest older release before deleting (automated runbook)." }),
+					t.String({
+						description:
+							"'true' — when the release holds the sole served counter, transfer the anti-replay floor to the newest older release before deleting (automated runbook).",
+					}),
 				),
 			}),
 			detail: {

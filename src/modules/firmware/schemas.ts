@@ -59,6 +59,23 @@ export const UploadFirmwareBodySchema = t.Object({
 });
 
 /** A firmware release as stored in the local catalog (DB-only read). */
+/** Publication gate evidence — mirrors publication-gate.ts types. */
+export const GateCheckSchema = t.Object({
+	name: t.String(),
+	passed: t.Boolean(),
+	detail: t.String(),
+});
+
+export const GateResultSchema = t.Object({
+	mode: t.Union([t.Literal('publish'), t.Literal('pilot')]),
+	passed: t.Boolean(),
+	checkedAt: t.String(),
+	checks: t.Array(GateCheckSchema),
+	imageSha256: t.Union([t.String(), t.Null()]),
+	fleetFloorVersion: t.Union([t.String(), t.Null()]),
+	catalogMaxCounter: t.Union([t.Number(), t.Null()]),
+});
+
 export const FirmwareReleaseSchema = t.Object({
 	id: t.String({ format: 'uuid' }),
 	name: t.String(),
@@ -83,7 +100,7 @@ export const FirmwareReleaseSchema = t.Object({
 	manifestFlags: t.Union([t.Number(), t.Null()]),
 	/** Publication gate evidence (checks + verdict + image sha256) — null until
 	 * the gate runs; REQUIRED to pass before status='published'. */
-	gate: t.Union([t.Unknown(), t.Null()]),
+	gate: t.Union([t.Null(), GateResultSchema]),
 	gateAt: t.Union([dateTimeString, t.Null()]),
 	createdBy: t.Union([t.String(), t.Null()]),
 	createdAt: dateTimeString,

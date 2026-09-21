@@ -423,7 +423,10 @@ describe('Firmware Module', () => {
 				hawkbitSmId: 900003,
 				name: 'wifi3 4.9 candidate',
 				version: '4.9.0',
-				artifactType: 'firmware-ninbus',
+				// controller type: the publication gate is a no-op pass for
+				// non-ninbus artifacts, so the draft⇄published lifecycle is
+				// testable with HAWKBIT_ENABLED=false.
+				artifactType: 'firmware-controller',
 				originalFilename: 'wifi3-490rc.bin',
 				status: 'draft',
 			},
@@ -633,26 +636,27 @@ describe('Firmware Module', () => {
 			}),
 		);
 		expect(res.status).toBe(200);
+		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body.data.status).toBe('published');
 
-		// Now the latest IS the previously-hidden draft.
+		// Now the latest (controller type — the seeded draft) IS the draft.
 		const latest = await app.handle(
-			new Request('http://localhost/api/admin/firmware/latest', {
+			new Request('http://localhost/api/admin/firmware/latest?type=firmware-controller', {
 				headers: { Cookie: superAdminCookie },
 			}),
 		);
 		expect((await latest.json()).data.version).toBe('4.9.0');
 	});
 
-	it('publishing twice returns 400 (already published)', async () => {
+	it('publishing twice returns 409 (already published)', async () => {
 		const res = await app.handle(
 			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/publish`, {
 				method: 'POST',
 				headers: { Cookie: superAdminCookie },
 			}),
 		);
-		expect(res.status).toBe(400);
+		expect(res.status).toBe(409);
 	});
 
 	it('unpublish hides the release from end users again', async () => {

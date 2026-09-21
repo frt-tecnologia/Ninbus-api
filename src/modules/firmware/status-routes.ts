@@ -5,8 +5,9 @@ import {
 	TriggerFirmwareUpdateSchema,
 } from '@modules/firmware/schemas';
 import { Elysia, t } from 'elysia';
-import { FirmwareValidationError } from './service';
-import { getCompanyFirmwareStatus, triggerFirmwareUpdate } from './status-service';
+import { triggerFirmwareUpdate } from './deploy-trigger';
+import { FirmwareValidationError, firmwareErrorResponse } from './errors';
+import { getCompanyFirmwareStatus } from './status-service';
 
 /**
  * Company-scoped firmware routes — what the mobile app consumes.
@@ -57,12 +58,9 @@ export const firmwareStatusRoutes = withAuth(
 				};
 			} catch (error) {
 				if (error instanceof FirmwareValidationError) {
-					set.status = error.code === 'NOT_FOUND' ? 404 : 400;
-					return {
-						error: error.code === 'NOT_FOUND' ? 'Not Found' : 'Validation error',
-						message: error.message,
-						code: error.code,
-					};
+					const r = firmwareErrorResponse(error);
+					set.status = r.status;
+					return r.body;
 				}
 				throw error;
 			}

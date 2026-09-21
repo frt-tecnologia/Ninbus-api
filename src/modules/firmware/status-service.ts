@@ -12,9 +12,10 @@ import { appLogger } from '@common/logger';
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
+import { deployments } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { deploySoftwareModuleToTargets } from '@modules/deployments/deploy';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { getFirmwareReleaseById } from './release-gate';
 import { compareVersions, getLatestRelease } from './service';
 import { FirmwareValidationError } from './service';
@@ -150,7 +151,7 @@ export async function triggerFirmwareUpdate(
 	userId: string,
 	deviceIds: string[],
 	artifactType: 'firmware-ninbus' | 'firmware-controller' = 'firmware-ninbus',
-	opts?: { releaseId?: string },
+	opts?: { releaseId?: string; force?: boolean },
 ) {
 	if (!hawkbitConfig.enabled) {
 		throw new FirmwareValidationError(
@@ -159,9 +160,11 @@ export async function triggerFirmwareUpdate(
 		);
 	}
 
-	// Explicit releaseId (admin console testing a draft) bypasses the
-	// published-only gate; the end-user trigger always resolves the latest
-	// PUBLISHED release.
+	// Explicit releaseId (admin console testing) must STILL be published —
+	// the OTA v2 contract: an assign never resolves a draft (bench 660–664:
+	// four rollouts served the old PUBLISHED artifact while the new upload
+	// sat in draft). The end-user trigger always resolves the latest PUBLISHED
+	// release.
 	const release = opts?.releaseId
 		? await getFirmwareReleaseById(opts.releaseId)
 		: await getLatestRelease(artifactType);
@@ -176,6 +179,45 @@ export async function triggerFirmwareUpdate(
 			`Release ${release.version} is of type ${release.artifactType}, not ${artifactType}.`,
 			'NOT_FOUND',
 		);
+	}
+	if (release.status !== 'published') {
+		throw new FirmwareValidationError(
+			`Release ${release.version} is still ${release.status} — publish it first (the publication gate must pass). No assignment ever resolves a draft.`,
+			'INVALID_STATUS',
+		);
+	}
+
+	// Anti re-offer (OTA v2 contract): when the LATEST deployment of this
+	// artifact type ended with every target in 'error' AND it served THIS
+	// release's version, the artifact was rejected by the devices (anti-replay
+	// / readback). Re-offering the same binary just burns polls — block it
+	// until a NEWER published release exists (re-signing bumps the version
+	// because (type, version) is unique and served releases can't be deleted
+	// below the counter floor).
+	const [lastDeploy] = await db
+		.select({
+			id: deployments.id,
+			artifactVersion: deployments.artifactVersion,
+			snapshot: deployments.targetStatusSnapshot,
+		})
+		.from(deployments)
+		.where(eq(deployments.artifactType, artifactType))
+		.orderBy(desc(deployments.createdAt))
+		.limit(1);
+	if (
+		lastDeploy &&
+		lastDeploy.artifactVersion === release.version &&
+		!opts?.force
+	) {
+		const snap = lastDeploy.snapshot as Record<string, { phase?: string }> | null;
+		const entries = snap ? Object.values(snap) : [];
+		const anyError = entries.length > 0 && entries.every((e) => e.phase === 'error');
+		if (anyError) {
+			throw new FirmwareValidationError(
+				`The latest ${artifactType} deployment served version ${release.version} and every target ended in ERROR — the devices rejected this artifact (anti-replay floor / readback). Re-offering the same binary will be rejected again: upload + publish a NEW release (higher version + counter), or retry with force=true if the failure was transient (e.g. devices offline).`,
+				'REJECTED_ARTIFACT',
+			);
+		}
 	}
 
 	// Cross-tenant safe: only devices of THIS company, claimed, hawkBit-linked.

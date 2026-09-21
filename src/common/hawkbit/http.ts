@@ -36,6 +36,8 @@ interface HawkbitRequestOptions {
 	query?: Record<string, string | number | boolean | undefined>;
 	headers?: Record<string, string>;
 	timeout?: number;
+	/** Return the raw binary body (artifact downloads) instead of parsing. */
+	raw?: boolean;
 }
 
 function buildQueryString(params?: Record<string, string | number | boolean | undefined>): string {
@@ -104,6 +106,8 @@ export async function hawkbitRequest<T>(options: HawkbitRequestOptions): Promise
 		}
 
 		if (response.status === 204) return undefined as T;
+
+		if (options.raw) return (await response.arrayBuffer()) as T;
 
 		const contentType = response.headers.get('content-type') || '';
 		if (contentType.includes('text/plain') || contentType.includes('application/octet-stream')) {

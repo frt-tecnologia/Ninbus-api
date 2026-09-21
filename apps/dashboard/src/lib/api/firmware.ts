@@ -39,8 +39,11 @@ export const firmwareService = {
 		return http.post<ActionResponse>('/admin/firmware', form);
 	},
 
-	async remove(releaseId: string): Promise<ActionResponse> {
-		return http.delete<ActionResponse>(`/admin/firmware/${encodeURIComponent(releaseId)}`);
+	async remove(releaseId: string, opts?: { realignFloor?: boolean }): Promise<ActionResponse> {
+		return http.delete<ActionResponse>(
+			`/admin/firmware/${encodeURIComponent(releaseId)}`,
+			opts?.realignFloor ? { realignFloor: 'true' } : undefined,
+		);
 	},
 
 	/** Force firmware to the given devices (console path). releaseId → test a specific DRAFT. */

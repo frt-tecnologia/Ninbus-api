@@ -118,16 +118,20 @@ export async function runPublicationGate(
 		});
 	}
 
+	// PILOT mode: compare against the catalog floor EXCLUDING this release
+	// (drafts included) — i.e. not below anything a device may have been
+	// offered. Never compare the release against itself (2 > 2 = false).
+	const pilotFloor =
+		mode === 'pilot' ? await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId }) : null;
 	const catalogMaxCounter =
-		mode === 'pilot'
-			? (release.counter ?? 0)
-			: await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId, publishedOnly: true });
+		pilotFloor ?? (await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId, publishedOnly: true }));
+	const counterLabel = pilotFloor !== null ? 'catalog floor (drafts incl.)' : 'max published';
 	checks.push({
 		name: 'counter-monotonic',
 		passed: release.counter != null && release.counter > catalogMaxCounter,
 		detail:
 			release.counter != null
-				? `release counter ${release.counter} vs max published ${catalogMaxCounter} — must be strictly greater.`
+				? `release counter ${release.counter} vs ${counterLabel} ${catalogMaxCounter} — must be strictly greater.`
 				: 'release carries no manifest counter (pre-counter era row).',
 	});
 

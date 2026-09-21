@@ -18,7 +18,7 @@ import {
 import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { OtaSignerError, buildNinbusTar, packVersionString } from './ota-signer';
 import {
 	type CanonicalArtifactType,
@@ -345,7 +345,10 @@ export async function getLatestRelease(type: string, publishedOnly = true) {
  *   stays on hawkBit as history and the response warns about it
  *   (hawkbitKept: true).
  */
-export async function deleteFirmwareRelease(releaseId: string) {
+export async function deleteFirmwareRelease(
+	releaseId: string,
+	opts?: { realignFloor?: boolean },
+) {
 	const [release] = await db
 		.select()
 		.from(firmwareReleases)
@@ -388,10 +391,53 @@ export async function deleteFirmwareRelease(releaseId: string) {
 						),
 					);
 				if (Number(sameCounter?.n ?? 0) === 0) {
-					throw new FirmwareValidationError(
-						`Release ${release.version} (counter ${release.counter}) was already SERVED to devices and is the catalog's sole holder of that counter. The bootloader anti-replay floor does not roll back — deleting it would make the next upload re-sign a burned counter (guaranteed replay rejection). Re-align the floor first: set counter=${release.counter} on an older release of the same type (or re-sign above it), then delete this one.`,
-					'COUNTER_FLOOR_BURNED',
-				);
+					// Automated runbook: transfer the floor to the newest OLDER
+					// release of the type (same pattern as the manual SQL the
+					// embedded team endorsed) so the floor survives this delete.
+					if (opts?.realignFloor) {
+						const [candidate] = await db
+							.select({
+								id: firmwareReleases.id,
+								name: firmwareReleases.name,
+								version: firmwareReleases.version,
+							})
+							.from(firmwareReleases)
+							.where(
+								and(
+									eq(firmwareReleases.artifactType, 'firmware-ninbus'),
+									ne(firmwareReleases.id, releaseId),
+									or(
+										isNull(firmwareReleases.counter),
+										lt(firmwareReleases.counter, release.counter!),
+									),
+								),
+							)
+							.orderBy(desc(firmwareReleases.createdAt))
+							.limit(1);
+						if (!candidate) {
+							throw new FirmwareValidationError(
+								`Release ${release.version} (counter ${release.counter}) was already SERVED to devices and is the catalog's sole counter holder — and there is no OLDER release to realign the floor onto. Deleting it would make the next upload re-sign a burned counter (guaranteed replay rejection). Upload a new version instead (the build byte exists for this: ${release.version}.1)`,
+								'COUNTER_FLOOR_BURNED',
+							);
+						}
+						await db
+							.update(firmwareReleases)
+							.set({ counter: release.counter, updatedAt: new Date() })
+							.where(eq(firmwareReleases.id, candidate.id));
+						appLogger.warn(
+							'[FIRMWARE] Counter floor realigned: release %s (%s v%s) now carries counter=%d (floor marker preserved across the delete of %s)',
+							candidate.id,
+							candidate.name,
+							candidate.version,
+							release.counter,
+							releaseId,
+						);
+					} else {
+						throw new FirmwareValidationError(
+							`Release ${release.version} (counter ${release.counter}) was already SERVED to devices and is the catalog's sole holder of that counter. The bootloader anti-replay floor does not roll back — deleting it would make the next upload re-sign a burned counter (guaranteed replay rejection). Retry with ?realignFloor=true to transfer the floor to the newest older release automatically, or upload a new version (${release.version}.1)`,
+							'COUNTER_FLOOR_BURNED',
+						);
+					}
 				}
 			}
 		}

@@ -109,3 +109,14 @@ O backend não divergiu: o catálogo foi **contaminado pela porta de entrada leg
 (server-sign `.bin`), e cada tentativa de conserto sem limpar o catálogo antes só
 served a contaminação de novo — e queimou piso novo no device (F10). A ordem correta é:
 **evidência → freio → limpeza → release nova (4.0.7) → piloto → publish → fechar a porta (.bin)**.
+
+## 8. Latente corrigida em decorrência (feature de download)
+
+**publication-gate.ts: `imageSha256` de evidência computado sobre o slice errado** —
+usava `tar.subarray(tar.length - imageSize)`, mas o tar termina com blocos de fim +
+padding; a imagem é o final do MEMBRO de dados. O sha registrado em
+`firmware_releases.gate` (evidência forense!) não era o sha real da imagem. Corrigido:
+`extractImageFromTar` (extração por membro, tar-validator) passou a ser a fonte única,
+usada pelo gate e pelo endpoint `?part=image`. Os VEREDITOS do gate nunca dependiam
+desse sha (digest do manifesto é verificado no parse) — apenas a evidência registrada
+saía errada. Descoberto pelos testes de extração da própria feature.

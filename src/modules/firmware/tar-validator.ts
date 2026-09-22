@@ -230,7 +230,7 @@ export async function validateCanonicalTar(
 }
 
 /** Extract all members from a tar buffer (name + content). */
-function extractTar(buffer: Buffer): Promise<Array<{ name: string; data: Buffer }>> {
+export function extractTar(buffer: Buffer): Promise<Array<{ name: string; data: Buffer }>> {
 	return new Promise((resolve, reject) => {
 		const entries: Array<{ name: string; data: Buffer }> = [];
 		const extract = tar.extract();

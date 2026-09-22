@@ -13,7 +13,7 @@ import {
 	parseCounter,
 	validateDerSignature,
 } from '../src/modules/firmware/ota-signer';
-import { compareVersions } from '../src/modules/firmware/service';
+import { compareVersions, extractImageFromTar } from '../src/modules/firmware/service';
 import { classifyDeviceFirmware } from '../src/modules/firmware/status-service';
 import { validateCanonicalTar } from '../src/modules/firmware/tar-validator';
 import { cleanAll } from './test-helpers';
@@ -887,5 +887,36 @@ describe('Firmware artifact download (route)', () => {
 			new Request(`http://localhost/api/admin/firmware/${crypto.randomUUID()}/artifact`),
 		);
 		expect(res.status).toBe(401);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// extractImageFromTar — inner .bin payload extraction from the served tar
+// ---------------------------------------------------------------------------
+describe('extractImageFromTar', () => {
+	it('extracts the exact inner image bytes from a canonical ninbus tar', async () => {
+		const image = Buffer.alloc(1024, 0x5a);
+		const tar = await buildUnsignedNinbusTar(image);
+		const { image: extracted, info } = await extractImageFromTar(tar, 'firmware-ninbus');
+		expect(extracted.equals(image)).toBe(true);
+		expect(info.imageSize).toBe(1024);
+	});
+
+	it('extracts the raw payload for firmware-controller (.fir)', async () => {
+		const payload = Buffer.alloc(64, 0x33);
+		const tar = await buildCanonicalTar('firmware-controller', payload);
+		const { image, info } = await extractImageFromTar(tar, 'firmware-controller');
+		expect(image.equals(payload)).toBe(true);
+		expect(info.imageSize).toBe(64);
+	});
+
+	it('rejects a non-canonical tar with INVALID_PACKAGE (forensic signal)', async () => {
+		let code: string | undefined;
+		try {
+			await extractImageFromTar(Buffer.alloc(1024, 0x78), 'firmware-ninbus');
+		} catch (e) {
+			code = (e as { code?: string }).code;
+		}
+		expect(code).toBe('INVALID_PACKAGE');
 	});
 });

@@ -18,9 +18,9 @@ export const firmwareArtifactRoutes = withAuth(
 	// GET /:releaseId/artifact — download the binary hawkBit SERVES for a release
 	.get(
 		'/:releaseId/artifact',
-		async ({ params, user, set }) => {
+		async ({ params, query, user, set }) => {
 			try {
-				const artifact = await downloadServedArtifact(params.releaseId);
+				const artifact = await downloadServedArtifact(params.releaseId, query?.part ?? 'tar');
 				await logActivity({
 					actorUserId: user.id,
 					actorEmail: user.email,
@@ -62,14 +62,24 @@ export const firmwareArtifactRoutes = withAuth(
 			auth: true,
 			superAdmin: true,
 			params: t.Object({ releaseId: t.String({ format: 'uuid' }) }),
+			query: t.Object({
+				part: t.Optional(
+					t.Union([t.Literal('tar'), t.Literal('image')], {
+						description:
+							'tar = the stored package exactly as devices download it; image = the inner payload (.bin) extracted from the tar.',
+					}),
+				),
+			}),
 			detail: {
 				tags: ['Firmware'],
 				summary: 'Download the served artifact binary (factory only)',
 				description:
 					'Downloads the EXACT binary hawkBit serves to devices for a release — ' +
 					'byte-level ground truth to compare against the factory build (incident ' +
-					'forensics: INC-673/674/675). Headers: x-artifact-sha256, x-artifact-size; ' +
-					'filename carries version + Software Module id for provenance.',
+					'forensics: INC-673/674/675). ?part=tar → the stored package; ' +
+					'?part=image → the inner .bin payload extracted from it. Headers: ' +
+					'x-artifact-sha256, x-artifact-size; filename carries version + Software ' +
+					'Module id for provenance.',
 			},
 			response: {
 				200: FirmwareArtifactBinarySchema,

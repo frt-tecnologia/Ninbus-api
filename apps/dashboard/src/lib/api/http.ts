@@ -101,8 +101,9 @@ export const http = {
 	 * object-URL anchor and returns filename + size (+ x-artifact-sha256 when
 	 * the API provides it — byte-level provenance for forensic comparison).
 	 */
-	async download(path: string): Promise<DownloadResult> {
-		const res = await fetch(`${PREFIX_URL}${path}`, { credentials: 'same-origin' });
+	async download(path: string, opts?: { query?: Query }): Promise<DownloadResult> {
+		const search = opts?.query ? `?${new URLSearchParams(opts.query as Record<string, string>)}` : '';
+		const res = await fetch(`${PREFIX_URL}${path}${search}`, { credentials: 'same-origin' });
 		if (!res.ok) {
 			let message = `Download failed (HTTP ${res.status})`;
 			try {

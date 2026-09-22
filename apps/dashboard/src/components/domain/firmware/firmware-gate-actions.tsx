@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CloudUpload, Download, EyeOff, FlaskConical, MoreHorizontal, Trash2 } from 'lucide-react';
+import { CloudUpload, Download, EyeOff, FileDown, FlaskConical, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
 	DropdownMenu,
@@ -40,10 +40,10 @@ export function FirmwareGateActions({
 	const [pendingFlip, setPendingFlip] = React.useState<'publish' | 'unpublish' | null>(null);
 
 	/** Byte-level forensics: save the EXACT binary hawkBit serves for this release. */
-	async function downloadArtifact() {
+	async function downloadArtifact(part: 'tar' | 'image') {
 		setDlBusy(true);
 		try {
-			const res = await firmwareService.downloadArtifact(release.id);
+			const res = await firmwareService.downloadArtifact(release.id, part);
 			toast.success(`Artefato ${res.filename} (${res.size.toLocaleString('pt-BR')} B) baixado`, {
 				description: res.sha256 ? `sha256 ${res.sha256.slice(0, 16)}… — compare com a build de fábrica` : undefined,
 				duration: 10_000,
@@ -125,9 +125,13 @@ export function FirmwareGateActions({
 						</DropdownMenuItem>
 					)}
 					<DropdownMenuSeparator />
-					<DropdownMenuItem onClick={downloadArtifact} disabled={dlBusy}>
+					<DropdownMenuItem onClick={() => downloadArtifact('tar')} disabled={dlBusy}>
 						<Download />
-						{dlBusy ? 'Baixando…' : 'Baixar artefato'}
+						{dlBusy ? 'Baixando…' : 'Baixar pacote .tar'}
+					</DropdownMenuItem>
+					<DropdownMenuItem onClick={() => downloadArtifact('image')} disabled={dlBusy}>
+						<FileDown />
+						{dlBusy ? 'Baixando…' : 'Baixar imagem interna (.bin)'}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem

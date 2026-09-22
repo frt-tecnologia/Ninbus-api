@@ -11,6 +11,7 @@ import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq, sql } from 'drizzle-orm';
 import { catalogCounterFloor, getFirmwareReleaseById } from './catalog';
+import { extractImageFromTar } from './artifact-download';
 import { FirmwareValidationError } from './errors';
 import { InvalidPackageError, validateCanonicalTar } from './tar-validator';
 import { compareVersions } from './versioning';
@@ -98,7 +99,9 @@ export async function runPublicationGate(
 	}
 
 	if (tarInfo) {
-		const image = tar.subarray(tar.length - tarInfo.imageSize);
+		// Image = tail of the data member (NOT of the whole file — the archive
+		// ends with end-blocks/padding). extractImageFromTar re-validates.
+		const { image } = await extractImageFromTar(tar, 'firmware-ninbus');
 		imageSha256 = createHash('sha256').update(image).digest('hex');
 		checks.push({
 			name: 'image-sha256',

@@ -18,7 +18,7 @@ export {
 	setFirmwareReleaseStatus,
 } from './publication-gate';
 export { triggerFirmwareUpdate } from './deploy-trigger';
-export { type ServedFirmwareArtifact, downloadServedArtifact } from './artifact-download';
+export { type ServedFirmwareArtifact, downloadServedArtifact, extractImageFromTar } from './artifact-download';
 export {
 	classifyDeviceFirmware,
 	enrichDevicesWithFirmwareStatus,

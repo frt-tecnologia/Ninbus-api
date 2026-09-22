@@ -15,6 +15,7 @@ import { companyMemberRoutes } from '@modules/companies/member-routes';
 import { deploymentsModule } from '@modules/deployments';
 import { deploymentDeviceRoutes } from '@modules/deployments/device-routes';
 import { firmwareAdminRoutes } from '@modules/firmware/routes';
+import { firmwareArtifactRoutes } from '@modules/firmware/artifact-routes';
 import { firmwareGateRoutes } from '@modules/firmware/gate-routes';
 import { firmwareStatusRoutes } from '@modules/firmware/status-routes';
 import { devicesModule } from '@modules/devices';
@@ -23,9 +24,6 @@ import { deviceConnectionsRoutes } from '@modules/devices/connections-routes';
 import { deviceHawkbitRoutes } from '@modules/devices/hawkbit-routes';
 import { provisioningRoutes } from '@modules/devices/provision-routes';
 import { DeviceSyncEngine } from '@modules/devices/sync';
-import { firmwareGateRoutes } from '@modules/firmware/gate-routes';
-import { firmwareAdminRoutes } from '@modules/firmware/routes';
-import { firmwareStatusRoutes } from '@modules/firmware/status-routes';
 import { healthModule } from '@modules/health';
 import { observabilityModule } from '@modules/observability';
 import { startTelemetryRetention } from '@modules/observability/retention';
@@ -180,6 +178,7 @@ export const createApp = () => {
 		.use(artifactCategoryRoutes)
 		.use(firmwareAdminRoutes)
 		.use(firmwareGateRoutes)
+		.use(firmwareArtifactRoutes)
 		.use(firmwareStatusRoutes)
 		.use(sseModule)
 		.use(sseGlobalModule)

@@ -4,7 +4,7 @@ import type {
 	FirmwareUploadInput,
 	ListResponse,
 } from '@/types/domain';
-import { http } from './http';
+import { type DownloadResult, http } from './http';
 
 /**
  * Firmware service — factory firmware catalog (super admin only).
@@ -73,5 +73,10 @@ export const firmwareService = {
 			`/admin/firmware/${encodeURIComponent(releaseId)}/unpublish`,
 			{},
 		);
+	},
+
+	/** Download the SERVED artifact binary — byte-level ground truth (forensics). */
+	async downloadArtifact(releaseId: string): Promise<DownloadResult> {
+		return http.download(`/admin/firmware/${encodeURIComponent(releaseId)}/artifact`);
 	},
 };

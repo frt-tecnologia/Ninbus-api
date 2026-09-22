@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CloudUpload, EyeOff, FlaskConical, MoreHorizontal, Trash2 } from 'lucide-react';
+import { CloudUpload, Download, EyeOff, FlaskConical, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
 	DropdownMenu,
@@ -36,7 +36,24 @@ export function FirmwareGateActions({
 	const router = useRouter();
 	const [busy, setBusy] = React.useState(false);
 	const [testOpen, setTestOpen] = React.useState(false);
+	const [dlBusy, setDlBusy] = React.useState(false);
 	const [pendingFlip, setPendingFlip] = React.useState<'publish' | 'unpublish' | null>(null);
+
+	/** Byte-level forensics: save the EXACT binary hawkBit serves for this release. */
+	async function downloadArtifact() {
+		setDlBusy(true);
+		try {
+			const res = await firmwareService.downloadArtifact(release.id);
+			toast.success(`Artefato ${res.filename} (${res.size.toLocaleString('pt-BR')} B) baixado`, {
+				description: res.sha256 ? `sha256 ${res.sha256.slice(0, 16)}… — compare com a build de fábrica` : undefined,
+				duration: 10_000,
+			});
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Falha ao baixar artefato');
+		} finally {
+			setDlBusy(false);
+		}
+	}
 
 	async function flip(action: 'publish' | 'unpublish') {
 		const isPublish = action === 'publish';
@@ -107,6 +124,11 @@ export function FirmwareGateActions({
 							Retirar do ar
 						</DropdownMenuItem>
 					)}
+					<DropdownMenuSeparator />
+					<DropdownMenuItem onClick={downloadArtifact} disabled={dlBusy}>
+						<Download />
+						{dlBusy ? 'Baixando…' : 'Baixar artefato'}
+					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
 						className="text-destructive focus:text-destructive"

@@ -82,10 +82,54 @@ async function request<T>(
 	}
 }
 
+/** Result of a successful binary download (server-driven filename + forensic headers). */
+export interface DownloadResult {
+	filename: string;
+	size: number;
+	sha256?: string;
+}
+
 export const http = {
 	get: <T>(path: string, query?: Query) => request<T>('get', path, { query }),
 	post: <T>(path: string, body?: unknown) => request<T>('post', path, { body }),
 	put: <T>(path: string, body?: unknown) => request<T>('put', path, { body }),
 	patch: <T>(path: string, body?: unknown) => request<T>('patch', path, { body }),
 	delete: <T>(path: string, query?: Query) => request<T>('delete', path, { query }),
+
+	/**
+	 * Binary download — GET expecting a FILE (not JSON). Saves via a transient
+	 * object-URL anchor and returns filename + size (+ x-artifact-sha256 when
+	 * the API provides it — byte-level provenance for forensic comparison).
+	 */
+	async download(path: string): Promise<DownloadResult> {
+		const res = await fetch(`${PREFIX_URL}${path}`, { credentials: 'same-origin' });
+		if (!res.ok) {
+			let message = `Download failed (HTTP ${res.status})`;
+			try {
+				const parsed = (await res.json()) as ApiError;
+				if (parsed?.message) message = parsed.message;
+			} catch {
+				/* non-JSON error body */
+			}
+			throw new ApiClientError(res.status, message);
+		}
+		const blob = await res.blob();
+		const disposition = res.headers.get('content-disposition') ?? '';
+		const match = /filename="?([^";]+)"?/.exec(disposition);
+		const sizeHeader = Number(res.headers.get('x-artifact-size'));
+		const filename = match?.[1] ?? 'artifact.bin';
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = filename;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(url);
+		return {
+			filename,
+			size: Number.isFinite(sizeHeader) ? sizeHeader : blob.size,
+			sha256: res.headers.get('x-artifact-sha256') ?? undefined,
+		};
+	},
 };

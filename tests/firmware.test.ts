@@ -831,3 +831,61 @@ describe('ota-signer (server-side sign + pack)', () => {
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/firmware/:releaseId/artifact — served-binary download route
+// ---------------------------------------------------------------------------
+describe('Firmware artifact download (route)', () => {
+	const app = createApp();
+	const password = 'TestPassword123!';
+
+	async function signIn(email: string, fresh = false): Promise<string> {
+		if (fresh) {
+			await app.handle(
+				new Request('http://localhost/api/auth/sign-up/email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email, password, name: 'Plain User' }),
+				}),
+			);
+		}
+		const res = await app.handle(
+			new Request('http://localhost/api/auth/sign-in/email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email, password }),
+			}),
+		);
+		return res.headers.get('set-cookie') ?? '';
+	}
+
+	it('super admin + hawkBit disabled → 400 HAWKBIT_NOT_ENABLED (clear guard, no 500)', async () => {
+		const cookie = await signIn('admin-test@ninbus.com.br');
+		expect(cookie).toBeTruthy();
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${crypto.randomUUID()}/artifact`, {
+				headers: { Cookie: cookie },
+			}),
+		);
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { code?: string };
+		expect(body.code).toBe('HAWKBIT_NOT_ENABLED');
+	});
+
+	it('plain user → 403 (super admin only)', async () => {
+		const cookie = await signIn(`fw-dl-${Date.now()}@example.com`, true);
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${crypto.randomUUID()}/artifact`, {
+				headers: { Cookie: cookie },
+			}),
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it('anonymous → 401', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${crypto.randomUUID()}/artifact`),
+		);
+		expect(res.status).toBe(401);
+	});
+});

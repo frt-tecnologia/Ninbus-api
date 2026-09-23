@@ -238,6 +238,12 @@ export const DeployFirmwareBodySchema = t.Object({
 	force: t.Optional(t.Boolean()),
 });
 
+/** Binary artifact payload (application/octet-stream) — the served bytes verbatim. */
+export const FirmwareArtifactBinarySchema = t.Any({
+	description:
+		'Firmware artifact binary (application/octet-stream) — the exact bytes hawkBit serves to devices.',
+});;
+
 export const FirmwareDeployResponseSchema = t.Object({
 	message: t.String(),
 	data: t.Object({

@@ -104,3 +104,19 @@ cd ~/Ninbus-api && docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "
 ```
 (SEM psql no container: `docker compose exec -T api node -e` com o postgres do
 node_modules, ou rodar o SQL via Neon console com o DATABASE_URL do .env da EC2.)
+
+## CONSENSO FINAL (17/04, agente embarcado + backend alinhados)
+
+O pipeline não diverge de nada — serve fielmente o artefato PUBLICADO no
+catálogo. A divergência 673/674 nasce da combinação:
+1. Release espúria "4.0.4" (imagem 179.794 B, counter=3) nascida no caminho
+   de server-sign de `.bin` cru (versão digitada) e publicada — o gate de
+   consistência não vê procedência;
+2. Todo o funil de deploy sem `releaseId` resolve "maior versão publicada",
+   que era a espúria.
+
+Episódios 660-664, 665 e 673/674 = mesma classe: **procedência na ponta de
+cima**, nunca falha de pipeline. Runbook: cancelar actions abertas → delete
+`?realignFloor=true` → upload tar de fábrica → piloto com `releaseId` →
+publish. Sistêmico: `FIRMWARE_ALLOW_BIN_SIGN=false` (prod), struct de versão
+em offset fixo (embarcado), surfar imageSize/sha no console + deploy.

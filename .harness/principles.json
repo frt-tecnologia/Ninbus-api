@@ -1183,6 +1183,14 @@
       "category": "quality",
       "learnedAt": "2026-09-21T02:39:20.515Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-proxy-binary-bytes",
+      "rule": "A proxy must relay request bodies as RAW BYTES (await req.arrayBuffer()), never await req.text(). Text decoding silently replaces every invalid UTF-8 byte sequence with U+FFFD (ef bf bd) — corrupting any binary upload crossing the proxy (multipart firmware .tar/.bin, config .frz) while JSON keeps working, hiding the bug. INC-658→675: months of 'garbage ~179 KB artifacts' were real ~117 KB builds mangled by a single req.text() line. Responses must also be relayed via arrayBuffer, never .json()/.text() on the proxy path.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-23T01:46:18.746Z",
+      "reinforcementCount": 1
     }
   ]
 }

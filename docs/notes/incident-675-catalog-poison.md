@@ -1,6 +1,39 @@
 # INC-675 — Catálogo contaminado: deploy serviu row 4.0.6 espúria (linhagem server-sign .bin)
 
-> **Status: AGUARDANDO APROVAÇÃO — nenhum comando executado, nenhum código editado.**
+> ## 🔴 CORREÇÃO FINAL (21/09, prova criptográfica — supersede §2–§4)
+>
+> **O arquivo servido É o arquivo do usuário — corrompido em trânsito pelo proxy do console.**
+> `apps/dashboard/src/app/api/[...path]/route.ts` fazia `body = await req.text()` no corpo do
+> request: multipart decodificado como UTF-8 → todo byte >0x7F fora de sequência válida vira
+> U+FFFD (`ef bf bd`, 3 bytes). Prova: (1) sha256(zephyr.bin decodificado c/ replacement) ==
+> sha256(imagem dentro do tar servido) — byte a byte; (2) primeiros bytes servidos
+> `40 ef bf bd 00 20` = U+FFFD (SP=0xbdbfef40 = 0x40 + U+FFFD); (3) digest/assinatura do
+> manifesto válidos sobre a imagem JÁ mangleada (o server assinou o buffer corrompido).
+>
+> Consequências para ESTE doc: F5–F8 estão **errados** — não houve "row de outra pessoa",
+> não houve 409 DUPLICATE_VERSION despercebido; a row 4.0.6 (counter=4) É o upload do
+> usuário (.bin, mangueado 116.968→179.714 B, +2 B por substituição). A "linhagem da
+> bancada" (658→675, todas ~179 KB) eram builds reais ~117 KB mangueadas pelo proxy desde
+> o primeiro commit dele (db5df87, 29/06). "Backend não aceita .tar" = tar de fábrica
+> mangueado (padding 0xFF → ef bf bd) → INVALID_PACKAGE; o .bin passava porque o caminho
+> server-sign aceita qualquer byte.
+>
+> **O que PERMANECE VÁLIDO: a armadilha do piso (§3/F10) — agora com evidência MAIS FORTE.**
+> Antes do 675 o piso do device era (3, 4.0.4) (`counter aceito=3 / versao aceita=4.0.4`
+> no boot) — e sob a teoria corrigida, SÓ serves com apply falho poderiam tê-lo queimado
+> (nenhuma imagem mangueada boota) ⇒ **o piso queima mesmo com falha/rollback**. Logo, após
+> o 675 o piso é (4, 4.0.6) e o serial esperado `aceito=3 · versao=04000600 → TRIAL` do
+> plano pós-fix está provavelmente ERRADO: a 4.0.6 de fábrica sem `--allow-downgrade` será
+> rejeitada (version 4.0.6 ≤ piso 4.0.6). **Lançar como 4.0.7** (passa sob QUALQUER
+> semântica de piso: counter 6>4 ✓, 4.0.7>4.0.6 ✓) ou 4.0.6+`--allow-downgrade`.
+>
+> **Raio de explosão:** TODO upload binário pelo console desde 29/06 está mangueado —
+> não só firmware: `configuration-nfx` (.frz) e `firmware-controller` (.fir) também.
+> Auditoria pós-fix: re-upar artefatos .frz/.fir críticos (bytes no hawkBit ≠ bytes de origem).
+>
+> Fix aplicado: `route.ts` `req.text()` → `req.arrayBuffer()` (proxy repassa bytes verbatim).
+
+> **Status: fix do proxy aplicado — limpeza do catálogo e release 4.0.7 aguardando aprovação.**
 > Classe: procedência/processo (não é bug do pipeline). Continuação da mesma classe de
 > INC-658 · INC-662/664 · INC-673/674 — todas: upload de `.bin` cru via server-sign
 > com versão digitada manualmente.

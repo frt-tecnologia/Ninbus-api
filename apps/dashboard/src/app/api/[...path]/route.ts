@@ -66,10 +66,15 @@ async function handler(req: NextRequest, context: { params: Promise<{ path: stri
 	const url = new URL(req.url);
 	const targetUrl = `${API_INTERNAL_URL}/${apiPath}${url.search}`;
 
-	// Read the request body ONCE for methods that have one (GET/HEAD have none).
+	// Read the request body ONCE as RAW BYTES (GET/HEAD have none). NEVER
+	// req.text() here: text decoding replaces every invalid UTF-8 byte
+	// sequence with U+FFFD (EF BF BD) — silently corrupting ANY binary upload
+	// (firmware .tar/.bin, configuration .frz) that crosses this proxy. This
+	// single line mangled every console upload since the proxy's first commit
+	// (INC-658→675: 116.968 B builds served as 179.714 B garbage).
 	let body: BodyInit | undefined;
 	if (req.method !== 'GET' && req.method !== 'HEAD') {
-		body = await req.text();
+		body = await req.arrayBuffer();
 	}
 
 	// Build the upstream request, forwarding only safe headers + the body.

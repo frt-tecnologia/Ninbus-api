@@ -1223,6 +1223,14 @@
       "category": "security",
       "learnedAt": "2026-09-24T18:08:59.896Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-ci-test-fixes-round",
+      "rule": "Test failures that appear \"environmental\" may be deterministic fixture bugs: (1) Date.now().toString(16) is ~11 hex chars — any test serial derived from it must .slice(-N) to keep the exact length provisioning validates (16 hex chars); (2) tests must never ignore the setup response (provision/sign-in) — assert [200,201] to fail fast with a clear error instead of 'undefined is not an object' three calls later; (3) company creation is super-admin-only — every test file's beforeAll must sign in SUPER_ADMIN_EMAILS and pass ownerEmail; (4) infra-posture tests (nginx :443, ports) must be updated when a documented 'later phase' (TLS cutover) ships, or they invert into false failures.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-09-24T19:48:10.551Z",
+      "reinforcementCount": 1
     }
   ]
 }

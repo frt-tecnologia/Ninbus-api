@@ -9,6 +9,7 @@ import { Empty, Id, Section, Signal } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { deploymentService } from '@/lib/api';
+import { phaseSignal } from '@/lib/design/tokens';
 import type { TargetDeploymentStatus } from '@/types/domain';
 
 /**

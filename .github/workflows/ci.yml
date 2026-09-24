@@ -5,6 +5,18 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel a run on main mid-flight: it may contain the deploy job,
+  # and cancelling between `docker-compose down` and `up` would leave
+  # production down. Feature/PR runs still cancel each other as usual.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # CI-safe values — also written to .env.test below (bun test loads it via --env-file).
+  CI_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
 
 jobs:
   lint-and-test:
@@ -33,10 +45,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install
-
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: bun install --frozen-lockfile
 
       - name: Run linter
         run: bun run lint
@@ -51,19 +60,169 @@ jobs:
 
       - name: Run database migrations
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-          ENABLE_AUTH: "true"
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          ENABLE_AUTH: 'true'
           NODE_ENV: test
           BETTER_AUTH_SECRET: test-secret-for-ci-32-characters-long!!!
           BETTER_AUTH_URL: http://localhost:3000
         run: bun run db:migrate
 
+      # .env.test is gitignored (contains a real Neon URL locally) — CI needs its
+      # own copy pointing at the service Postgres above. Shell env vars win over
+      # env-file values, so the test step below can still override anything.
+      - name: Create CI .env.test
+        run: |
+          cat > .env.test <<'EOF'
+          # CI-generated test environment (see .github/workflows/ci.yml)
+          NODE_ENV=test
+          HOST=localhost
+          PORT=3000
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/test_db
+          ENABLE_AUTH=true
+          REQUIRE_EMAIL_VERIFICATION=false
+          BETTER_AUTH_SECRET=LdqfTGVQsDmuHCaqW6jQMX7IWgC5CfnTaKi0/pzSu8s=
+          BETTER_AUTH_URL=http://localhost:3000
+          AUTH_COOKIE_SECURE=false
+          SUPER_ADMIN_EMAILS=admin-test@ninbus.com.br
+          FIRMWARE_SIGNING_KEY=
+          RESEND_API_KEY=
+          EMAIL_FROM=noreply@test.com
+          FRONTEND_URL=http://localhost:5173
+          APP_DEEP_LINK_BASE=https://ninbus.frt.com.br
+          RESEND_TEMPLATE_PASSWORD_RESET=
+          RESEND_TEMPLATE_EMAIL_VERIFICATION=
+          LOG_LEVEL=error
+          CORS_ORIGIN=http://localhost:3000
+          ENABLE_RATE_LIMITER=false
+          HAWKBIT_ENABLED=false
+          HAWKBIT_URL=http://localhost:8080
+          HAWKBIT_USERNAME=admin
+          HAWKBIT_PASSWORD=admin
+          HAWKBIT_TIMEOUT_MS=5000
+          HAWKBIT_SKIP_TLS=true
+          HAWKBIT_AUTOPROVISIONING=false
+          HAWKBIT_SYNC_INTERVAL_SEC=30
+          HAWKBIT_SYNC_STALE_SEC=60
+          HAWKBIT_SYNC_MODE=on_demand
+          HAWKBIT_SYNC_ACTIVE_WINDOW_SEC=300
+          HAWKBIT_STALE_SWEEP_SEC=10
+          HAWKBIT_POLLING_TIME=00:05:00
+          ARTIFACT_MAX_SIZE_MB=50
+          HAWKBIT_CDN_BASE_URL=
+          HAWKBIT_CDN_KEY_PAIR_ID=
+          SSE_ENABLED=true
+          SSE_HEARTBEAT_SEC=15
+          SSE_MAX_CONNECTIONS_PER_COMPANY=50
+          SSE_FLUSH_MS=1500
+          SSE_BATCH_MAX=500
+          RATE_LIMIT_WINDOW_MS=60000
+          RATE_LIMIT_MAX=150
+          AUTH_RATE_LIMIT_WINDOW_MS=60000
+          AUTH_RATE_LIMIT_MAX=20
+          OBS_CONNECTIONS_RETENTION_DAYS=90
+          EOF
+
       - name: Run tests
         env:
           NODE_ENV: test
-          ENABLE_AUTH: "true"
-          ENABLE_RATE_LIMITER: "false"
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          ENABLE_AUTH: 'true'
+          ENABLE_RATE_LIMITER: 'false'
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           BETTER_AUTH_SECRET: test-secret-for-ci-32-characters-long!!!
           BETTER_AUTH_URL: http://localhost:3000
         run: bun run test
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Deploy: runs ONLY on pushes to main, after lint + tests pass.
+  #
+  # SSH port 22 stays closed to the world. Before connecting, this job
+  # temporarily authorizes its OWN runner IP in the EC2 security group via the
+  # AWS CLI (credentials from an IAM access key stored in GitHub secrets) and
+  # revokes the rule afterwards — no need to whitelist GitHub IP ranges.
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-ec2:
+    name: Deploy to EC2 (production)
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_SG_ID: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+
+    steps:
+      - name: Get runner public IP
+        id: runner_ip
+        run: echo "ip=$(curl -fsS https://checkip.amazonaws.com)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Temporarily allow SSH from this runner
+        run: |
+          echo "Authorizing SSH (tcp/22) for ${{ steps.runner_ip.outputs.ip }}/32 in $AWS_SG_ID"
+          # || true → idempotent when a previous run left the rule behind
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$AWS_SG_ID" \
+            --protocol tcp \
+            --port 22 \
+            --cidr "${{ steps.runner_ip.outputs.ip }}/32" || true
+
+      - name: Deploy over SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          # --- setup key ---
+          key_file="$(mktemp)"
+          # tr -d '\r' guards against CRLF line endings when the secret was
+          # pasted from a Windows editor (OpenSSH rejects keys with CR).
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > "$key_file"
+          chmod 600 "$key_file"
+          trap 'rm -f "$key_file"' EXIT
+
+          ssh_opts="-i $key_file -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
+
+          # --- deploy script (full teardown + rebuild, per prod memory runbook) ---
+          ssh $ssh_opts "$EC2_USER@$EC2_HOST" 'bash -s' <<'SCRIPT'
+          set -euo pipefail
+          cd ~/Ninbus-api
+
+          # Server must track the branch that was pushed (deploy only fires on main)
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          echo "── down (removes containers + volumes) ──"
+          sudo docker-compose down -v
+
+          echo "── prune (frees disk/RAM used by old images/layers) ──"
+          sudo docker system prune -a --volumes -f
+
+          echo "── up (classic builder — prod runbook) ──"
+          sudo DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose up -d --build --force-recreate
+
+          echo "── status ──"
+          sudo docker-compose ps
+          SCRIPT
+
+      - name: Revoke SSH rule for this runner
+        if: always()
+        run: |
+          if aws ec2 revoke-security-group-ingress \
+            --group-id "$AWS_SG_ID" \
+            --protocol tcp \
+            --port 22 \
+            --cidr "${{ steps.runner_ip.outputs.ip }}/32"; then
+            echo "SSH rule revoked."
+          else
+            echo "Rule already gone (or never created) — nothing to revoke."
+          fi

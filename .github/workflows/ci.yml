@@ -184,12 +184,6 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           # --- setup key ---
-          # Trim whitespace: secrets pasted into GitHub often carry trailing
-          # spaces/newlines which make ssh fail with "hostname contains
-          # invalid characters" or "invalid user".
-          EC2_HOST="$(printf '%s' "$EC2_HOST" | tr -d '[:space:]')"
-          EC2_USER="$(printf '%s' "$EC2_USER" | tr -d '[:space:]')"
-
           key_file="$(mktemp)"
           # tr -d '\r' guards against CRLF line endings when the secret was
           # pasted from a Windows editor (OpenSSH rejects keys with CR).

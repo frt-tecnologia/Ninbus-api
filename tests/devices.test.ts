@@ -264,15 +264,17 @@ describe('Devices Module', () => {
 		});
 
 		it('DELETE /:deviceId removes device', async () => {
-			const delSerial = `CC00DD${(ts + 99).toString(16).toUpperCase().padStart(10, '0')}`; // 16 hex chars
+			// ts hex is ~11 chars — slice(-10) keeps the serial at exactly 16 hex chars
+			const delSerial = `CC00DD${(ts + 99).toString(16).toUpperCase().slice(-10).padStart(10, '0')}`;
 			// Provision first
-			await app.handle(
+			const prov = await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: delSerial, deviceKey: 'test-del-key-12345678' }),
 				}),
 			);
+			expect([200, 201]).toContain(prov.status); // fail fast on invalid serial format
 			const createRes = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -485,16 +487,21 @@ describe('Devices Module', () => {
 	});
 
 	describe('Serial Number Normalization', () => {
+		// Canonical serial family: hex 1A615001NNNNNFFF ↔ display 26.6.15.001.NNNNN
+		// (AA=26, M=6, PP=15, SSS=001). Provisioning requires EXACTLY 16 hex chars.
+		const nnn = (offset: number) => String((ts + offset) % 100000).padStart(5, '0');
+
 		it('POST claim with hex serial stores hex in serialNumber', async () => {
-			const hexSerial = `AABBCCDD${ts.toString(16).toUpperCase().padStart(8, '0')}`;
+			const hexSerial = `1A615001${nnn(0)}FFF`;
 			// Provision first
-			await app.handle(
+			const prov = await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: hexSerial, deviceKey: 'test-hex-key-12345678' }),
 				}),
 			);
+			expect([200, 201]).toContain(prov.status);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -509,10 +516,10 @@ describe('Devices Module', () => {
 		});
 
 		it('POST claim with dotted serial normalizes to hex', async () => {
-			const hexPart = ((ts + 1) & 0xffffffff).toString(16).toUpperCase().padStart(8, '0');
-			const dottedSerial = `${hexPart.slice(0, 2)}.${hexPart.slice(2, 4)}.${hexPart.slice(4, 6)}.${hexPart.slice(6, 8)}`;
+			const dottedSerial = `26.6.15.001.${nnn(1)}`;
+			const expectedHex = `1A615001${nnn(1)}FFF`;
 			// Provision first
-			await app.handle(
+			const prov = await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
@@ -522,6 +529,7 @@ describe('Devices Module', () => {
 					}),
 				}),
 			);
+			expect([200, 201]).toContain(prov.status);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -531,20 +539,21 @@ describe('Devices Module', () => {
 			);
 			expect(response.status).toBe(201);
 			const body = await response.json();
-			expect(body.data.serialNumber).toBe(hexPart);
+			expect(body.data.serialNumber).toBe(expectedHex);
 		});
 
 		it('POST claim with mixed-case hex normalizes to uppercase', async () => {
-			const hexPart = ((ts + 2) & 0xffffffff).toString(16).padStart(8, '0').toLowerCase();
-			const mixedSerial = hexPart;
+			const mixedSerial = `1a615001${nnn(2)}fff`;
+			const expectedHex = `1A615001${nnn(2)}FFF`;
 			// Provision first
-			await app.handle(
+			const prov = await app.handle(
 				new Request('http://localhost/api/devices/provision', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
 					body: JSON.stringify({ serialNumber: mixedSerial, deviceKey: 'test-mixed-key-12345678' }),
 				}),
 			);
+			expect([200, 201]).toContain(prov.status);
 			const response = await app.handle(
 				new Request(`http://localhost/api/companies/${companyId}/devices`, {
 					method: 'POST',
@@ -554,7 +563,7 @@ describe('Devices Module', () => {
 			);
 			expect(response.status).toBe(201);
 			const body = await response.json();
-			expect(body.data.serialNumber).toBe(hexPart.toUpperCase());
+			expect(body.data.serialNumber).toBe(expectedHex);
 		});
 	});
 

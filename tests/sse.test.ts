@@ -43,12 +43,15 @@ describe('SSE Module', () => {
 		ownerCookie = await signUpAndIn(ownerEmail, 'SSE Owner');
 		otherCookie = await signUpAndIn(otherEmail, 'Other User');
 
-		// Create company
+		// Company creation is super-admin-only — sign in the configured super
+		// admin and create the company owned by the SSE owner (same pattern as
+		// devices.test.ts / companies.test.ts).
+		const superAdminCookie = await signUpAndIn('admin-test@ninbus.com.br', 'Super Admin');
 		const response = await app.handle(
 			new Request('http://localhost/api/companies', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-				body: JSON.stringify({ name: 'SSE Test Company' }),
+				headers: { 'Content-Type': 'application/json', Cookie: superAdminCookie },
+				body: JSON.stringify({ name: 'SSE Test Company', ownerEmail: ownerEmail }),
 			}),
 		);
 		const body = await response.json();

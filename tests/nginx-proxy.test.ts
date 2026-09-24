@@ -115,10 +115,14 @@ describe('nginx reverse proxy — security posture', () => {
 		});
 	});
 
-	describe('transitional (zero-downtime) deployment', () => {
-		it('keeps the API on HTTP (no active :443 — TLS is a later phase)', () => {
+	describe('TLS termination (cutover completed)', () => {
+		it('terminates TLS on :443 with Let\u2019s Encrypt certs', () => {
+			// The transitional phase is over: nginx now actively serves HTTPS with
+			// the certbot-issued certificates for the public host.
 			const activeSsl = VHOSTS.split('\n').filter((l) => /^\s*listen\s+443\s+ssl/.test(l));
-			expect(activeSsl).toHaveLength(0);
+			expect(activeSsl.length).toBeGreaterThan(0);
+			expect(VHOSTS).toContain('/etc/letsencrypt/live/ninbus.frt.com.br/fullchain.pem');
+			expect(VHOSTS).toContain('/etc/letsencrypt/live/ninbus.frt.com.br/privkey.pem');
 		});
 
 		it('keeps the api port published (rollback safety until cutover)', () => {

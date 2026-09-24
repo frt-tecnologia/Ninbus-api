@@ -549,7 +549,10 @@ describe('DDI v2 feedback flow', () => {
 		expect(enriched[6]!.phase).toBe('downloaded'); // download complete
 		expect(enriched[7]!.phase).toBe('installing'); // processing artifact
 		expect(enriched[8]!.phase).toBe('installing'); // installing NFX
-		expect(enriched[9]!.phase).toBe('installing'); // NFX staged, rebooting
+		// "NFX staged, rebooting to apply" — the device staged the config and is
+		// rebooting to apply it: same physical reset as firmware R9, so the phase
+		// is 'rebooting' (reboot detection precedes install detection).
+		expect(enriched[9]!.phase).toBe('rebooting'); // NFX staged, rebooting
 		expect(enriched[10]!.phase).toBe('installed'); // installed successfully
 
 		// Latest phase should be installed

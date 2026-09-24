@@ -31,12 +31,11 @@ export function isInstallMessage(message: string): boolean {
 }
 
 /**
- * Detect a firmware-ninbus "about to reboot" feedback message.
+ * Detect an "about to reboot" feedback message.
  *
- * Only the firmware-ninbus self-update path reboots the STM32. The device sends
- * "firmware staged, rebooting to apply" (R9) as its LAST feedback before the
- * reset; NFX/controller paths never contain "reboot". MUST be checked before
- * isInstallMessage() because R9 also contains the "staged" keyword.
+ * The device sends "X staged, rebooting to apply" (firmware R9, NFX staged)
+ * as its LAST feedback before the reset. MUST be checked before
+ * isInstallMessage() because these messages also contain "staged".
  */
 export function isRebootMessage(message: string): boolean {
 	if (!message) return false;

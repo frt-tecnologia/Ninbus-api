@@ -6,7 +6,7 @@ import {
 	HawkbitAttributesResponseSchema,
 } from '@modules/devices/schemas';
 import { Elysia, t } from 'elysia';
-import { loadDevice, requireHawkbitLink } from './auth';
+import { loadDevice, requireHawkbitEnabled, requireHawkbitLink } from './auth';
 import * as service from './service';
 
 /**
@@ -83,6 +83,11 @@ export const deviceHawkbitRoutes = withAuth(
 				set.status = linkErr.status;
 				return linkErr.body;
 			}
+			const enabledErr = requireHawkbitEnabled();
+			if (enabledErr) {
+				set.status = enabledErr.status;
+				return enabledErr.body;
+			}
 			const attributes = await service.getHawkbitTargetAttributes(result.device.hawkbitTargetId);
 			return { data: attributes };
 		},
@@ -116,6 +121,11 @@ export const deviceHawkbitRoutes = withAuth(
 				set.status = linkErr.status;
 				return linkErr.body;
 			}
+			const enabledErr = requireHawkbitEnabled();
+			if (enabledErr) {
+				set.status = enabledErr.status;
+				return enabledErr.body;
+			}
 			const actions = await service.getHawkbitTargetActions(result.device.hawkbitTargetId);
 			return { data: actions };
 		},
@@ -148,6 +158,11 @@ export const deviceHawkbitRoutes = withAuth(
 			if (linkErr) {
 				set.status = linkErr.status;
 				return linkErr.body;
+			}
+			const enabledErr = requireHawkbitEnabled();
+			if (enabledErr) {
+				set.status = enabledErr.status;
+				return enabledErr.body;
 			}
 			try {
 				await service.cancelHawkbitAction(result.device.hawkbitTargetId, Number(params.actionId));

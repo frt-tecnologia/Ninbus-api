@@ -1,9 +1,5 @@
 'use client';
 
-import { companyService, deviceService, userService } from '@/lib/api';
-import { ROUTES } from '@/lib/routes';
-import { cn } from '@/lib/utils';
-import type { Company, Device, User } from '@/types/domain';
 import {
 	Building2,
 	Bus,
@@ -17,6 +13,10 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { companyService, deviceService, userService } from '@/lib/api';
+import { ROUTES } from '@/lib/routes';
+import { cn } from '@/lib/utils';
+import type { Company, Device, User } from '@/types/domain';
 
 /**
  * <UniversalSearch> — the global topbar search that occupies all available
@@ -185,6 +185,7 @@ export function UniversalSearch() {
 	const flat = React.useMemo(() => grouped.flatMap(([, items]) => items), [grouped]);
 
 	// Reset active index when query changes.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `query` is a deliberate change-trigger only — referencing it inside would reset on every keystroke render.
 	React.useEffect(() => {
 		setActiveIndex(0);
 	}, [query]);

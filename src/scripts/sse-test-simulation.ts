@@ -55,9 +55,7 @@ async function signIn(): Promise<string> {
 
 	// Extract session cookie from Set-Cookie header
 	const setCookie = res.headers.getSetCookie();
-	const cookies = setCookie
-		.map((c: string) => c.split(';')[0])
-		.join('; ');
+	const cookies = setCookie.map((c: string) => c.split(';')[0]).join('; ');
 
 	if (!cookies) {
 		throw new Error('No session cookie received after sign-in');
@@ -78,7 +76,7 @@ async function getFirstCompany(cookies: string): Promise<string> {
 		throw new Error(`Failed to list companies: ${res.status}`);
 	}
 
-	const companies = await res.json() as any[];
+	const companies = (await res.json()) as any[];
 	if (!companies.length) {
 		throw new Error('No companies found for this user');
 	}
@@ -295,7 +293,11 @@ async function runTests() {
 			intervalMs: 500,
 			eventType: 'device.status',
 		});
-		result('Simulation triggered', true, `Sending ${simResult.eventCount} events every ${simResult.intervalMs}ms`);
+		result(
+			'Simulation triggered',
+			true,
+			`Sending ${simResult.eventCount} events every ${simResult.intervalMs}ms`,
+		);
 	} catch (e: any) {
 		result('Simulation triggered', false, e.message);
 	}
@@ -345,15 +347,9 @@ async function runTests() {
 	);
 
 	// Check event IDs are sequential
-	const ids = events
-		.map((e) => parseInt(e.id || '0', 10))
-		.filter((id) => id > 0);
+	const ids = events.map((e) => parseInt(e.id || '0', 10)).filter((id) => id > 0);
 	const sequential = ids.length > 0 && ids.every((id, i) => i === 0 || id > ids[i - 1]!);
-	result(
-		'Event IDs are sequential',
-		sequential,
-		`IDs: ${ids.join(', ')}`,
-	);
+	result('Event IDs are sequential', sequential, `IDs: ${ids.join(', ')}`);
 
 	// Heartbeat may or may not arrive in 15s window — just log it
 	const heartbeatEvents = events.filter((e) => e.event === 'heartbeat');

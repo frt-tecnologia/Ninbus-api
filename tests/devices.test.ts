@@ -190,7 +190,10 @@ describe('Devices Module', () => {
 					new Request(`http://localhost/api/companies/${companyId}/devices/${deviceId}`, {
 						method: 'PATCH',
 						headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-						body: JSON.stringify({ name: 'Ônibus Central 01', description: 'Ativo na linha central' }),
+						body: JSON.stringify({
+							name: 'Ônibus Central 01',
+							description: 'Ativo na linha central',
+						}),
 					}),
 				);
 				expect(response.status).toBe(200);
@@ -618,7 +621,10 @@ describe('Devices Module', () => {
 
 		it('GET /connections excludes events from another company (tenant isolation)', async () => {
 			// Insert an event for a DIFFERENT (real) company in the same window — must NOT appear.
-			const [other] = await db.insert(companies).values({ name: 'Other Co' }).returning({ id: companies.id });
+			const [other] = await db
+				.insert(companies)
+				.values({ name: 'Other Co' })
+				.returning({ id: companies.id });
 			await db.insert(deviceConnections).values({
 				deviceId: connDeviceId,
 				companyId: other!.id,

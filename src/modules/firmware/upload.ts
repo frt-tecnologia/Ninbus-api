@@ -7,17 +7,17 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { firmwareReleases } from '@common/db/schema';
 import {
-	NINBUS_ARTIFACT_TYPES,
 	getOrCreateSoftwareModuleType,
 	hawkbitSoftwareModules,
+	NINBUS_ARTIFACT_TYPES,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { validateFileSize } from '@modules/artifacts/service';
 import { packageArtifact } from '@modules/artifacts/tar-packager';
 import { and, eq } from 'drizzle-orm';
-import { type FIRMWARE_TYPES, catalogCounterFloor } from './catalog';
+import { catalogCounterFloor, type FIRMWARE_TYPES } from './catalog';
 import { FirmwareValidationError } from './errors';
-import { OtaSignerError, buildNinbusTar, packVersionString } from './ota-signer';
+import { buildNinbusTar, OtaSignerError, packVersionString } from './ota-signer';
 import {
 	type CanonicalArtifactType,
 	InvalidPackageError,
@@ -116,7 +116,7 @@ export async function uploadFirmwareRelease(
 	let payloadBytes: number;
 	if (isTar || signCounter !== null) {
 		tarBlob = new Blob([fileBuffer], { type: 'application/x-tar' });
-		tarFilename = signCounter !== null ? file.name.replace(/\.[^.]+$/, '') + '.tar' : file.name;
+		tarFilename = signCounter !== null ? `${file.name.replace(/\.[^.]+$/, '')}.tar` : file.name;
 		tarSize = fileBuffer.length;
 		payloadBytes = tarInfo!.imageSize;
 	} else {

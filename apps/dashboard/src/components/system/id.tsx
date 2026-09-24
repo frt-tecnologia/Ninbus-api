@@ -18,18 +18,9 @@ type IdProps = {
 	className?: string;
 } & Omit<React.HTMLAttributes<HTMLSpanElement>, 'value'>;
 
-export function Id({
-	value,
-	copy,
-	truncate,
-	prefix,
-	className,
-	...rest
-}: IdProps) {
+export function Id({ value, copy, truncate, prefix, className, ...rest }: IdProps) {
 	const text = typeof value === 'string' ? value : null;
-	const display = truncate && text && text.length > 13
-		? `${text.slice(0, 8)}…`
-		: value;
+	const display = truncate && text && text.length > 13 ? `${text.slice(0, 8)}…` : value;
 
 	return (
 		<span

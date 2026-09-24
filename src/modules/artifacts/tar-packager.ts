@@ -20,7 +20,7 @@
  * VERBATIM in hawkBit. This packager refuses ninbus payloads on purpose.
  */
 
-import type { Readable } from 'stream';
+import type { Readable } from 'node:stream';
 import { appLogger } from '@common/logger';
 import tar from 'tar-stream';
 import { CANONICAL_DATA_MEMBERS, type CanonicalArtifactType } from '../firmware/tar-validator';

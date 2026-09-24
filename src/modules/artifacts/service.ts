@@ -4,15 +4,17 @@ import { artifacts } from '@common/db/schema';
 import {
 	type HawkbitArtifact,
 	type HawkbitSoftwareModule,
-	NINBUS_ARTIFACT_TYPE_META,
 	hawkbitSoftwareModules,
+	NINBUS_ARTIFACT_TYPE_META,
 	resolveArtifactType,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
+
 // Re-exports from split files
-export { resolveLockStatus, deleteArtifact } from './lock-resolution';
+export { deleteArtifact, resolveLockStatus } from './lock-resolution';
 export { uploadArtifact } from './upload';
+
 // Local import for internal use (re-export does NOT create a local binding)
 import { resolveLockStatus } from './lock-resolution';
 import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas';
@@ -20,8 +22,9 @@ import { ARTIFACT_ALLOWED_EXTENSIONS, ARTIFACT_MAX_SIZE_BYTES } from './schemas'
 // Types
 
 // Types and error classes
-export type { ArtifactUploadResult, ArtifactBinary, EnrichedSoftwareModule } from './types';
-export { ArtifactValidationError, ArtifactNotFoundError, ArtifactLockedError } from './types';
+export type { ArtifactBinary, ArtifactUploadResult, EnrichedSoftwareModule } from './types';
+export { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './types';
+
 import type { EnrichedSoftwareModule } from './types';
 import { ArtifactNotFoundError, ArtifactValidationError } from './types';
 

@@ -36,11 +36,7 @@ export async function getPostById(id: string) {
 	return post;
 }
 
-export async function createPost(data: {
-	title: string;
-	content: string;
-	authorId: string;
-}) {
+export async function createPost(data: { title: string; content: string; authorId: string }) {
 	const [post] = await db.insert(posts).values(data).returning();
 
 	return post;

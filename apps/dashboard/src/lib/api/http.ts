@@ -1,5 +1,5 @@
-import type { ApiError } from '@/types/domain';
 import ky, { HTTPError } from 'ky';
+import type { ApiError } from '@/types/domain';
 
 /**
  * Low-level API client — built on `ky` (https://github.com/sindresorhus/ky),
@@ -102,7 +102,9 @@ export const http = {
 	 * the API provides it — byte-level provenance for forensic comparison).
 	 */
 	async download(path: string, opts?: { query?: Query }): Promise<DownloadResult> {
-		const search = opts?.query ? `?${new URLSearchParams(opts.query as Record<string, string>)}` : '';
+		const search = opts?.query
+			? `?${new URLSearchParams(opts.query as Record<string, string>)}`
+			: '';
 		const res = await fetch(`${PREFIX_URL}${path}${search}`, { credentials: 'same-origin' });
 		if (!res.ok) {
 			let message = `Download failed (HTTP ${res.status})`;

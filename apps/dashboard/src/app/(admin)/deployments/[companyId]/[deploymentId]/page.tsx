@@ -1,16 +1,15 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
-import { Section, Signal, Id, Empty } from '@/components/system';
+import { Empty, Id, Section, Signal } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { deploymentService } from '@/lib/api';
-import type { EnrichedDeployment, TargetDeploymentStatus } from '@/types/domain';
-import { phaseSignal } from '@/lib/design/tokens';
+import type { TargetDeploymentStatus } from '@/types/domain';
 
 /**
  * Deployment detail — the link target for a deployment name. Shows WHICH
@@ -40,9 +39,7 @@ export default function DeploymentDetailPage() {
 	);
 
 	const deployment = useMemo(
-		() =>
-			(deployments.data?.data ?? []).find((d) => String(d.id) === String(deploymentId)) ??
-			null,
+		() => (deployments.data?.data ?? []).find((d) => String(d.id) === String(deploymentId)) ?? null,
 		[deployments.data, deploymentId],
 	);
 
@@ -87,7 +84,17 @@ export default function DeploymentDetailPage() {
 
 // ── Device breakdown by outcome ────────────────────────────────────────
 
-const GROUP_ORDER = ['installed', 'error', 'canceled', 'downloading', 'downloaded', 'installing', 'pending', 'assigned', 'unknown'] as const;
+const GROUP_ORDER = [
+	'installed',
+	'error',
+	'canceled',
+	'downloading',
+	'downloaded',
+	'installing',
+	'pending',
+	'assigned',
+	'unknown',
+] as const;
 const GROUP_LABEL: Record<string, string> = {
 	installed: 'Atualizados',
 	error: 'Com falha',
@@ -124,7 +131,9 @@ function DeviceBreakdown({
 	}, [targets]);
 
 	if (loading) {
-		return <p className="py-12 text-center text-sm text-muted-foreground">Carregando dispositivos…</p>;
+		return (
+			<p className="py-12 text-center text-sm text-muted-foreground">Carregando dispositivos…</p>
+		);
 	}
 	if (targets.length === 0) {
 		return <Empty title="Sem dispositivos" description="Este deployment não tem alvos." />;

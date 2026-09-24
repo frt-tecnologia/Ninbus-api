@@ -1,16 +1,11 @@
 'use client';
 
-import * as React from 'react';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import * as React from 'react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SignalTone } from '@/lib/design/tokens';
-import { TONE_FILL, BRAND_FILL, type BrandColor } from './shared';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { BRAND_FILL, type BrandColor, TONE_FILL } from './shared';
 
 /** One segment of a stacked column (e.g. "Atualizados", "Pendentes"). */
 export interface StackedSegment {
@@ -106,7 +101,12 @@ export function StackedBars({
 													className="w-full transition-all duration-500"
 													style={{
 														height: `${segPct}%`,
-														background: seg.value > 0 ? (seg.brand ? BRAND_FILL[seg.brand] : TONE_FILL[seg.tone]) : 'transparent',
+														background:
+															seg.value > 0
+																? seg.brand
+																	? BRAND_FILL[seg.brand]
+																	: TONE_FILL[seg.tone]
+																: 'transparent',
 													}}
 												/>
 											);
@@ -115,11 +115,7 @@ export function StackedBars({
 								);
 
 								const trigger = g.href ? (
-									<Link
-										href={g.href}
-										className={colClass}
-										onClick={() => onGroupClick?.(g, gi)}
-									>
+									<Link href={g.href} className={colClass} onClick={() => onGroupClick?.(g, gi)}>
 										{bar}
 									</Link>
 								) : onGroupClick ? (
@@ -139,9 +135,7 @@ export function StackedBars({
 										<TooltipTrigger asChild>{trigger}</TooltipTrigger>
 										<TooltipContent className="max-w-[16rem]">
 											<div className="flex flex-col gap-1">
-												<span className="text-xs font-semibold text-foreground">
-													{g.label}
-												</span>
+												<span className="text-xs font-semibold text-foreground">{g.label}</span>
 												{g.segments
 													.filter((s) => s.value > 0)
 													.map((s, si) => (
@@ -152,7 +146,9 @@ export function StackedBars({
 															<span className="flex items-center gap-1.5 text-muted-foreground">
 																<span
 																	className="inline-block h-2 w-2 rounded-[2px]"
-																	style={{ background: s.brand ? BRAND_FILL[s.brand] : TONE_FILL[s.tone] }}
+																	style={{
+																		background: s.brand ? BRAND_FILL[s.brand] : TONE_FILL[s.tone],
+																	}}
 																/>
 																{s.label}
 															</span>
@@ -163,9 +159,7 @@ export function StackedBars({
 													))}
 												<div className="mt-0.5 flex items-center justify-between border-t border-border pt-1 text-[0.7rem]">
 													<span className="text-muted-foreground">Total</span>
-													<span className="font-mono font-semibold tabular-nums">
-														{total}
-													</span>
+													<span className="font-mono font-semibold tabular-nums">{total}</span>
 												</div>
 											</div>
 										</TooltipContent>

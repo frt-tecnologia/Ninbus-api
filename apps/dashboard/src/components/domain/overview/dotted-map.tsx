@@ -1,15 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '@/lib/utils';
-import type { SignalTone } from '@/lib/design/tokens';
 import { TONE_FILL } from '@/components/system/charts/shared';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
 	Select,
 	SelectContent,
@@ -17,6 +9,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { SignalTone } from '@/lib/design/tokens';
+import { cn } from '@/lib/utils';
 
 /**
  * <DottedMap> — forward-looking deployment geo-telemetry canvas.
@@ -74,13 +69,7 @@ function DottedBackdrop({ step = 9 }: { step?: number }) {
 			</defs>
 			<g mask="url(#dotted-map-mask)">
 				{dots.map((d, i) => (
-					<circle
-						key={i}
-						cx={d.x}
-						cy={d.y}
-						r={1}
-						fill="hsl(var(--muted-foreground) / 0.32)"
-					/>
+					<circle key={i} cx={d.x} cy={d.y} r={1} fill="hsl(var(--muted-foreground) / 0.32)" />
 				))}
 			</g>
 		</g>
@@ -97,13 +86,7 @@ const FILTER_OPTIONS: { value: MapFilter; label: string }[] = [
 	{ value: 'idle', label: 'Pendente' },
 ];
 
-export function DottedMap({
-	pins = [],
-	className,
-}: {
-	pins?: MapPin[];
-	className?: string;
-}) {
+export function DottedMap({ pins = [], className }: { pins?: MapPin[]; className?: string }) {
 	const [filter, setFilter] = React.useState<MapFilter>('all');
 	const shown = pins.filter((p) => filter === 'all' || p.tone === filter);
 
@@ -159,9 +142,7 @@ export function DottedMap({
 										<div className="flex flex-col gap-0.5">
 											<span className="text-xs font-semibold">{p.label}</span>
 											{p.detail && (
-												<span className="text-[0.7rem] text-muted-foreground">
-													{p.detail}
-												</span>
+												<span className="text-[0.7rem] text-muted-foreground">{p.detail}</span>
 											)}
 											<span className="font-mono text-[0.65rem] text-muted-foreground">
 												{p.lat.toFixed(2)}, {p.lng.toFixed(2)}

@@ -1,30 +1,31 @@
 import { db } from '@common/db';
 import { deployments, user } from '@common/db/schema';
-import {
-	type NinbusArtifactType,
-	hawkbitDistributionSets,
-} from '@common/hawkbit/client';
+import { hawkbitDistributionSets, type NinbusArtifactType } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq } from 'drizzle-orm';
 
 import {
-	type LocalDeploymentRecord,
 	computeDeploymentStatus,
 	enrichDeployment,
 	enrichOrphanedDeployment,
+	type LocalDeploymentRecord,
 	summarizeStatistics,
 } from './enrichment';
+
 export { deleteDeployment, requireDeploymentOwnership } from './delete';
+
 import { requireDeploymentOwnership } from './delete';
-export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
-export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
+
 export { checkDDiReadiness, type DdiDiagnosticResult } from './ddi-diagnostics';
-import { findSoftwareModule, getLocalDeployment, resolveHawkbitTargetIds } from './helpers';
+export type { TargetDeploymentStatus, TargetStatusTrail } from './trail';
+export { getDeploymentTargetStatuses, getTargetStatusTrail } from './trail';
+
 import { deploySoftwareModuleToTargets } from './deploy';
+import { findSoftwareModule, getLocalDeployment, resolveHawkbitTargetIds } from './helpers';
 
 export { deploySoftwareModuleToTargets, verifySoftwareModuleHasArtifacts } from './deploy';
 
-export type { EnrichedDeployment, DeploymentStatisticsSummary } from './enrichment';
+export type { DeploymentStatisticsSummary, EnrichedDeployment } from './enrichment';
 export { computeDeploymentStatus, enrichDeployment, summarizeStatistics } from './enrichment';
 
 // ---------------------------------------------------------------------------
@@ -62,7 +63,12 @@ export async function createDeployment(
 		throw new Error('No eligible devices found for deployment');
 	}
 
-	const sm = await findSoftwareModule(companyId, data.artifactName, data.version, data.artifactType);
+	const sm = await findSoftwareModule(
+		companyId,
+		data.artifactName,
+		data.version,
+		data.artifactType,
+	);
 	if (!sm) {
 		throw new Error(
 			`Artifact "${data.artifactName}" (${data.artifactType}) not found. ` +
@@ -72,7 +78,14 @@ export async function createDeployment(
 
 	// Shared execution: DS creation, target assignment, DDI verification,
 	// local audit record. See ./deploy — also used by the factory firmware flow.
-	return deploySoftwareModuleToTargets(companyId, userId, sm, data.artifactType, data.name, targetIds);
+	return deploySoftwareModuleToTargets(
+		companyId,
+		userId,
+		sm,
+		data.artifactType,
+		data.name,
+		targetIds,
+	);
 }
 
 /** Get deployment — verify ownership first. Enriched with local audit data. */

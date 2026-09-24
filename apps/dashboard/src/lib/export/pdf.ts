@@ -19,11 +19,7 @@ export interface ExportOptions {
 	subtitle?: string;
 }
 
-export function exportToPdf<T>(
-	rows: T[],
-	columns: PdfColumn<T>[],
-	opts: ExportOptions,
-): void {
+export function exportToPdf<T>(rows: T[], columns: PdfColumn<T>[], opts: ExportOptions): void {
 	const doc = new jsPDF({ orientation: 'landscape' });
 
 	doc.setFontSize(16);

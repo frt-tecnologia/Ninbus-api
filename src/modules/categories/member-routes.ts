@@ -1,10 +1,10 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import {
+	addDevicesToCategorySchema,
 	CategoryDeviceRemoveResponseSchema,
 	CategoryDevicesActionResponseSchema,
 	CategoryDevicesListResponseSchema,
 	ErrorResponseSchema,
-	addDevicesToCategorySchema,
 } from '@modules/categories/schemas';
 import * as categoryService from '@modules/categories/service';
 import { logActivity } from '@modules/observability/activity-service';

@@ -1,8 +1,8 @@
 'use client';
 
-import * as React from 'react';
-import { format, startOfDay, eachDayOfInterval, isSameDay } from 'date-fns';
+import { eachDayOfInterval, format, isSameDay, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as React from 'react';
 import { Section } from '@/components/system';
 import { ActivityChart, type ChartBar } from '@/components/system/charts';
 import type { EnrichedDeployment } from '@/types/domain';

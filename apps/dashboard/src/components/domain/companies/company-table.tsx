@@ -1,14 +1,11 @@
 'use client';
 
-import * as React from 'react';
+import { MoreVertical, Power, PowerOff, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { MoreVertical, Power, PowerOff, Trash2 } from 'lucide-react';
-import type { Company } from '@/types/domain';
-import type { SignalToken } from '@/lib/design/tokens';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Signal, Id, Time } from '@/components/system';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Signal, Time } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import {
 	DropdownMenu,
@@ -19,6 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { companyService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
+import type { SignalToken } from '@/lib/design/tokens';
+import type { Company } from '@/types/domain';
 import { MembersManager } from './members-manager';
 
 function companyStatus(s: string): SignalToken {
@@ -77,7 +76,10 @@ export function CompanyTable({
 			sortValue: (c) => c.name,
 			render: (c) => (
 				<div className="flex flex-col">
-					<Link href={`/companies/${c.id}`} className="text-sm font-medium text-foreground hover:text-primary hover:underline">
+					<Link
+						href={`/companies/${c.id}`}
+						className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+					>
 						{c.name}
 					</Link>
 					<Id value={c.id} truncate className="text-xs text-muted-foreground" />
@@ -102,10 +104,17 @@ export function CompanyTable({
 			header: 'Pendentes',
 			sortValue: (c) => c.pendingCount,
 			render: (c) => (
-				<span className="font-mono tabular-nums text-sm text-muted-foreground">{c.pendingCount}</span>
+				<span className="font-mono tabular-nums text-sm text-muted-foreground">
+					{c.pendingCount}
+				</span>
 			),
 		},
-		{ key: 'createdAt', header: 'Criada', sortValue: (c) => c.createdAt, render: (c) => <Time value={c.createdAt} /> },
+		{
+			key: 'createdAt',
+			header: 'Criada',
+			sortValue: (c) => c.createdAt,
+			render: (c) => <Time value={c.createdAt} />,
+		},
 	];
 
 	return (
@@ -139,7 +148,10 @@ export function CompanyTable({
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuSeparator />
-						<DropdownMenuItem className="text-signal-fault focus:text-signal-fault" onClick={() => remove(c)}>
+						<DropdownMenuItem
+							className="text-signal-fault focus:text-signal-fault"
+							onClick={() => remove(c)}
+						>
 							<Trash2 className="h-4 w-4" /> Excluir
 						</DropdownMenuItem>
 					</DropdownMenuContent>

@@ -35,7 +35,11 @@ export const swaggerConfig = {
 		},
 		tags: [
 			{ name: 'Health', description: 'Health check endpoints' },
-		{ name: 'Admin', description: 'Platform-level management for the factory (super admin). Full visibility across ALL companies, users, devices, and designations.' },
+			{
+				name: 'Admin',
+				description:
+					'Platform-level management for the factory (super admin). Full visibility across ALL companies, users, devices, and designations.',
+			},
 			{ name: 'Auth', description: 'Authentication endpoints (Better Auth)' },
 			{
 				name: 'Provisioning',
@@ -44,7 +48,8 @@ export const swaggerConfig = {
 			},
 			{
 				name: 'Companies',
-				description: 'Multi-tenancy company management. Members: viewer | operator | admin | owner.',
+				description:
+					'Multi-tenancy company management. Members: viewer | operator | admin | owner.',
 			},
 			{
 				name: 'Categories',
@@ -57,7 +62,8 @@ export const swaggerConfig = {
 			},
 			{
 				name: 'Deployments',
-				description: 'OTA deployment creation, monitoring and management via hawkBit Distribution Sets',
+				description:
+					'OTA deployment creation, monitoring and management via hawkBit Distribution Sets',
 			},
 			{
 				name: 'Artifacts',
@@ -68,7 +74,7 @@ export const swaggerConfig = {
 	},
 	scalarConfig: {
 		spec: { url: '/docs/json' },
-		// @ts-ignore
+		// @ts-expect-error
 		theme: 'fastify',
 		defaultOpenAllTags: false,
 		hideModels: true,

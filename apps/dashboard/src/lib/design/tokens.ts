@@ -126,8 +126,7 @@ export const FIRMWARE_SIGNAL: Record<string, SignalToken> = {
 	superseded: { tone: 'idle', shape: 'square', label: 'Substituída' },
 };
 
-export const firmwareSignal = (s: string | null | undefined) =>
-	resolve(FIRMWARE_SIGNAL, s, '—');
+export const firmwareSignal = (s: string | null | undefined) => resolve(FIRMWARE_SIGNAL, s, '—');
 
 // ── Tone → CSS classes ─────────────────────────────────────────────────
 // Consumed by primitives to apply the semantic background/text/border WITHOUT

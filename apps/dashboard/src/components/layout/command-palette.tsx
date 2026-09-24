@@ -1,7 +1,10 @@
 'use client';
 import { Building2, FileText, HardDrive, LayoutDashboard, Package, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+
 void FileText;
+
+import type { LucideIcon } from 'lucide-react';
 import {
 	CommandDialog,
 	CommandEmpty,
@@ -12,7 +15,6 @@ import {
 	CommandShortcut,
 } from '@/components/ui/command';
 import { ROUTES, type RouteKey } from '@/lib/routes';
-import type { LucideIcon } from 'lucide-react';
 
 /**
  * ⌘K command palette — the power-operator entry point. Jumps to any page by

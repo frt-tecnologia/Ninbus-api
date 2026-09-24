@@ -11,7 +11,8 @@
  *   // Bulk connection-status changes (frequent, high-volume): buffer via coalescer:
  *   statusCoalescer.record(companyId, { id, s, u, t });
  */
-export { sseEmitter } from './emitter';
-export { statusCoalescer } from './status-coalescer';
+
 export type { SseEvent } from './emitter';
+export { sseEmitter } from './emitter';
 export type { DeviceStatusDelta } from './status-coalescer';
+export { statusCoalescer } from './status-coalescer';

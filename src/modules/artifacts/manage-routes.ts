@@ -13,8 +13,8 @@ import {
 } from '@modules/artifacts/schemas';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
-import { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './service';
 import * as service from './service';
+import { ArtifactLockedError, ArtifactNotFoundError, ArtifactValidationError } from './service';
 
 /**
  * Artifact management routes — list, get, update, delete, download.

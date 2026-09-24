@@ -1,11 +1,11 @@
 'use client';
 
-import * as React from 'react';
-import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import * as React from 'react';
 import { Section } from '@/components/system';
 import { StackedBars, type StackedGroup } from '@/components/system/charts';
+import { Button } from '@/components/ui/button';
 import type { Company, EnrichedDeployment } from '@/types/domain';
 
 /**
@@ -40,10 +40,7 @@ interface Row {
 	total: number;
 }
 
-function computeRows(
-	companies: Company[],
-	byCompany: Record<string, EnrichedDeployment[]>,
-): Row[] {
+function computeRows(companies: Company[], byCompany: Record<string, EnrichedDeployment[]>): Row[] {
 	return companies
 		.map((c) => {
 			const deps = byCompany[c.id] ?? [];
@@ -110,8 +107,7 @@ export function FirmwareRollout({
 					<div
 						className="max-h-[40vh] overflow-y-auto pr-1"
 						style={{
-							maskImage:
-								'linear-gradient(to bottom, black calc(100% - 1.75rem), transparent)',
+							maskImage: 'linear-gradient(to bottom, black calc(100% - 1.75rem), transparent)',
 							WebkitMaskImage:
 								'linear-gradient(to bottom, black calc(100% - 1.75rem), transparent)',
 						}}
@@ -135,13 +131,11 @@ export function FirmwareRollout({
 
 				<div className="flex items-center justify-between text-xs text-muted-foreground">
 					<span>
-						<span className="font-mono tabular-nums text-foreground">{updatedTotal}</span>{' '}
-						/ {fleetTotal} dispositivos atualizados
+						<span className="font-mono tabular-nums text-foreground">{updatedTotal}</span> /{' '}
+						{fleetTotal} dispositivos atualizados
 					</span>
 					<span>
-						{fleetTotal > 0
-							? `${Math.round((updatedTotal / fleetTotal) * 100)}% da frota`
-							: '—'}
+						{fleetTotal > 0 ? `${Math.round((updatedTotal / fleetTotal) * 100)}% da frota` : '—'}
 					</span>
 				</div>
 			</div>

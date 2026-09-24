@@ -1,9 +1,10 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
+import { Field } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -15,7 +16,6 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/system';
 import { companyService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
 
@@ -60,8 +60,8 @@ export function CompanyCreateDialog({ onDone }: { onDone?: () => void }) {
 					<DialogHeader>
 						<DialogTitle>Precadastrar empresa</DialogTitle>
 						<DialogDescription>
-							Cria a empresa e designa o owner por email. O owner recebe acesso
-							ao se registrar com esse email.
+							Cria a empresa e designa o owner por email. O owner recebe acesso ao se registrar com
+							esse email.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="mt-4 flex flex-col gap-4">
@@ -74,7 +74,12 @@ export function CompanyCreateDialog({ onDone }: { onDone?: () => void }) {
 								placeholder="Acme Indústria"
 							/>
 						</Field>
-						<Field label="Email do owner" htmlFor="cowner" required hint="Será designado como proprietário da empresa.">
+						<Field
+							label="Email do owner"
+							htmlFor="cowner"
+							required
+							hint="Será designado como proprietário da empresa."
+						>
 							<Input
 								id="cowner"
 								type="email"

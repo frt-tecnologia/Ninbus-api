@@ -1,11 +1,11 @@
 'use client';
 
-import * as React from 'react';
 import Link from 'next/link';
+import * as React from 'react';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Relative, Signal } from '@/components/system';
+import { connectionSignal, deviceSignal } from '@/lib/design/tokens';
 import type { Device } from '@/types/domain';
-import { deviceSignal, connectionSignal } from '@/lib/design/tokens';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Signal, Id, Relative } from '@/components/system';
 
 /**
  * <CompanyDeviceTable> — the devices of one company, rendered as an organized,

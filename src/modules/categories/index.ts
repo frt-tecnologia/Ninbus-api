@@ -5,8 +5,8 @@ import {
 	CategoryListResponseSchema,
 	CategoryResponseSchema,
 	CategoryUpdateResponseSchema,
-	ErrorResponseSchema,
 	createCategorySchema,
+	ErrorResponseSchema,
 	updateCategorySchema,
 } from '@modules/categories/schemas';
 import { logActivity } from '@modules/observability/activity-service';

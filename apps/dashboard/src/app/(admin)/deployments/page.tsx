@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { Package, Cpu, Settings2, CircuitBoard } from 'lucide-react';
+import { CircuitBoard, Cpu, Package, Settings2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
+import { CompanyPicker } from '@/components/domain/deployments/company-picker';
+import { DeploymentTable } from '@/components/domain/deployments/deployment-table';
 import { PageHeader } from '@/components/layout/page-header';
 import { Section } from '@/components/system';
 import { DeploymentDonut, type DonutSegment } from '@/components/system/charts';
-import { DeploymentTable } from '@/components/domain/deployments/deployment-table';
-import { CompanyPicker } from '@/components/domain/deployments/company-picker';
-import { useFetch } from '@/hooks/useFetch';
 import { useAllDeployments } from '@/hooks/use-all-deployments';
+import { useFetch } from '@/hooks/useFetch';
 import { companyService } from '@/lib/api';
 import { ROUTES } from '@/lib/routes';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,12 @@ import { cn } from '@/lib/utils';
  *  Concluído → signal-ok GREEN (success — a different HUE from lime so it
  *  never reads as "also pending"), Falha → red.
  */
-const SEGMENTS: Array<{ key: keyof Funnel; tone: DonutSegment['tone']; brand?: DonutSegment['brand']; label: string }> = [
+const SEGMENTS: Array<{
+	key: keyof Funnel;
+	tone: DonutSegment['tone'];
+	brand?: DonutSegment['brand'];
+	label: string;
+}> = [
 	{ key: 'pending', tone: 'idle', brand: 'violet', label: 'Pendente' },
 	{ key: 'inProgress', tone: 'busy', brand: 'lime', label: 'Em andamento' },
 	{ key: 'finished', tone: 'ok', label: 'Concluído' },
@@ -132,9 +137,9 @@ export default function DeploymentsPage() {
 
 					<aside className="flex flex-col gap-4">
 						<div>
-							<label className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+							<span className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
 								Empresa
-							</label>
+							</span>
 							<CompanyPicker
 								companies={companyList}
 								value={companyId}
@@ -143,9 +148,9 @@ export default function DeploymentsPage() {
 							/>
 						</div>
 						<div>
-							<label className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+							<span className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
 								Tipo de atualização
-							</label>
+							</span>
 							<div className="flex flex-col gap-1.5">
 								{TYPE_OPTIONS.map((opt) => {
 									const active = typeFilter === opt.value;

@@ -74,7 +74,7 @@ export function ActivityFeed({ entries, loading, className }: ActivityFeedProps)
 	}
 
 	return (
-		<ol role="list" className={cn('relative space-y-0', className)}>
+		<ol className={cn('relative space-y-0', className)}>
 			{entries.map((e) => {
 				const meta = actionMeta(e.action);
 				return (

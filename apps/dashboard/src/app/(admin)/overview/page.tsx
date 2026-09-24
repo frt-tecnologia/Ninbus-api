@@ -2,16 +2,23 @@
 
 import * as React from 'react';
 import { useCallback } from 'react';
-import type { Company, Device, EnrichedDeployment } from '@/types/domain';
-import { connectionSignal, deploymentSignal } from '@/lib/design/tokens';
-import { PageHeader } from '@/components/layout/page-header';
-import { Section, Kpi, Signal, BarMeter, RangeProvider, useRange, TimeRangePicker } from '@/components/system';
-import { useFetch } from '@/hooks/useFetch';
-import { useAllDeployments } from '@/hooks/use-all-deployments';
-import { companyService, deviceService, userService, designationService } from '@/lib/api';
-import { RolloutActivity } from '@/components/domain/overview/rollout-activity';
 import { FirmwareRollout } from '@/components/domain/overview/firmware-rollout';
-import { DottedMap } from '@/components/domain/overview/dotted-map';
+import { RolloutActivity } from '@/components/domain/overview/rollout-activity';
+import { PageHeader } from '@/components/layout/page-header';
+import {
+	BarMeter,
+	Kpi,
+	RangeProvider,
+	Section,
+	Signal,
+	TimeRangePicker,
+	useRange,
+} from '@/components/system';
+import { useAllDeployments } from '@/hooks/use-all-deployments';
+import { useFetch } from '@/hooks/useFetch';
+import { companyService, designationService, deviceService, userService } from '@/lib/api';
+import { connectionSignal, deploymentSignal } from '@/lib/design/tokens';
+import type { Company, Device, EnrichedDeployment } from '@/types/domain';
 
 /**
  * Overview — platform-wide health at a glance (CLIENT component).
@@ -105,11 +112,7 @@ function OverviewBody({
 					<Kpi label="Empresas" value={companyList.length} hint="tenants ativos" />
 				</Section>
 				<Section>
-					<Kpi
-						label="Usuários"
-						value={usersCount}
-						hint={`${pendingCount} convites pendentes`}
-					/>
+					<Kpi label="Usuários" value={usersCount} hint={`${pendingCount} convites pendentes`} />
 				</Section>
 				<Section>
 					<Kpi
@@ -127,7 +130,12 @@ function OverviewBody({
 
 			{/* Rollout activity (time-series, driven by the time window) + fleet snapshot */}
 			<div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-				<RolloutActivity deployments={deployments} loading={deployLoading} from={range.from} to={range.to} />
+				<RolloutActivity
+					deployments={deployments}
+					loading={deployLoading}
+					from={range.from}
+					to={range.to}
+				/>
 				<Section title="Conexão da frota" description="Dispositivos ativos agora.">
 					<div className="flex flex-col gap-4">
 						<BarMeter
@@ -152,7 +160,11 @@ function OverviewBody({
 
 			{/* Firmware rollout per company */}
 			<div className="mt-4">
-				<FirmwareRollout companies={companyList} deploymentsByCompany={byCompany} loading={deployLoading} />
+				<FirmwareRollout
+					companies={companyList}
+					deploymentsByCompany={byCompany}
+					loading={deployLoading}
+				/>
 			</div>
 
 			{/* Forward-looking deployment geo-telemetry

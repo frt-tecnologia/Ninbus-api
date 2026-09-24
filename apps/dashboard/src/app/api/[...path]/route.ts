@@ -32,21 +32,10 @@ const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://api:8081';
 // Headers that must be forwarded from the browser request to the API.
 // `origin` is REQUIRED by Better Auth's trustedOrigins check — without it,
 // auth endpoints return 403 even with valid credentials.
-const FORWARD_REQUEST_HEADERS = [
-	'cookie',
-	'content-type',
-	'accept',
-	'authorization',
-	'origin',
-];
+const FORWARD_REQUEST_HEADERS = ['cookie', 'content-type', 'accept', 'authorization', 'origin'];
 
 // Headers copied back from the API response to the browser.
-const FORWARD_RESPONSE_HEADERS = [
-	'content-type',
-	'set-cookie',
-	'cache-control',
-	'etag',
-];
+const FORWARD_RESPONSE_HEADERS = ['content-type', 'set-cookie', 'cache-control', 'etag'];
 
 export const dynamic = 'force-dynamic';
 
@@ -97,8 +86,7 @@ async function handler(req: NextRequest, context: { params: Promise<{ path: stri
 		return NextResponse.json(
 			{
 				error: 'Service Unavailable',
-				message:
-					'The Ninbus API is currently unreachable. Please try again in a moment.',
+				message: 'The Ninbus API is currently unreachable. Please try again in a moment.',
 			},
 			{ status: 503 },
 		);

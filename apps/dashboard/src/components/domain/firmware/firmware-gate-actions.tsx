@@ -1,9 +1,18 @@
 'use client';
 
-import * as React from 'react';
+import {
+	CloudUpload,
+	Download,
+	EyeOff,
+	FileDown,
+	FlaskConical,
+	MoreHorizontal,
+	Trash2,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import * as React from 'react';
 import { toast } from 'sonner';
-import { CloudUpload, Download, EyeOff, FileDown, FlaskConical, MoreHorizontal, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import {
 	DropdownMenu,
@@ -14,7 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
-import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { FirmwareTestDialog } from './firmware-test-dialog';
 
 /**
@@ -45,7 +53,9 @@ export function FirmwareGateActions({
 		try {
 			const res = await firmwareService.downloadArtifact(release.id, part);
 			toast.success(`Artefato ${res.filename} (${res.size.toLocaleString('pt-BR')} B) baixado`, {
-				description: res.sha256 ? `sha256 ${res.sha256.slice(0, 16)}… — compare com a build de fábrica` : undefined,
+				description: res.sha256
+					? `sha256 ${res.sha256.slice(0, 16)}… — compare com a build de fábrica`
+					: undefined,
 				duration: 10_000,
 			});
 		} catch (err) {

@@ -1,16 +1,21 @@
 'use client';
 
-import { useCallback, useMemo, type ReactNode } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { type ReactNode, useCallback, useMemo } from 'react';
+import { FirmwareForceDialog } from '@/components/domain/firmware/firmware-force-dialog';
 import { PageHeader } from '@/components/layout/page-header';
-import { Section, Signal, Id, Relative, Time, Empty } from '@/components/system';
+import { Empty, Id, Relative, Section, Signal, Time } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { companyService, deploymentService, deviceService, firmwareService } from '@/lib/api';
-import { connectionSignal, deviceSignal, deploymentSignal, firmwareSignal } from '@/lib/design/tokens';
-import { FirmwareForceDialog } from '@/components/domain/firmware/firmware-force-dialog';
+import {
+	connectionSignal,
+	deploymentSignal,
+	deviceSignal,
+	firmwareSignal,
+} from '@/lib/design/tokens';
 
 /**
  * Device detail — the link target for a device serial/name anywhere in the
@@ -39,7 +44,8 @@ export default function DeviceDetailPage() {
 	);
 	const deployments = useFetch(
 		useCallback(
-			() => (companyId ? deploymentService.list(companyId) : Promise.resolve({ data: [], total: 0 })),
+			() =>
+				companyId ? deploymentService.list(companyId) : Promise.resolve({ data: [], total: 0 }),
 			[companyId],
 		),
 		[companyId],
@@ -52,7 +58,12 @@ export default function DeviceDetailPage() {
 				title={device?.name ?? device?.serialDisplay ?? 'Dispositivo'}
 				description={device ? (device.serialDisplay ?? device.serialNumber ?? '—') : 'Carregando…'}
 				action={
-					<Button variant="outline" size="sm" onClick={() => router.push('/devices')} className="h-8">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => router.push('/devices')}
+						className="h-8"
+					>
 						<ArrowLeft className="mr-1.5 h-4 w-4" />
 						Voltar
 					</Button>
@@ -68,12 +79,18 @@ export default function DeviceDetailPage() {
 					<Section title="Identidade" description="Metadados do dispositivo.">
 						<dl className="grid grid-cols-2 gap-2 px-3 py-2 text-sm">
 							<Row label="Nome" value={device.name || '—'} />
-							<Row label="Serial" value={<Id value={device.serialDisplay ?? device.serialNumber ?? '—'} copy />} />
+							<Row
+								label="Serial"
+								value={<Id value={device.serialDisplay ?? device.serialNumber ?? '—'} copy />}
+							/>
 							<Row
 								label="Empresa"
 								value={
 									company.data ? (
-										<Link href={`/companies/${company.data.id}`} className="text-foreground hover:text-primary hover:underline">
+										<Link
+											href={`/companies/${company.data.id}`}
+											className="text-foreground hover:text-primary hover:underline"
+										>
 											{company.data.name}
 										</Link>
 									) : (
@@ -82,8 +99,14 @@ export default function DeviceDetailPage() {
 								}
 							/>
 							<Row label="Target" value={<Id value={device.hawkbitTargetId ?? '—'} />} />
-							<Row label="Status" value={<Signal token={deviceSignal(device.status)} size="sm" />} />
-							<Row label="Conexão" value={<Signal token={connectionSignal(device.connectionStatus)} size="sm" />} />
+							<Row
+								label="Status"
+								value={<Signal token={deviceSignal(device.status)} size="sm" />}
+							/>
+							<Row
+								label="Conexão"
+								value={<Signal token={connectionSignal(device.connectionStatus)} size="sm" />}
+							/>
 							<Row label="Última conexão" value={<Relative value={device.lastSeenAt} />} />
 							<Row label="Adicionado" value={<Time value={device.createdAt} />} />
 						</dl>
@@ -96,7 +119,7 @@ export default function DeviceDetailPage() {
 							latestFirmware.data?.data
 								? `Última release da fábrica: ${latestFirmware.data.data.version} (${latestFirmware.data.data.name}).`
 								: 'Nenhuma release publicada pela fábrica ainda.'
-							}
+						}
 					>
 						<dl className="grid grid-cols-2 gap-2 px-3 py-2 text-sm">
 							<Row
@@ -108,18 +131,31 @@ export default function DeviceDetailPage() {
 											{device.firmwareVersion ?? 'versão não reportada'}
 										</span>
 									</>
-									}
-								/>
+								}
+							/>
 							<Row
 								label="Controlador (periférico)"
 								value={
 									<span className="font-mono text-xs">
 										{device.controllerFirmwareVersion ?? 'versão não reportada'}
 									</span>
-									}
-								/>
-							<Row label="Mais recente (fábrica)" value={<span className="font-mono text-xs">{device.latestFirmwareVersion ?? '—'}</span>} />
-							<Row label="Último update hawkBit" value={<Signal token={deploymentSignal(device.hawkbitUpdateStatus ?? 'unknown')} size="sm" />} />
+								}
+							/>
+							<Row
+								label="Mais recente (fábrica)"
+								value={
+									<span className="font-mono text-xs">{device.latestFirmwareVersion ?? '—'}</span>
+								}
+							/>
+							<Row
+								label="Último update hawkBit"
+								value={
+									<Signal
+										token={deploymentSignal(device.hawkbitUpdateStatus ?? 'unknown')}
+										size="sm"
+									/>
+								}
+							/>
 						</dl>
 						{device.firmwareStatus === 'update_available' && device.latestFirmwareVersion && (
 							<div className="border-t px-3 py-2">
@@ -146,7 +182,10 @@ export default function DeviceDetailPage() {
 
 					{/* Company deployments */}
 					{companyId && (
-						<Section title="Deployments da empresa" description="Atualizações OTA associadas à empresa deste dispositivo.">
+						<Section
+							title="Deployments da empresa"
+							description="Atualizações OTA associadas à empresa deste dispositivo."
+						>
 							{(deployments.data?.data ?? []).length === 0 ? (
 								<Empty title="Sem deployments" />
 							) : (

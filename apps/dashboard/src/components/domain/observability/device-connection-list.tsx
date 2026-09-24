@@ -61,10 +61,7 @@ export function DeviceConnectionList({
 	});
 
 	return (
-		<ul
-			role="list"
-			className={cn('max-h-[360px] divide-y divide-border overflow-y-auto', className)}
-		>
+		<ul className={cn('max-h-[360px] divide-y divide-border overflow-y-auto', className)}>
 			{sorted.map((d) => {
 				const token = connectionSignal(d.connectionStatus ?? 'unknown');
 				const active = focusedDeviceId === d.id;

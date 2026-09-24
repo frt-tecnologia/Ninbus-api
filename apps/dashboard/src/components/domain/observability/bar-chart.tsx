@@ -1,7 +1,7 @@
 'use client';
 
-import { cn } from '@/lib/utils';
 import * as React from 'react';
+import { cn } from '@/lib/utils';
 
 /**
  * <BarChart> — lightweight SVG bar chart (histogram / distribution).

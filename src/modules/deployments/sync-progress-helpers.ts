@@ -4,13 +4,13 @@
  */
 import { db } from '@common/db';
 import { deployments } from '@common/db/schema';
-import { hawkbitTargets, hawkbitDistributionSets } from '@common/hawkbit/client';
+import { hawkbitDistributionSets, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
 import { enrichActionStatus, getLatestProgress } from '@common/types/deployment-status-helpers';
 import type { ChangedDevice } from '@modules/devices/sync-helpers';
-import { summarizeStatistics, computeDeploymentStatus } from './enrichment';
-import { eq, desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
+import { computeDeploymentStatus, summarizeStatistics } from './enrichment';
 
 // ---------------------------------------------------------------------------
 // DS ID resolution — uses local DB
@@ -56,11 +56,16 @@ export async function emitFinalEvents(
 
 	for (const d of toFinalize) {
 		try {
-			const actions = await hawkbitTargets.getActions(d.controllerId, { limit: 5, sort: 'id:DESC' });
+			const actions = await hawkbitTargets.getActions(d.controllerId, {
+				limit: 5,
+				sort: 'id:DESC',
+			});
 			const updateAction = actions.content.find((a) => a.type === 'update');
 			if (!updateAction) continue;
 
-			const statusResult = await hawkbitTargets.getActionStatus(d.controllerId, updateAction.id, { limit: 5 });
+			const statusResult = await hawkbitTargets.getActionStatus(d.controllerId, updateAction.id, {
+				limit: 5,
+			});
 			if (statusResult.content.length === 0) continue;
 
 			const latest = statusResult.content[0]!;
@@ -78,7 +83,11 @@ export async function emitFinalEvents(
 				timestamp: new Date().toISOString(),
 			});
 		} catch (error: any) {
-			appLogger.debug('[SYNC-PROGRESS] Final event failed for %s: %s', d.controllerId, error?.message ?? 'unknown');
+			appLogger.debug(
+				'[SYNC-PROGRESS] Final event failed for %s: %s',
+				d.controllerId,
+				error?.message ?? 'unknown',
+			);
 		} finally {
 			previouslyPending.delete(d.controllerId);
 		}
@@ -89,7 +98,10 @@ export async function emitFinalEvents(
 // Deployment statistics: emit aggregate stats
 // ---------------------------------------------------------------------------
 
-export async function emitDeploymentStatsForDs(dsIds: Set<number>, companyId: string): Promise<void> {
+export async function emitDeploymentStatsForDs(
+	dsIds: Set<number>,
+	companyId: string,
+): Promise<void> {
 	for (const dsId of dsIds) {
 		try {
 			const raw = await hawkbitDistributionSets.getStatistics(dsId);
@@ -101,7 +113,11 @@ export async function emitDeploymentStatsForDs(dsIds: Set<number>, companyId: st
 				status: computeDeploymentStatus(statsMap, total, { dsId }),
 			});
 		} catch (error: any) {
-			appLogger.debug('[SYNC-PROGRESS] Stats failed for DS #%d: %s', dsId, error?.message ?? 'unknown');
+			appLogger.debug(
+				'[SYNC-PROGRESS] Stats failed for DS #%d: %s',
+				dsId,
+				error?.message ?? 'unknown',
+			);
 		}
 	}
 }

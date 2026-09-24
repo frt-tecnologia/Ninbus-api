@@ -24,7 +24,10 @@ const BASE = (process.env.HAWKBIT_URL || 'http://localhost:8180').replace(/\/$/,
 const USER = process.env.HAWKBIT_USERNAME;
 const PASS = process.env.HAWKBIT_PASSWORD;
 const CONTROLLER = process.env.CONTROLLER;
-const ACTIONS = (process.env.ACTIONS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const ACTIONS = (process.env.ACTIONS || '')
+	.split(',')
+	.map((s) => s.trim())
+	.filter(Boolean);
 const DB_URL = process.env.DATABASE_URL;
 
 if (!USER || !PASS || !CONTROLLER || ACTIONS.length === 0) {
@@ -46,8 +49,12 @@ console.log(`\n════ Target ${CONTROLLER} — actions ${ACTIONS.join(', '
 // own connection tracking.
 try {
 	const t = await j(`/rest/v1/targets/${CONTROLLER}`);
-	console.log(`  lastControllerRequestAt: ${t.lastControllerRequestAt ? new Date(t.lastControllerRequestAt).toISOString() : '-'} (hawkBit-native)`);
-	console.log(`  updateStatus=${t.updateStatus} | lastUpdatedAt=${t.lastUpdatedAt ? new Date(t.lastUpdatedAt).toISOString() : '-'}`);
+	console.log(
+		`  lastControllerRequestAt: ${t.lastControllerRequestAt ? new Date(t.lastControllerRequestAt).toISOString() : '-'} (hawkBit-native)`,
+	);
+	console.log(
+		`  updateStatus=${t.updateStatus} | lastUpdatedAt=${t.lastUpdatedAt ? new Date(t.lastUpdatedAt).toISOString() : '-'}`,
+	);
 } catch (e) {
 	console.log(`  target lookup failed: ${e.message}`);
 }
@@ -62,9 +69,13 @@ for (const actionId of ACTIONS) {
 		continue;
 	}
 	console.log(`  type=${action.type} active=${action.active} status=${action.status}`);
-	console.log(`  maintenanceWindow=${action.maintenanceWindowStatus ?? '-'} forceType=${action.forceType ?? '-'}`);
+	console.log(
+		`  maintenanceWindow=${action.maintenanceWindowStatus ?? '-'} forceType=${action.forceType ?? '-'}`,
+	);
 	const dsId = action.distributionSet?.id;
-	console.log(`  DS #${dsId} "${action.distributionSet?.name}" v${action.distributionSet?.version} (${action.distributionSet?.typeName})`);
+	console.log(
+		`  DS #${dsId} "${action.distributionSet?.name}" v${action.distributionSet?.version} (${action.distributionSet?.typeName})`,
+	);
 
 	// (3) action status history — timestamps of every report (closed failure etc.)
 	let status;
@@ -103,7 +114,11 @@ for (const actionId of ACTIONS) {
 			console.log(`    sha256: ${a.hashes?.sha256 ?? '-'}`);
 			if (/\.(tar|npm)$/i.test(a.providedFilename ?? '')) {
 				try {
-					const bin = Buffer.from(await (await api(`/rest/v1/softwaremodules/${sm.id}/artifacts/${a.id}/download`)).arrayBuffer());
+					const bin = Buffer.from(
+						await (
+							await api(`/rest/v1/softwaremodules/${sm.id}/artifacts/${a.id}/download`)
+						).arrayBuffer(),
+					);
 					await parseTar(bin);
 				} catch (e) {
 					console.log(`    tar parse failed: ${e.message}`);
@@ -157,10 +172,12 @@ async function parseTar(buf) {
 				const expect = createHash('sha256').update(image).update(trailer).digest('hex');
 				extra = ` (v1) | digest ${expect === data.subarray(8, 40).toString('hex') ? 'OK' : 'MISMATCH'}`;
 			}
-			console.log(`    manifest: magic=${JSON.stringify(magic)} imageBytes=${imgSize} counter=${counter}${extra}`);
+			console.log(
+				`    manifest: magic=${JSON.stringify(magic)} imageBytes=${imgSize} counter=${counter}${extra}`,
+			);
 			console.log(`    image actual=${image.length} B | sha256=${imgSha}`);
 			console.log(
-				`    verdict: magic ${(magic === 'NPM\x01' || magic === 'NPM\x02') ? 'OK' : 'WRONG'} | size ${imgSize === image.length ? 'OK' : `MISMATCH (decl ${imgSize} vs actual ${image.length})`}`,
+				`    verdict: magic ${magic === 'NPM\x01' || magic === 'NPM\x02' ? 'OK' : 'WRONG'} | size ${imgSize === image.length ? 'OK' : `MISMATCH (decl ${imgSize} vs actual ${image.length})`}`,
 			);
 		}
 	}
@@ -172,26 +189,44 @@ if (DB_URL) {
 		const mod = await import('postgres');
 		const sql = mod.default(DB_URL, { prepare: false, max: 1 });
 		console.log(`\n════ device row: poll floor + sync state (item 5) ════`);
-		const dev = await sql`SELECT serial_display, last_poll_at, next_expected_poll_at, firmware_version,
+		const dev =
+			await sql`SELECT serial_display, last_poll_at, next_expected_poll_at, firmware_version,
 			 hawkbit_update_status, connection_status, updated_at FROM devices
 			 WHERE hawkbit_target_id = ${CONTROLLER} OR serial_number = ${CONTROLLER}`;
-		dev.forEach((r) => console.log(`  ${r.serial_display ?? CONTROLLER} | last_poll=${r.last_poll_at?.toISOString?.() ?? '-'} | next_expected=${r.next_expected_poll_at?.toISOString?.() ?? '-'} | fw=${r.firmware_version ?? '-'} | updStatus=${r.hawkbit_update_status ?? '-'} | conn=${r.connection_status ?? '-'}`));
+		dev.forEach((r) => {
+			console.log(
+				`  ${r.serial_display ?? CONTROLLER} | last_poll=${r.last_poll_at?.toISOString?.() ?? '-'} | next_expected=${r.next_expected_poll_at?.toISOString?.() ?? '-'} | fw=${r.firmware_version ?? '-'} | updStatus=${r.hawkbit_update_status ?? '-'} | conn=${r.connection_status ?? '-'}`,
+			);
+		});
 
 		console.log(`\n════ device_connections window (item 4) ════`);
 		const polls = await sql`SELECT connected_at, disconnected_at, ip_address FROM device_connections
 			 WHERE device_id = (SELECT id FROM devices WHERE hawkbit_target_id = ${CONTROLLER} OR serial_number = ${CONTROLLER})
 			 ORDER BY connected_at DESC LIMIT 20`;
-		polls.forEach((r) => console.log(`  ${r.connected_at?.toISOString?.()} → ${r.disconnected_at?.toISOString?.() ?? 'open'} ip=${r.ip_address}`));
+		polls.forEach((r) => {
+			console.log(
+				`  ${r.connected_at?.toISOString?.()} → ${r.disconnected_at?.toISOString?.() ?? 'open'} ip=${r.ip_address}`,
+			);
+		});
 
 		console.log(`\n════ deployments audit (item 5) ════`);
-		const deps = await sql`SELECT id, name, status, artifact_version, artifact_name, created_by, created_at
+		const deps =
+			await sql`SELECT id, name, status, artifact_version, artifact_name, created_by, created_at
 			 FROM deployments ORDER BY created_at DESC LIMIT 8`;
-		deps.forEach((r) => console.log(`  dep ${r.id} | ${r.artifact_name} v${r.artifact_version} | by=${r.created_by} | ${r.created_at?.toISOString?.()}`));
+		deps.forEach((r) => {
+			console.log(
+				`  dep ${r.id} | ${r.artifact_name} v${r.artifact_version} | by=${r.created_by} | ${r.created_at?.toISOString?.()}`,
+			);
+		});
 
 		console.log(`\n════ activity_log firmware events (items 2/5) ════`);
 		const acts = await sql`SELECT action, actor_email, entity_label, created_at FROM activity_log
 			 WHERE action LIKE 'firmware%' ORDER BY created_at DESC LIMIT 12`;
-		acts.forEach((r) => console.log(`  ${r.created_at?.toISOString?.()} | ${r.action} | ${r.actor_email} | ${r.entity_label}`));
+		acts.forEach((r) => {
+			console.log(
+				`  ${r.created_at?.toISOString?.()} | ${r.action} | ${r.actor_email} | ${r.entity_label}`,
+			);
+		});
 		await sql.end();
 	} catch (e) {
 		console.log(`\nDB check failed: ${e.message}`);

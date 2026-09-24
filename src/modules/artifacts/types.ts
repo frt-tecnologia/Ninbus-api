@@ -2,7 +2,11 @@
  * Artifact types and error classes.
  * Extracted from service.ts to keep file under 250 lines.
  */
-import { type HawkbitSoftwareModule, NINBUS_ARTIFACT_TYPE_META, type NinbusArtifactType } from '@common/hawkbit/client';
+import type {
+	HawkbitSoftwareModule,
+	NINBUS_ARTIFACT_TYPE_META,
+	NinbusArtifactType,
+} from '@common/hawkbit/client';
 
 export interface ArtifactUploadResult {
 	smId: number;

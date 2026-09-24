@@ -10,7 +10,8 @@ export const TargetActionStatusSchema = t.Object({
 	status: t.String(),
 	createdAt: t.Optional(t.Number()),
 	phase: t.String({
-		description: 'Semantic phase: assigned, pending, downloading, downloaded, installing, installed, error, canceled, unknown',
+		description:
+			'Semantic phase: assigned, pending, downloading, downloaded, installing, installed, error, canceled, unknown',
 	}),
 	progress: t.Nullable(t.Number({ description: 'Download progress 0-100 or null' })),
 	message: t.String({ description: 'Latest status message from device or server' }),

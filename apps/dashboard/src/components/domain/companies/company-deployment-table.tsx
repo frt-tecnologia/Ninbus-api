@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import type { EnrichedDeployment } from '@/types/domain';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Signal, Time } from '@/components/system';
 import { deploymentSignal } from '@/lib/design/tokens';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Signal, Id, Time } from '@/components/system';
 import { cn } from '@/lib/utils';
+import type { EnrichedDeployment } from '@/types/domain';
 
 const TYPE_LABEL: Record<string, string> = {
 	'firmware-ninbus': 'Firmware',

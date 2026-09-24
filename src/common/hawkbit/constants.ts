@@ -60,9 +60,7 @@ export function isNinbusArtifactType(type: string): type is NinbusArtifactType {
  * Resolve the Ninbus artifact type from a hawkBit Software Module.
  * In hawkBit, the type is stored in the `type` field of a Software Module.
  */
-export function resolveArtifactType(softwareModule: {
-	type: string;
-}): NinbusArtifactType | null {
+export function resolveArtifactType(softwareModule: { type: string }): NinbusArtifactType | null {
 	if (isNinbusArtifactType(softwareModule.type)) return softwareModule.type;
 	return null;
 }

@@ -244,7 +244,9 @@ describe('Deployments Module', () => {
 		});
 
 		it('mixed RETRIEVED+FINISHED maps to in_progress', () => {
-			expect(computeDeploymentStatus({ FINISHED: 2, RETRIEVED: 1, total: 3 }, 3)).toBe('in_progress');
+			expect(computeDeploymentStatus({ FINISHED: 2, RETRIEVED: 1, total: 3 }, 3)).toBe(
+				'in_progress',
+			);
 			const summary = summarizeStatistics({ FINISHED: 2, RETRIEVED: 1, total: 3 });
 			expect(summary.finished).toBe(2);
 			expect(summary.inProgress).toBe(1);
@@ -262,7 +264,9 @@ describe('Deployments Module', () => {
 		});
 
 		it('dsDeleted option maps to canceled', () => {
-			expect(computeDeploymentStatus({ FINISHED: 1, total: 1 }, 1, { dsDeleted: true })).toBe('canceled');
+			expect(computeDeploymentStatus({ FINISHED: 1, total: 1 }, 1, { dsDeleted: true })).toBe(
+				'canceled',
+			);
 		});
 
 		it('SCHEDULED maps to pending', () => {
@@ -339,9 +343,12 @@ describe('Deployments Module', () => {
 
 		it('GET /:id/statistics returns 404 for deployment from another company', async () => {
 			const response = await app.handle(
-				new Request(`http://localhost/api/companies/${otherCompanyId}/deployments/99999/statistics`, {
-					headers: { Cookie: otherCookie },
-				}),
+				new Request(
+					`http://localhost/api/companies/${otherCompanyId}/deployments/99999/statistics`,
+					{
+						headers: { Cookie: otherCookie },
+					},
+				),
 			);
 			expect(response.status).toBe(404);
 		});

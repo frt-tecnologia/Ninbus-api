@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import type { EnrichedDeployment } from '@/types/domain';
+import { type Column, DataTable } from '@/components/data/data-table';
+import { Id, Signal, Time } from '@/components/system';
 import { deploymentSignal } from '@/lib/design/tokens';
-import { DataTable, type Column } from '@/components/data/data-table';
-import { Signal, Id, Time } from '@/components/system';
 import { cn } from '@/lib/utils';
+import type { EnrichedDeployment } from '@/types/domain';
 
 const TYPE_LABEL: Record<string, string> = {
 	'firmware-ninbus': 'Firmware',
@@ -86,7 +86,11 @@ export function DeploymentTable({
 			header: 'Criado',
 			sortValue: (d) => d.createdAt ?? 0,
 			render: (d) =>
-				d.createdAt ? <Time value={d.createdAt} /> : <span className="text-muted-foreground">—</span>,
+				d.createdAt ? (
+					<Time value={d.createdAt} />
+				) : (
+					<span className="text-muted-foreground">—</span>
+				),
 		},
 	);
 
@@ -108,13 +112,7 @@ export function DeploymentTable({
 }
 
 /** Company column cell — links to the company page, shows the name if known. */
-function CompanyCell({
-	id,
-	names,
-}: {
-	id?: string;
-	names?: Record<string, string>;
-}) {
+function CompanyCell({ id, names }: { id?: string; names?: Record<string, string> }) {
 	if (!id) return <span className="text-muted-foreground">—</span>;
 	return (
 		<Link

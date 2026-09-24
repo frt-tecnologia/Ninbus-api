@@ -1,5 +1,6 @@
 import { type Static, Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
+
 /**
  * Single source of truth for all environment configuration.
  *

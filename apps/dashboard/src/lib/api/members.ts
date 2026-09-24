@@ -1,9 +1,5 @@
+import type { ActionResponse, ListResponse } from '@/types/domain';
 import { http } from './http';
-import type {
-	User,
-	ListResponse,
-	ActionResponse,
-} from '@/types/domain';
 
 /**
  * Member service — manage members WITHIN a company (promote, demote, remove).
@@ -38,16 +34,11 @@ export interface Member {
 
 export const memberService = {
 	async list(companyId: string): Promise<ListResponse<Member>> {
-		return http.get<ListResponse<Member>>(
-			`/admin/companies/${companyId}/members`,
-		);
+		return http.get<ListResponse<Member>>(`/admin/companies/${companyId}/members`);
 	},
 
 	async add(companyId: string, input: AddMemberInput): Promise<ActionResponse> {
-		return http.post<ActionResponse>(
-			`/companies/${companyId}/members`,
-			input,
-		);
+		return http.post<ActionResponse>(`/companies/${companyId}/members`, input);
 	},
 
 	async updateRole(
@@ -55,15 +46,10 @@ export const memberService = {
 		userId: string,
 		input: UpdateMemberInput,
 	): Promise<ActionResponse> {
-		return http.put<ActionResponse>(
-			`/companies/${companyId}/members/${userId}`,
-			input,
-		);
+		return http.put<ActionResponse>(`/companies/${companyId}/members/${userId}`, input);
 	},
 
 	async remove(companyId: string, userId: string): Promise<ActionResponse> {
-		return http.delete<ActionResponse>(
-			`/companies/${companyId}/members/${userId}`,
-		);
+		return http.delete<ActionResponse>(`/companies/${companyId}/members/${userId}`);
 	},
 };

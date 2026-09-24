@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Maximize2, Minimize2 } from 'lucide-react';
-import { PageHeader } from '@/components/layout/page-header';
-import { Section, Id, Signal, Empty } from '@/components/system';
+import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityFeed } from '@/components/domain/observability/activity-feed';
+import { PageHeader } from '@/components/layout/page-header';
+import { Empty, Id, Section, Signal } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
-import { userService, observabilityService } from '@/lib/api';
 import type { ActivityLogEntry } from '@/lib/api';
+import { observabilityService, userService } from '@/lib/api';
 import type { SignalToken } from '@/lib/design/tokens';
 
 /**
@@ -27,7 +27,10 @@ export default function UserDetailPage() {
 
 	// Users API has no single-resource GET; fetch the list and find by id.
 	// Acceptable for a platform with a bounded user count.
-	const users = useFetch(useCallback(() => userService.list(), []), []);
+	const users = useFetch(
+		useCallback(() => userService.list(), []),
+		[],
+	);
 	const user = useMemo(
 		() => (users.data?.data ?? []).find((u) => u.id === userId) ?? null,
 		[users.data, userId],
@@ -35,10 +38,7 @@ export default function UserDetailPage() {
 
 	// This user's audit trail.
 	const activity = useFetch(
-		useCallback(
-			() => observabilityService.activity({ actorUserId: userId, limit: 100 }),
-			[userId],
-		),
+		useCallback(() => observabilityService.activity({ actorUserId: userId, limit: 100 }), [userId]),
 		[userId],
 	);
 	const [expanded, setExpanded] = useState(false);
@@ -54,7 +54,7 @@ export default function UserDetailPage() {
 	return (
 		<>
 			<PageHeader
-				title={(user?.name ?? user?.email) ?? 'Carregando…'}
+				title={user?.name ?? user?.email ?? 'Carregando…'}
 				description={user?.email}
 				action={
 					<Button variant="outline" size="sm" onClick={() => router.push('/users')} className="h-8">
@@ -65,9 +65,7 @@ export default function UserDetailPage() {
 			/>
 
 			{users.error ? (
-				<p className="py-12 text-center text-sm text-muted-foreground">
-					Usuário não encontrado.
-				</p>
+				<p className="py-12 text-center text-sm text-muted-foreground">Usuário não encontrado.</p>
 			) : (
 				<div className="space-y-4">
 					{/* Identity card */}
@@ -76,11 +74,15 @@ export default function UserDetailPage() {
 							<Field label="Nome" value={user?.name ?? '—'} />
 							<Field label="Email" value={user?.email ?? '—'} mono />
 							<div>
-								<span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Função</span>
+								<span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+									Função
+								</span>
 								<div className="mt-1">{user && <Signal token={roleToken} size="sm" />}</div>
 							</div>
 							<div>
-								<span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Empresas</span>
+								<span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+									Empresas
+								</span>
 								<div className="mt-1 font-mono text-sm tabular-nums">{user?.companyCount ?? 0}</div>
 							</div>
 						</div>

@@ -91,13 +91,15 @@ export async function checkDDiReadiness(targetId: string): Promise<DdiDiagnostic
 	const actions = await hawkbitTargets.getActions(targetId, { limit: 50 });
 	const activeActions = actions.content.filter((a: { active: boolean }) => a.active);
 
-	result.activeActions = activeActions.map((a: { id: number; type: string; status: string; forceType?: string; weight?: number }) => ({
-		id: a.id,
-		type: a.type,
-		status: a.status,
-		forceType: a.forceType,
-		weight: a.weight,
-	}));
+	result.activeActions = activeActions.map(
+		(a: { id: number; type: string; status: string; forceType?: string; weight?: number }) => ({
+			id: a.id,
+			type: a.type,
+			status: a.status,
+			forceType: a.forceType,
+			weight: a.weight,
+		}),
+	);
 
 	// 3. Check for active update actions
 	const activeUpdate = activeActions.find((a: { type: string }) => a.type === 'update');
@@ -108,7 +110,7 @@ export async function checkDDiReadiness(targetId: string): Promise<DdiDiagnostic
 	if (!activeUpdate) {
 		result.issues.push(
 			'No active update action found. Device will get 204 (no deployment) from DDI. ' +
-			`Active actions: [${activeActions.map((a: { id: number; type: string }) => `#${a.id}(${a.type})`).join(', ')}]`,
+				`Active actions: [${activeActions.map((a: { id: number; type: string }) => `#${a.id}(${a.type})`).join(', ')}]`,
 		);
 		return result;
 	}
@@ -130,17 +132,17 @@ export async function checkDDiReadiness(targetId: string): Promise<DdiDiagnostic
 	if (activeCancel) {
 		result.issues.push(
 			`Active cancel action #${activeCancel.id} found. ` +
-			'hawkBit returns BOTH deploymentBase AND cancelAction in DDI. ' +
-			'Device firmware must check for deploymentBase even when cancelAction is present. ' +
-			'If firmware processes cancelAction first and ignores deploymentBase, ' +
-			'force-close the cancel action via the Management API.',
+				'hawkBit returns BOTH deploymentBase AND cancelAction in DDI. ' +
+				'Device firmware must check for deploymentBase even when cancelAction is present. ' +
+				'If firmware processes cancelAction first and ignores deploymentBase, ' +
+				'force-close the cancel action via the Management API.',
 		);
 	}
 
 	if (result.updateStatus !== 'pending') {
 		result.issues.push(
 			`Target updateStatus is "${result.updateStatus}" (expected "pending"). ` +
-			'This may indicate the action was already completed or the DS was not properly assigned.',
+				'This may indicate the action was already completed or the DS was not properly assigned.',
 		);
 	}
 

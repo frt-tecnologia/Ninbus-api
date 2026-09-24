@@ -1,6 +1,11 @@
-import { categories, devices } from '@common/db/schema';
 import type { deviceCategoryAssignments } from '@common/db/schema';
-import { ErrorResponseSchema, GenericActionResponseSchema, dateTimeString, nullableDateTimeString } from '@common/schemas';
+import { categories, devices } from '@common/db/schema';
+import {
+	dateTimeString,
+	ErrorResponseSchema,
+	GenericActionResponseSchema,
+	nullableDateTimeString,
+} from '@common/schemas';
 import { createSelectSchema } from 'drizzle-typebox';
 import { t } from 'elysia';
 

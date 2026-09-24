@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback } from 'react';
-import { PageHeader } from '@/components/layout/page-header';
-import { CompanyTable } from '@/components/domain/companies/company-table';
 import { CompanyCreateDialog } from '@/components/domain/companies/company-create-dialog';
+import { CompanyTable } from '@/components/domain/companies/company-table';
+import { PageHeader } from '@/components/layout/page-header';
 import { useFetch } from '@/hooks/useFetch';
 import { companyService } from '@/lib/api';
 

@@ -1,5 +1,9 @@
 'use client';
 
+import { UploadCloud } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -21,10 +25,6 @@ import {
 } from '@/components/ui/select';
 import { firmwareService } from '@/lib/api';
 import type { FirmwareArtifactType } from '@/types/domain';
-import { UploadCloud } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import * as React from 'react';
-import { toast } from 'sonner';
 
 /**
  * Publish a factory firmware release. GOLDEN RULE (v4 device contract): the

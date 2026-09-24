@@ -1,9 +1,10 @@
 'use client';
 
-import * as React from 'react';
 import { Tags } from 'lucide-react';
+import * as React from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
 	Dialog,
 	DialogContent,
@@ -13,7 +14,6 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { categoryService, deviceService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
@@ -53,16 +53,16 @@ export function DeviceCategoryEditor({
 			]);
 			setAllCats(cats.data);
 			setSelected(new Set(current.data.map((c) => c.id)));
-		} catch (err) {
+		} catch {
 			toast.error('Falha ao carregar grupos do dispositivo.');
 		} finally {
 			setLoading(false);
 		}
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: load-on-open only — re-running when `load` identity changes would refetch on every render while the dialog is open.
 	React.useEffect(() => {
 		if (open) void load();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open]);
 
 	async function save() {
@@ -73,7 +73,7 @@ export function DeviceCategoryEditor({
 			toast.success('Grupos do dispositivo atualizados.');
 			setOpen(false);
 			onDone?.();
-		} catch (err) {
+		} catch {
 			toast.error('Falha ao salvar os grupos.');
 		} finally {
 			setSaving(false);
@@ -115,8 +115,12 @@ export function DeviceCategoryEditor({
 						<ul className="space-y-0.5">
 							{allCats.map((c) => (
 								<li key={c.id}>
-									<label className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-secondary/60">
+									<label
+										htmlFor={`cat-${c.id}`}
+										className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-secondary/60"
+									>
 										<Checkbox
+											id={`cat-${c.id}`}
 											checked={selected.has(c.id)}
 											onCheckedChange={() => toggle(c.id)}
 										/>

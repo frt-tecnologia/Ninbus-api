@@ -75,13 +75,21 @@ async function forceCloseTargetActions(
 				closed = true;
 				appLogger.info(
 					'[DEPLOY] Force-closed action #%d (type=%s, status=%s) for target %s (attempt %d)',
-					action.id, action.type, action.status, targetId, attempt,
+					action.id,
+					action.type,
+					action.status,
+					targetId,
+					attempt,
 				);
 				break;
 			} catch (e) {
 				appLogger.warn(
 					'[DEPLOY] Attempt %d/%d failed for action #%d (type=%s) target %s: %s',
-					attempt, FORCE_CLOSE_RETRIES, action.id, action.type, targetId,
+					attempt,
+					FORCE_CLOSE_RETRIES,
+					action.id,
+					action.type,
+					targetId,
 					e instanceof Error ? e.message : String(e),
 				);
 				if (attempt < FORCE_CLOSE_RETRIES) {
@@ -93,7 +101,7 @@ async function forceCloseTargetActions(
 		if (!closed) {
 			appLogger.error(
 				`[DEPLOY] FAILED to force-close action #${action.id} (type=${action.type}) for target ${targetId} after ${FORCE_CLOSE_RETRIES} attempts. ` +
-				'This action may block DDI deploymentBase!',
+					'This action may block DDI deploymentBase!',
 			);
 		}
 	}
@@ -117,9 +125,7 @@ async function forceCloseTargetActions(
 				'[DEPLOY] BUG: actions STILL ACTIVE after force-close. This will block DDI deploymentBase!',
 			);
 		} else {
-			appLogger.debug(
-				'[DEPLOY] Verified: all target actions closed for %s', targetId,
-			);
+			appLogger.debug('[DEPLOY] Verified: all target actions closed for %s', targetId);
 		}
 	}
 }
@@ -185,7 +191,8 @@ export async function forceCloseActiveActionsForDS(dsId: number): Promise<void> 
 			} catch (e) {
 				appLogger.warn(
 					'[DEPLOY] Could not cancel actions for target %s (DS #%d): %s',
-					target.controllerId, dsId,
+					target.controllerId,
+					dsId,
 					e instanceof Error ? e.message : String(e),
 				);
 			}

@@ -34,8 +34,12 @@ export function useFetch<T>(
 	// bumping the nonce re-runs the effect below → the table re-loads. Disabled
 	// when `sync === false` (e.g. for fetches that shouldn't react to global
 	// events, like a one-shot lookup).
-	useEffect(() => subscribeData(() => setNonce((n) => n + 1)), []);
+	useEffect(() => {
+		if (!sync) return;
+		return subscribeData(() => setNonce((n) => n + 1));
+	}, [sync]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: fetcher is intentionally excluded — callers pass a stable useCallback fetcher plus explicit `deps`; re-running on fetcher identity would loop.
 	useEffect(() => {
 		let active = true;
 		setLoading(true);
@@ -51,15 +55,12 @@ export function useFetch<T>(
 				if (!active) return;
 				setLoading(false);
 				setError(
-					err instanceof ApiClientError
-						? err.message
-						: 'Erro inesperado ao carregar dados.',
+					err instanceof ApiClientError ? err.message : 'Erro inesperado ao carregar dados.',
 				);
 			});
 		return () => {
 			active = false;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [nonce, ...deps]);
 
 	return { data, loading, error, refetch };
@@ -86,9 +87,7 @@ export function useMutation<TArgs extends unknown[], TResult>(
 			} catch (err: unknown) {
 				setLoading(false);
 				setError(
-					err instanceof ApiClientError
-						? err.message
-						: 'Erro inesperado ao processar a ação.',
+					err instanceof ApiClientError ? err.message : 'Erro inesperado ao processar a ação.',
 				);
 				return null;
 			}

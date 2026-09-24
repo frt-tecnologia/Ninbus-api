@@ -10,7 +10,7 @@ import { db } from '@common/db';
 import { activityLog } from '@common/db/schema';
 import type { ActivityAction, ActivityEntity } from '@common/db/schema/observability';
 import { appLogger } from '@common/logger';
-import { type SQL, and, desc, eq, gte, lt, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, type SQL } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types

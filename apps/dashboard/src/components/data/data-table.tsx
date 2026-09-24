@@ -1,5 +1,7 @@
 'use client';
 
+import { ChevronDown, ChevronsUpDown, ChevronUp } from 'lucide-react';
+import * as React from 'react';
 import { Empty, ErrorState, SearchField, TableLoading } from '@/components/system';
 import {
 	Table,
@@ -10,8 +12,6 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
-import * as React from 'react';
 
 /**
  * Lightweight, reusable data table.

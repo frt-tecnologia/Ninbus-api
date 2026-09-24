@@ -26,12 +26,21 @@ const statusProtection = new Map<string, { status: HawkbitUpdateStatus; until: n
 const STATUS_PROTECTION_TTL_MS = 120_000;
 
 /** Protect a set of targets from sync overwrites. Called after deployment deletion. */
-export function protectTargetStatuses(targetIds: string[], status: HawkbitUpdateStatus, ttlMs = STATUS_PROTECTION_TTL_MS): void {
+export function protectTargetStatuses(
+	targetIds: string[],
+	status: HawkbitUpdateStatus,
+	ttlMs = STATUS_PROTECTION_TTL_MS,
+): void {
 	const until = Date.now() + ttlMs;
 	for (const id of targetIds) {
 		statusProtection.set(id, { status, until });
 	}
-	appLogger.info('[SYNC] Protected %d target statuses as \'%s\' for %ds', targetIds.length, status, Math.round(ttlMs / 1000));
+	appLogger.info(
+		"[SYNC] Protected %d target statuses as '%s' for %ds",
+		targetIds.length,
+		status,
+		Math.round(ttlMs / 1000),
+	);
 }
 
 /** Check if a target's status is currently protected. Returns enforced status or null. */
@@ -93,12 +102,11 @@ export function extractTargetData(target: {
 		connectionStatus: isConnected ? 'connected' : 'disconnected',
 		hawkbitUpdateStatus: mapUpdateStatus(target.updateStatus),
 		ipAddress: target.ipAddress ?? null,
-		lastPollAt: target.pollStatus?.lastRequestAt
-			? new Date(target.pollStatus.lastRequestAt) : null,
+		lastPollAt: target.pollStatus?.lastRequestAt ? new Date(target.pollStatus.lastRequestAt) : null,
 		nextExpectedPollAt: target.pollStatus?.nextExpectedRequestAt
-			? new Date(target.pollStatus.nextExpectedRequestAt) : null,
-		lastSeenAt: target.pollStatus?.lastRequestAt
-			? new Date(target.pollStatus.lastRequestAt) : null,
+			? new Date(target.pollStatus.nextExpectedRequestAt)
+			: null,
+		lastSeenAt: target.pollStatus?.lastRequestAt ? new Date(target.pollStatus.lastRequestAt) : null,
 	};
 }
 
@@ -107,8 +115,14 @@ export function extractTargetData(target: {
 // ---------------------------------------------------------------------------
 
 /** Single-device stale-while-revalidate sync. */
-export async function syncSingleDeviceSwr(targetId: string, hawkbitConfig: { enabled: boolean; syncStaleSec: number }): Promise<{
-	updateStatus: string; connectionStatus: string; lastSeen: string | null; ipAddress: string | null;
+export async function syncSingleDeviceSwr(
+	targetId: string,
+	hawkbitConfig: { enabled: boolean; syncStaleSec: number },
+): Promise<{
+	updateStatus: string;
+	connectionStatus: string;
+	lastSeen: string | null;
+	ipAddress: string | null;
 } | null> {
 	if (!hawkbitConfig.enabled) return null;
 
@@ -159,7 +173,8 @@ export async function syncSingleDeviceSwr(targetId: string, hawkbitConfig: { ena
 			updateStatus: target.updateStatus ?? 'unknown',
 			connectionStatus: isConnected ? 'connected' : 'disconnected',
 			lastSeen: target.pollStatus?.lastRequestAt
-				? new Date(target.pollStatus.lastRequestAt).toISOString() : null,
+				? new Date(target.pollStatus.lastRequestAt).toISOString()
+				: null,
 			ipAddress: target.ipAddress ?? null,
 		};
 	} catch {

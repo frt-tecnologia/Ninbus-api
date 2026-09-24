@@ -16,8 +16,8 @@ import {
 	getCompanyWithCounts,
 } from '@modules/admin/service';
 import { getAllPendingDesignations } from '@modules/companies/designation';
-import { getCompanyMembers } from '@modules/companies/service';
 import * as companyService from '@modules/companies/service';
+import { getCompanyMembers } from '@modules/companies/service';
 import { getCompanyDevices } from '@modules/devices/service';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';

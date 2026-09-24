@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useMemo, useState } from 'react';
 import { DesignationTable } from '@/components/domain/companies/designation-table';
 import { InviteUserDialog } from '@/components/domain/users/invite-user-dialog';
 import { UserTable } from '@/components/domain/users/user-table';
@@ -15,7 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFetch } from '@/hooks/useFetch';
 import { designationService, userService } from '@/lib/api';
-import { useCallback, useMemo, useState } from 'react';
+
 type GroupFilter = 'all' | 'with-company' | 'no-company' | 'superadmin';
 
 const GROUP_LABELS: Record<GroupFilter, string> = {

@@ -8,7 +8,7 @@
  * from inside each test (mock.module factories run in an isolated scope and
  * cannot close over local test variables).
  */
-import { mock, describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // globalThis bridge so the mocked module can read a value set from each test.
 declare global {
@@ -29,7 +29,9 @@ mock.module('resend', () => ({
 }));
 
 const { EmailSendError, sendEmail, sendTemplatedEmail } = await import('@common/config/email');
+
 import type { EmailSendError as EmailSendErrorType } from '@common/config/email';
+
 const { env } = await import('@common/config/env');
 
 const realKey = env.RESEND_API_KEY;
@@ -58,15 +60,26 @@ describe('sendTemplatedEmail — Resend dashboard template', () => {
 		});
 		expect(captured).not.toBeNull();
 		expect(captured.to).toBe('user@example.com');
-		expect(captured.template).toEqual({ id: 'password-reset', variables: { first_name: 'John', reset_password_url: 'ninbus://reset-password?token=X' } });
+		expect(captured.template).toEqual({
+			id: 'password-reset',
+			variables: { first_name: 'John', reset_password_url: 'ninbus://reset-password?token=X' },
+		});
 		expect(captured.html).toBeUndefined();
 		expect(captured.text).toBeUndefined();
 	});
 
 	test('includes optional subject override', async () => {
 		let captured: any = null;
-		globalThis.__resendSendImpl = (args) => { captured = args; return Promise.resolve({ data: { id: 'ok' }, error: null }); };
-		await sendTemplatedEmail({ to: 'u@e.com', subject: 'Custom Subject', template: 't', variables: {} });
+		globalThis.__resendSendImpl = (args) => {
+			captured = args;
+			return Promise.resolve({ data: { id: 'ok' }, error: null });
+		};
+		await sendTemplatedEmail({
+			to: 'u@e.com',
+			subject: 'Custom Subject',
+			template: 't',
+			variables: {},
+		});
 		expect(captured['subject']).toBe('Custom Subject');
 		expect(captured.template.id).toBe('t');
 	});
@@ -79,7 +92,10 @@ describe('sendTemplatedEmail — Resend dashboard template', () => {
 
 	test('throws EmailSendError when required AND Resend rejects the template', async () => {
 		globalThis.__resendSendImpl = () =>
-			Promise.resolve({ data: null, error: { name: 'validation_error', message: 'template not found' } });
+			Promise.resolve({
+				data: null,
+				error: { name: 'validation_error', message: 'template not found' },
+			});
 		await expect(
 			sendTemplatedEmail({ to: 'u@e.com', template: 'missing-tpl', variables: {}, required: true }),
 		).rejects.toBeInstanceOf(EmailSendError);
@@ -114,9 +130,7 @@ describe('sendEmail — failure propagation', () => {
 		globalThis.__resendSendImpl = () =>
 			Promise.resolve({ data: null, error: { name: 'validation_error', message: 'x' } });
 		// NODE_ENV is 'test' here → not production, not required → should swallow.
-		await expect(
-			sendEmail({ to: 'a@b.com', subject: 's', text: 't' }),
-		).resolves.toBeUndefined();
+		await expect(sendEmail({ to: 'a@b.com', subject: 's', text: 't' })).resolves.toBeUndefined();
 	});
 
 	test('EmailSendError message includes the Resend error name', async () => {

@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { PageHeader } from '@/components/layout/page-header';
+import { useParams, useRouter } from 'next/navigation';
+import { useCallback } from 'react';
 import { CompanyObservability } from '@/components/domain/observability/company-observability';
+import { PageHeader } from '@/components/layout/page-header';
+import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import { companyService } from '@/lib/api';
-import { Button } from '@/components/ui/button';
 
 /**
  * Company observability page — the "select a company → see its connectivity,

@@ -1,9 +1,58 @@
 {
   "currentIteration": 54,
   "maxIterations": 3,
-  "phase": "analysis",
-  "results": [],
-  "overallNotes": "",
+  "phase": "completed",
+  "results": [
+    {
+      "criterionName": "Functional Correctness",
+      "evidence": "bun run build → bundled 1369 modules OK. bun run lint → exit 0. bun run test → 488 pass / 14 fail, all 14 reproduced identically on stashed base commit (devices claim/hawkbit-disabled/DELETE: superAdmin login fails on shared Neon DB → 404 cascade; nginx posture, SSE timing, DDI v2 — environmental).",
+      "notes": "Build clean (1369 modules). Tests: 488/502 pass; the 14 failures were verified PRE-EXISTING by stashing changes and re-running — identical failures on base (environmental: shared Neon test DB auth state, nginx posture check, SSE timing, DDI). Changes in this iteration are behavior-neutral (lint-level): catch(err)→catch, isNaN→Number.isNaN (identical for parseInt numbers), template literals, type annotation on `let result`, unused import/var removal, node: protocol imports. One real bug fixed: useFetch `sync` param was documented but never used (subscribe effect now respects it). Dashboard still builds (no TS-breaking edits; only attribute/import changes).",
+      "passed": true
+    },
+    {
+      "criterionName": "Code Quality",
+      "evidence": "git diff shows only formatting/import-sort changes plus targeted small fixes. biome check . → 0 errors. Longest new file: .github/workflows/ci.yml (infrastructure, not a module).",
+      "notes": "All source files remain under 250 lines (no files added to src/; changes were in-place). Biome v2 organizeImports now enforced across 318 files (154 violations auto-fixed). No new inline response schemas. No logging changes.",
+      "passed": true
+    },
+    {
+      "criterionName": "Schema Organization",
+      "evidence": "git diff src/modules/**/schemas.ts shows formatting-only changes.",
+      "notes": "Untouched by this iteration — schemas.ts files only received formatter/import-sort changes (verified via git diff: no semantic edits in any schemas.ts).",
+      "passed": true
+    },
+    {
+      "criterionName": "Error Handling",
+      "evidence": "hawkbit-routes.ts 503 branch unchanged except unused catch binding removed.",
+      "notes": "Two-level hawkBit protection unchanged. Only edit near error paths: removed unused `catch (error: any)` binding in hawkbit-routes.ts (behavior identical — error was never referenced).",
+      "passed": true
+    },
+    {
+      "criterionName": "Test Coverage",
+      "evidence": "Full run: 502 tests across 23 files, 488 pass; failures identical on base (devices.test.ts 6/6 matched, DDI matched).",
+      "notes": "All 10 integration + unit test files intact; only dead code removed (unused tarEntryNames helper in firmware.test.ts, unused require in deployment.test.ts). 502 tests still discovered and run. Same 14 environmental failures as base — not a coverage regression.",
+      "passed": true
+    },
+    {
+      "criterionName": "Config Centralization",
+      "evidence": "CI heredoc mirrors .env.test values; DATABASE_URL overridden by workflow env (shell env wins over --env-file in bun).",
+      "notes": "No new app config vars introduced. CI workflow generates .env.test (gitignored locally because it contains a real Neon URL) with CI-safe values pointing at the service Postgres — workflow infrastructure, not app code, so env.ts flow is preserved.",
+      "passed": true
+    },
+    {
+      "criterionName": "Security",
+      "evidence": "ci.yml contains zero literal secrets; SG ingress limited to runner /32 tcp/22 with always-revoke; docs include minimal IAM policy scoped to one SG ARN.",
+      "notes": "Deploy uses GitHub Secrets exclusively (EC2_SSH_KEY/AWS keys never in code). SG port 22 opened only for the runner's /32 during deploy and revoked with if:always(). IAM user needs only Authorize/RevokeSecurityGroupIngress on one SG (documented minimal policy). PEM handled via mktemp + chmod 600 + trap cleanup + tr -d '\\r'. global-bundle.pem explicitly documented as NOT needed in GitHub (server-side RDS TLS only).",
+      "passed": true
+    },
+    {
+      "criterionName": "🔮 Futuro (Aprendizado Contínuo)",
+      "evidence": "harness_learn_principle x4 → 'Total principles: 153'. docs/deploy-github-actions.md created with secrets table + SG discovery + IAM policy.",
+      "notes": "4 principles learned: p-biome-ignore-placement, p-gitattributes-lf-biome, p-biome-v2-migration, p-github-actions-ec2-ssh. New doc docs/deploy-github-actions.md documents the full pipeline and credentials setup.",
+      "passed": true
+    }
+  ],
+  "overallNotes": "Branch fix/ci-biome-ec2-deploy criada (sem commit, conforme pedido). (1) Biome 1.9.4→2.5.14: devDep upgraded, config migrated (preset/assist/files.includes/css parser), 266+ files reformatted/organized, ~35 lint errors fixed properly (unused imports/vars, a11y label/svg/role fixes, node: protocol, Number.isNaN, dead test helper removed, real useFetch sync-param bug fixed). bun run lint exit 0. (2) CI: frozen lockfile, CI-generated .env.test (was gitignored → bun test --env-file failed in CI), conditional cancel-in-progress (never cancels deploy on main). (3) Deploy: deploy-ec2 job on push→main after tests; auto authorizes runner IP /32 in SG via AWS CLI, SSH rebuild runbook (down -v → prune → up --build no-BuildKit), revoke if:always, CRLF-safe PEM. Docs: docs/deploy-github-actions.md with full secrets table, SG discovery, IAM minimal policy. .gitattributes added (LF enforcement). 4 principles learned. Residual: 14 test failures are environmental/pre-existing on shared Neon test DB (verified identical on base via stash); CI's fresh postgres expected green. 6 lint warnings accepted (intentional <img> logos, 1 template literal in diagnostic script).",
   "humanFeedback": "Upgrade de UI com a skill shadcn/ui instalada: a dashboard carece de elementos e interações profissionais. Migrar para componentes shadcn reais mantendo funcionalidade e usabilidade: (1) substituir TODOS os window.confirm nativos por AlertDialog shadcn via componente ConfirmDialog reutilizável; (2) ações de linha das tabelas em DropdownMenu; (3) estados vazios com Empty; (4) forms com Field/FieldGroup shadcn; (5) ícones em botões com data-icon (sem classes de tamanho); (6) instalar componentes que faltam (alert-dialog, field, empty, spinner etc. via CLI oficial do shadcn). Validar com tsc + next build + rebuild docker. Conventional commits, sem push.",
-  "lastUpdated": "2026-09-18T00:16:01.486Z"
+  "lastUpdated": "2026-09-24T18:11:40.589Z"
 }

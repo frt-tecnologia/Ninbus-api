@@ -1,9 +1,9 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Rocket } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -159,7 +159,9 @@ export function FirmwareForceCell({
 						{device.firmwareVersion ?? '—'}
 					</button>
 				</TooltipTrigger>
-				<TooltipContent>Forçar atualização para {targetVersion ?? 'a última release'}</TooltipContent>
+				<TooltipContent>
+					Forçar atualização para {targetVersion ?? 'a última release'}
+				</TooltipContent>
 			</Tooltip>
 			<FirmwareForceDialog
 				open={open}

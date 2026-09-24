@@ -57,9 +57,7 @@ describe('SSE Module', () => {
 
 	describe('Auth guards', () => {
 		it('returns 401 without auth', async () => {
-			const r = await app.handle(
-				new Request(`http://localhost/api/companies/${companyId}/sse`),
-			);
+			const r = await app.handle(new Request(`http://localhost/api/companies/${companyId}/sse`));
 			expect(r.status).toBe(401);
 		});
 
@@ -138,11 +136,17 @@ describe('SSE Module', () => {
 						const arr = new Uint8Array(bytes);
 						for (const [k, v] of Object.entries(parsed)) arr[Number(k)] = v as number;
 						text = new TextDecoder().decode(arr);
-					} else { text = value; }
-				} catch { text = value; }
+					} else {
+						text = value;
+					}
+				} catch {
+					text = value;
+				}
 			} else if (value instanceof Uint8Array) {
 				text = new TextDecoder().decode(value);
-			} else { text = String(value); }
+			} else {
+				text = String(value);
+			}
 
 			// SSE format: id: N\nevent: name\ndata: {...}\n\n
 			expect(text).toMatch(/^id: \d+\n/);

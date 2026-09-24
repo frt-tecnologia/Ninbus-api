@@ -1,11 +1,11 @@
 'use client';
 
-import { ROUTES } from '@/lib/routes';
-import { cn } from '@/lib/utils';
 import { Building2, HardDrive, LayoutDashboard, Package, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type * as React from 'react';
+import { ROUTES } from '@/lib/routes';
+import { cn } from '@/lib/utils';
 
 /**
  * Primary navigation. Routes come from the typed route map (lib/routes.ts) so

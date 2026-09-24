@@ -1,10 +1,5 @@
-import * as React from 'react';
+import { type SignalShape, type SignalToken, TONE_TEXT } from '@/lib/design/tokens';
 import { cn } from '@/lib/utils';
-import {
-	type SignalToken,
-	type SignalShape,
-	TONE_TEXT,
-} from '@/lib/design/tokens';
 
 /**
  * <Signal> — status rendered as a TELEMETRY STRIP, not a tag cloud.
@@ -30,21 +25,12 @@ export function Signal({ token, glyphOnly, size = 'md', className }: SignalProps
 	const shapeClass = SHAPE_CLASS[token.shape];
 	return (
 		<span
-			className={cn(
-				'inline-flex items-center gap-2',
-				TONE_TEXT[token.tone],
-				className,
-			)}
+			className={cn('inline-flex items-center gap-2', TONE_TEXT[token.tone], className)}
 			role="img"
 			aria-label={token.label}
 		>
 			<span
-				className={cn(
-					'sig',
-					shapeClass,
-					token.live && 'sig-live',
-					size === 'sm' && 'scale-95',
-				)}
+				className={cn('sig', shapeClass, token.live && 'sig-live', size === 'sm' && 'scale-95')}
 				aria-hidden
 			/>
 			{!glyphOnly && (
@@ -57,13 +43,7 @@ export function Signal({ token, glyphOnly, size = 'md', className }: SignalProps
 }
 
 /** The bare glyph — for inline use inside table cells / dense grids. */
-export function SignalDot({
-	token,
-	className,
-}: {
-	token: SignalToken;
-	className?: string;
-}) {
+export function SignalDot({ token, className }: { token: SignalToken; className?: string }) {
 	return (
 		<span
 			className={cn(

@@ -1,12 +1,12 @@
 'use client';
 
-import { Suspense, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { http } from '@/lib/api';
+import { type FormEvent, Suspense, useState } from 'react';
+import { Brand } from '@/components/layout/brand';
+import { Field } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/system';
-import { Brand } from '@/components/layout/brand';
+import { http } from '@/lib/api';
 
 /**
  * Web password-reset fallback. Email links point to /reset-password?token=...

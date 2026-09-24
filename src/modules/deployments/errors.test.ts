@@ -7,7 +7,7 @@ import { expect, test } from 'bun:test';
  * never to a misleading 503. hawkBit network/auth errors are classified distinctly.
  */
 import { HawkbitApiError } from '@common/hawkbit/http';
-import { DeploymentNotFoundError, classifyDeploymentError } from './errors';
+import { classifyDeploymentError, DeploymentNotFoundError } from './errors';
 
 test('DeploymentNotFoundError → 404 (the masking fix)', () => {
 	const { status, error, message } = classifyDeploymentError(

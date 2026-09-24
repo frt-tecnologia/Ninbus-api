@@ -6,19 +6,19 @@
  * tracking that the device DID update successfully before the deployment was
  * cancelled.
  */
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { db } from '@common/db';
 import { companies, deployments } from '@common/db/schema';
-import { eq } from 'drizzle-orm';
 import {
-	updateTargetSnapshot,
-	freezeTargetAsInstalled,
 	freezeTargetAsCanceledIfNotInstalled,
+	freezeTargetAsInstalled,
 	getSnapshot,
 	isTargetFrozen,
 	isTargetInstalled,
 	type TargetStatusSnapshot,
+	updateTargetSnapshot,
 } from '@modules/deployments/snapshot';
+import { eq } from 'drizzle-orm';
 
 // Each test creates a unique deployment row so tests are isolated.
 let testDsId = 900000;
@@ -57,7 +57,9 @@ afterAll(async () => {
 	// Best-effort cleanup of test companies.
 	try {
 		await db.delete(companies).where(eq(companies.name, 'snapshot-test-co-' as any));
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 });
 
 describe('snapshot — STICKY-FINISHED rule', () => {

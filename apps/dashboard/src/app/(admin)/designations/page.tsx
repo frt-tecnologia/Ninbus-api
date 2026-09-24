@@ -1,7 +1,7 @@
 'use client';
 
-import { PageHeader } from '@/components/layout/page-header';
 import { DesignationTable } from '@/components/domain/companies/designation-table';
+import { PageHeader } from '@/components/layout/page-header';
 
 export default function DesignationsPage() {
 	return (

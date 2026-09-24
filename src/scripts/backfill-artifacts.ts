@@ -11,12 +11,15 @@
  * Example:
  *   bun run src/scripts/backfill-artifacts.ts 386d896e-... user-123
  */
+
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { artifacts, deployments } from '@common/db/schema';
-import { hawkbitSoftwareModules, hawkbitDistributionSets } from '@common/hawkbit/client';
-import { hawkbitConfig } from '@common/config/hawkbit';
-import { appLogger } from '@common/logger';
-import { resolveArtifactType } from '@common/hawkbit/client';
+import {
+	hawkbitDistributionSets,
+	hawkbitSoftwareModules,
+	resolveArtifactType,
+} from '@common/hawkbit/client';
 
 async function backfill(companyId: string, createdBy: string | null) {
 	if (!hawkbitConfig.enabled) {
@@ -43,13 +46,13 @@ async function backfill(companyId: string, createdBy: string | null) {
 	console.log(`[BACKFILL] ${ninbusSMs.length} are Ninbus artifacts (not deleted)`);
 
 	// 3. Check which ones already have local records
-	const existingArtifacts = await db
-		.select({ hawkbitSmId: artifacts.hawkbitSmId })
-		.from(artifacts);
+	const existingArtifacts = await db.select({ hawkbitSmId: artifacts.hawkbitSmId }).from(artifacts);
 	const existingSmIds = new Set(existingArtifacts.map((a) => a.hawkbitSmId));
 
 	const toInsert = ninbusSMs.filter((sm) => !existingSmIds.has(sm.id));
-	console.log(`[BACKFILL] ${toInsert.length} need local records (${ninbusSMs.length - toInsert.length} already exist)`);
+	console.log(
+		`[BACKFILL] ${toInsert.length} need local records (${ninbusSMs.length - toInsert.length} already exist)`,
+	);
 
 	// 4. Insert local records
 	let inserted = 0;
@@ -62,7 +65,7 @@ async function backfill(companyId: string, createdBy: string | null) {
 		const fileMatch = desc.match(/originalFile:\s*([^|]+)/);
 		const originalFile = fileMatch ? fileMatch[1]!.trim() : null;
 		const sizeMatch = desc.match(/payloadBytes:\s*(\d+)/);
-		const payloadSize = sizeMatch ? parseInt(sizeMatch[1]!) : null;
+		const payloadSize = sizeMatch ? parseInt(sizeMatch[1]!, 10) : null;
 
 		try {
 			await db.insert(artifacts).values({
@@ -108,9 +111,7 @@ async function backfill(companyId: string, createdBy: string | null) {
 		const displayName = nameMatch ? nameMatch[1]!.trim() : ds.name;
 		// Try to extract artifact type from description
 		const typeMatch = desc.match(/\(firmware-[a-z-]+\)/);
-		const artifactType = typeMatch
-			? typeMatch[0]!.replace(/[()]/g, '')
-			: 'firmware-ninbus';
+		const artifactType = typeMatch ? typeMatch[0]!.replace(/[()]/g, '') : 'firmware-ninbus';
 
 		try {
 			await db.insert(deployments).values({

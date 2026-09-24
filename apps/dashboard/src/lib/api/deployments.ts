@@ -1,11 +1,11 @@
-import { http } from './http';
 import type {
-	EnrichedDeployment,
-	TargetStatusTrail,
-	TargetDeploymentStatus,
-	ListResponse,
 	DetailResponse,
+	EnrichedDeployment,
+	ListResponse,
+	TargetDeploymentStatus,
+	TargetStatusTrail,
 } from '@/types/domain';
+import { http } from './http';
 
 /**
  * Deployment service — observability of OTA deployments (super admin view).
@@ -22,10 +22,7 @@ export const deploymentService = {
 		companyId: string,
 		opts?: { offset?: number; limit?: number },
 	): Promise<ListResponse<EnrichedDeployment>> {
-		return http.get<ListResponse<EnrichedDeployment>>(
-			`/companies/${companyId}/deployments`,
-			opts,
-		);
+		return http.get<ListResponse<EnrichedDeployment>>(`/companies/${companyId}/deployments`, opts);
 	},
 
 	/** Per-target status for a deployment (which devices updated / failed). */

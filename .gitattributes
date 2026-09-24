@@ -1,0 +1,35 @@
+# Force LF in the working tree on every platform.
+# biome.json enforces "lineEnding": "lf" — with core.autocrlf=true on Windows,
+# git operations (stash/checkout) would otherwise rewrite files as CRLF and
+# make `bun run lint` fail with hundreds of phantom format errors.
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaries — never touch
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.mp4 binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.fir binary
+*.frz binary
+*.bin binary
+*.mender binary
+*.pem binary
+*.p12 binary
+*.pfx binary
+*.jar binary

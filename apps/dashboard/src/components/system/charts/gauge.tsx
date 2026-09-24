@@ -1,15 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SignalTone } from '@/lib/design/tokens';
+import { cn } from '@/lib/utils';
 import { describeArc, TONE_FILL, TONE_TEXT_CLASS } from './shared';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 export interface GaugeSegment {
 	value: number;
@@ -75,7 +70,13 @@ export function Gauge({
 	return (
 		<div className={cn('flex flex-col items-center', className)}>
 			<div className="relative" style={{ width: size, height: h }}>
-				<svg viewBox={`0 0 ${size} ${h}`} width={size} height={h} role="img" aria-label={totalLabel}>
+				<svg
+					viewBox={`0 0 ${size} ${h}`}
+					width={size}
+					height={h}
+					role="img"
+					aria-label={totalLabel}
+				>
 					{/* background track */}
 					<path
 						d={describeArc(cx, cy, r, 180, 0)}

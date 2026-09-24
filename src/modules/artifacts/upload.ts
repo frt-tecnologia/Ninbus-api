@@ -7,10 +7,10 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { artifacts } from '@common/db/schema';
 import {
-	NINBUS_ARTIFACT_TYPE_META,
-	type NinbusArtifactType,
 	getOrCreateSoftwareModuleType,
 	hawkbitSoftwareModules,
+	NINBUS_ARTIFACT_TYPE_META,
+	type NinbusArtifactType,
 } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { type ArtifactUploadResult, validateFileExtension, validateFileSize } from './service';

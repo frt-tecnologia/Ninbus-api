@@ -134,8 +134,8 @@ export function computeDeploymentStatus(
 
 	appLogger.debug(
 		`[DEPLOY] DS #${options?.dsId ?? '?'} status computation: ${status} ` +
-		`(total=${total}, finished=${finished}, error=${error}, canceled=${canceled}, ` +
-		`inProgress=${inProgress}, pending=${pending}, raw=${JSON.stringify(statsMap)})`,
+			`(total=${total}, finished=${finished}, error=${error}, canceled=${canceled}, ` +
+			`inProgress=${inProgress}, pending=${pending}, raw=${JSON.stringify(statsMap)})`,
 	);
 
 	return status;
@@ -144,9 +144,7 @@ export function computeDeploymentStatus(
 /**
  * Summarize hawkBit action statistics into a frontend-friendly format.
  */
-export function summarizeStatistics(
-	statsMap: Record<string, number>,
-): DeploymentStatisticsSummary {
+export function summarizeStatistics(statsMap: Record<string, number>): DeploymentStatisticsSummary {
 	const n: Record<string, number> = {};
 	for (const [key, value] of Object.entries(statsMap)) {
 		n[key.toLowerCase()] = value;
@@ -156,8 +154,7 @@ export function summarizeStatistics(
 		totalTargets: n['total'] || 0,
 		finished: n['finished'] || 0,
 		failed: (n['error'] || 0) + (n['warning'] || 0),
-		inProgress:
-			(n['retrieved'] || 0) + (n['download'] || 0) + (n['downloaded'] || 0),
+		inProgress: (n['retrieved'] || 0) + (n['download'] || 0) + (n['downloaded'] || 0),
 		pending: (n['running'] || 0) + (n['scheduled'] || 0),
 		canceled: (n['canceled'] || 0) + (n['canceling'] || 0),
 	};
@@ -197,7 +194,14 @@ export function enrichOrphanedDeployment(local: LocalDeploymentRecord): Enriched
 		/** version = artifact version (semantic), not hawkBit's internal DS version. */
 		version: local.artifactVersion ?? undefined,
 		status: 'completed' as DeploymentStatusType,
-		statistics: { totalTargets: targetCount, finished: targetCount, failed: 0, inProgress: 0, pending: 0, canceled: 0 },
+		statistics: {
+			totalTargets: targetCount,
+			finished: targetCount,
+			failed: 0,
+			inProgress: 0,
+			pending: 0,
+			canceled: 0,
+		},
 		dsMetadata: { locked: false, complete: true, valid: true },
 		artifactName: local.artifactName ?? undefined,
 		artifactVersion: local.artifactVersion ?? undefined,
@@ -236,7 +240,11 @@ export async function enrichDeployment(
 		appLogger.debug(`[DEPLOY] DS #${ds.id} raw stats: ${JSON.stringify(stats)}`);
 	} catch (e) {
 		statsFetchFailed = true;
-		appLogger.warn('[DEPLOY] Statistics fetch failed for DS %d: %s', ds.id, e instanceof Error ? e.message : String(e));
+		appLogger.warn(
+			'[DEPLOY] Statistics fetch failed for DS %d: %s',
+			ds.id,
+			e instanceof Error ? e.message : String(e),
+		);
 	}
 
 	return {
@@ -260,10 +268,14 @@ export async function enrichDeployment(
 		createdAt: ds.createdAt,
 		lastModifiedAt: ds.lastModifiedAt,
 		status: statsFetchFailed
-			? 'unknown' as DeploymentStatusType
+			? ('unknown' as DeploymentStatusType)
 			: computeDeploymentStatus(statsMap, total, { dsDeleted: ds.deleted, dsId: ds.id }),
 		statistics: summarizeStatistics(statsMap),
-		dsMetadata: { locked: ds.locked ?? false, complete: ds.complete ?? false, valid: ds.valid ?? false },
+		dsMetadata: {
+			locked: ds.locked ?? false,
+			complete: ds.complete ?? false,
+			valid: ds.valid ?? false,
+		},
 		artifactName: local?.artifactName ?? undefined,
 		artifactVersion: local?.artifactVersion ?? undefined,
 		artifactOriginalFile: local?.artifactOriginalFile ?? undefined,

@@ -12,9 +12,7 @@ import { Elysia, t } from 'elysia';
  * Extracted from routes.ts to keep it under the 250-line limit. Same prefix
  * as the catalog routes; registered together in app.ts.
  */
-export const firmwareArtifactRoutes = withAuth(
-	new Elysia({ prefix: '/api/admin/firmware' }),
-)
+export const firmwareArtifactRoutes = withAuth(new Elysia({ prefix: '/api/admin/firmware' }))
 	// GET /:releaseId/artifact — download the binary hawkBit SERVES for a release
 	.get(
 		'/:releaseId/artifact',

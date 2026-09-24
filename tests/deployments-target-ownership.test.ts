@@ -8,7 +8,7 @@
  * These tests exercise `isTargetOwnedByCompany` (the guard) directly, since
  * the route handler delegates to it. No hawkBit calls (HAWKBIT_ENABLED=false).
  */
-import { describe, expect, it, afterAll } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import { db } from '@common/db';
 import { companies, devices } from '@common/db/schema';
 import { isTargetOwnedByCompany } from '@modules/deployments/helpers';
@@ -30,8 +30,20 @@ describe('isTargetOwnedByCompany — tenant isolation (Frente C)', () => {
 			{ id: COMPANY_B, name: 'Empresa B' },
 		]);
 		await db.insert(devices).values([
-			{ name: 'Device A', serialNumber: 'AAA1111111111111', hawkbitTargetId: TARGET_A, companyId: COMPANY_A, status: 'accepted' },
-			{ name: 'Device B', serialNumber: 'BBB2222222222222', hawkbitTargetId: TARGET_B, companyId: COMPANY_B, status: 'accepted' },
+			{
+				name: 'Device A',
+				serialNumber: 'AAA1111111111111',
+				hawkbitTargetId: TARGET_A,
+				companyId: COMPANY_A,
+				status: 'accepted',
+			},
+			{
+				name: 'Device B',
+				serialNumber: 'BBB2222222222222',
+				hawkbitTargetId: TARGET_B,
+				companyId: COMPANY_B,
+				status: 'accepted',
+			},
 		]);
 	});
 

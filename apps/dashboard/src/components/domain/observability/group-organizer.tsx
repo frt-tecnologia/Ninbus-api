@@ -1,10 +1,10 @@
 'use client';
 
+import { Settings } from 'lucide-react';
+import * as React from 'react';
 import { Empty } from '@/components/system';
 import type { AggregatedCategory } from '@/lib/api/observability';
 import { cn } from '@/lib/utils';
-import { Settings } from 'lucide-react';
-import * as React from 'react';
 import { GroupCreateDialog } from './group-create-dialog';
 import { GroupManageDialog } from './group-manage-dialog';
 import { GROUP_TYPE_LABELS, GroupTypeIcon } from './group-type-icon';

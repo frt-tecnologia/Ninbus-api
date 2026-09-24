@@ -10,9 +10,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { hawkbitDistributionSets } from '@common/hawkbit/client';
 import {
-	type LocalDeploymentRecord,
 	enrichDeployment,
 	enrichOrphanedDeployment,
+	type LocalDeploymentRecord,
 } from '@modules/deployments/enrichment';
 
 // Monkey-patch the shared client object (stable across Bun versions, unlike mock.module).

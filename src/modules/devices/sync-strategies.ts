@@ -9,8 +9,8 @@ import { sseEmitter, statusCoalescer } from '@common/sse';
 import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
 import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
 import {
-	type ChangedDevice,
 	batchUpdateDevicesFromTargets,
+	type ChangedDevice,
 	fetchAllHawkBitTargets,
 	fetchModifiedTargets,
 	fetchTargetsByIds,

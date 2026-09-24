@@ -1,8 +1,8 @@
-import * as React from 'react';
-import { cn } from '@/lib/utils';
 import { AlertTriangle, Inbox } from 'lucide-react';
+import type * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 /**
  * Operational empty / error / loading states — terse copy, no emoji.
@@ -24,18 +24,13 @@ export function Empty({
 }) {
 	return (
 		<div
-			className={cn(
-				'flex flex-col items-center justify-center gap-2 py-14 text-center',
-				className,
-			)}
+			className={cn('flex flex-col items-center justify-center gap-2 py-14 text-center', className)}
 		>
 			<div className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
 				{icon ?? <Inbox className="h-4 w-4" />}
 			</div>
 			<p className="text-sm font-medium text-foreground">{title}</p>
-			{description && (
-				<p className="max-w-xs text-xs text-muted-foreground">{description}</p>
-			)}
+			{description && <p className="max-w-xs text-xs text-muted-foreground">{description}</p>}
 			{action && <div className="mt-1">{action}</div>}
 		</div>
 	);
@@ -52,10 +47,7 @@ export function ErrorState({
 }) {
 	return (
 		<div
-			className={cn(
-				'flex flex-col items-center justify-center gap-2 py-14 text-center',
-				className,
-			)}
+			className={cn('flex flex-col items-center justify-center gap-2 py-14 text-center', className)}
 		>
 			<div className="flex h-9 w-9 items-center justify-center rounded-md border border-signal-fault/30 text-signal-fault">
 				<AlertTriangle className="h-4 w-4" />

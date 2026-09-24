@@ -11,8 +11,8 @@
 import { db } from '@common/db';
 import { deployments } from '@common/db/schema';
 import { appLogger } from '@common/logger';
-import { eq } from 'drizzle-orm';
 import type { DeploymentPhase } from '@common/types/deployment-status';
+import { eq } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,24 +55,22 @@ export async function getSnapshot(dsId: number): Promise<TargetStatusSnapshot> {
 		const snap = row?.snapshot as TargetStatusSnapshot | null | undefined;
 		return snap && typeof snap === 'object' ? snap : {};
 	} catch (err: any) {
-		appLogger.debug('[SNAPSHOT] Failed to read snapshot for DS %d: %s', dsId, err?.message ?? 'unknown');
+		appLogger.debug(
+			'[SNAPSHOT] Failed to read snapshot for DS %d: %s',
+			dsId,
+			err?.message ?? 'unknown',
+		);
 		return {};
 	}
 }
 
 /** True if the target is frozen (snapshot is final and must not be overwritten). */
-export function isTargetFrozen(
-	snapshot: TargetStatusSnapshot,
-	controllerId: string,
-): boolean {
+export function isTargetFrozen(snapshot: TargetStatusSnapshot, controllerId: string): boolean {
 	return snapshot[controllerId]?.frozen === true;
 }
 
 /** True if the target has reached installed phase (sticky-success). */
-export function isTargetInstalled(
-	snapshot: TargetStatusSnapshot,
-	controllerId: string,
-): boolean {
+export function isTargetInstalled(snapshot: TargetStatusSnapshot, controllerId: string): boolean {
 	return snapshot[controllerId]?.phase === 'installed';
 }
 
@@ -97,16 +95,28 @@ export async function updateTargetSnapshot(
 
 	// STICKY: frozen 'installed' is never overwritten.
 	if (existing?.frozen && existing.phase === 'installed') {
-		appLogger.debug('[SNAPSHOT] DS %d target %s frozen-installed — ignoring phase=%s', dsId, controllerId, partial.phase);
+		appLogger.debug(
+			'[SNAPSHOT] DS %d target %s frozen-installed — ignoring phase=%s',
+			dsId,
+			controllerId,
+			partial.phase,
+		);
 		return existing;
 	}
 
 	const incomingPhase = partial.phase;
-	const shouldFreeze = existing?.frozen || (partial.frozen ?? false) || TERMINAL_PHASES.has(incomingPhase);
+	const shouldFreeze =
+		existing?.frozen || (partial.frozen ?? false) || TERMINAL_PHASES.has(incomingPhase);
 
 	// STICKY: frozen terminal phase (non-assigned) only upgrades to installed.
 	if (existing?.frozen && existing.phase !== 'assigned' && incomingPhase !== 'installed') {
-		appLogger.debug('[SNAPSHOT] DS %d target %s frozen=%s — keeping (ignoring %s)', dsId, controllerId, existing.phase, incomingPhase);
+		appLogger.debug(
+			'[SNAPSHOT] DS %d target %s frozen=%s — keeping (ignoring %s)',
+			dsId,
+			controllerId,
+			existing.phase,
+			incomingPhase,
+		);
 		return existing;
 	}
 
@@ -147,7 +157,8 @@ export async function freezeTargetAsCanceledIfNotInstalled(
 	if (existing?.phase === 'installed') {
 		appLogger.info(
 			'[SNAPSHOT] DS %d target %s remains installed (ignoring cancel — preserves tracking)',
-			dsId, controllerId,
+			dsId,
+			controllerId,
 		);
 		return;
 	}
@@ -193,16 +204,14 @@ async function persistSnapshot(dsId: number, snapshot: TargetStatusSnapshot): Pr
 		// Non-fatal: snapshot is best-effort history. Don't break sync/cancel flows.
 		appLogger.warn(
 			'[SNAPSHOT] Failed to persist snapshot for DS %d: %s',
-			dsId, err?.message ?? 'unknown',
+			dsId,
+			err?.message ?? 'unknown',
 		);
 	}
 }
 
 /** Bulk-replaces the entire snapshot (used by sync engine after a full pass). */
-export async function replaceSnapshot(
-	dsId: number,
-	snapshot: TargetStatusSnapshot,
-): Promise<void> {
+export async function replaceSnapshot(dsId: number, snapshot: TargetStatusSnapshot): Promise<void> {
 	// Respect sticky-finished: do not overwrite existing frozen 'installed' entries.
 	const existing = await getSnapshot(dsId);
 	const merged: TargetStatusSnapshot = { ...snapshot };

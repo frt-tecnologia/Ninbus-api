@@ -10,8 +10,8 @@ import { devices, firmwareReleases } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { eq, sql } from 'drizzle-orm';
-import { catalogCounterFloor, getFirmwareReleaseById } from './catalog';
 import { extractImageFromTar } from './artifact-download';
+import { catalogCounterFloor, getFirmwareReleaseById } from './catalog';
 import { FirmwareValidationError } from './errors';
 import { InvalidPackageError, validateCanonicalTar } from './tar-validator';
 import { compareVersions } from './versioning';
@@ -125,9 +125,12 @@ export async function runPublicationGate(
 	// (drafts included) — i.e. not below anything a device may have been
 	// offered. Never compare the release against itself (2 > 2 = false).
 	const pilotFloor =
-		mode === 'pilot' ? await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId }) : null;
+		mode === 'pilot'
+			? await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId })
+			: null;
 	const catalogMaxCounter =
-		pilotFloor ?? (await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId, publishedOnly: true }));
+		pilotFloor ??
+		(await catalogCounterFloor('firmware-ninbus', { excludeId: releaseId, publishedOnly: true }));
 	const counterLabel = pilotFloor !== null ? 'catalog floor (drafts incl.)' : 'max published';
 	checks.push({
 		name: 'counter-monotonic',

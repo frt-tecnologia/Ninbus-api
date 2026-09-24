@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { usePwaInstall } from '@/lib/pwa/use-pwa-install';
 import { Check, Download } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { usePwaInstall } from '@/lib/pwa/use-pwa-install';
 
 /**
  * <InstallAppButton> — shows a compact "Install app" button in the topbar when

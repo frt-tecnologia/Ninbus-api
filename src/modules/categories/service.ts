@@ -95,10 +95,7 @@ export async function getCategoryDevices(categoryId: string, companyId: string) 
  * Returns the device IDs that belong to `companyId` from a candidate list.
  * Used to filter cross-tenant deviceIds before assignment (defense in depth).
  */
-async function filterCompanyDevices(
-	deviceIds: string[],
-	companyId: string,
-): Promise<string[]> {
+async function filterCompanyDevices(deviceIds: string[], companyId: string): Promise<string[]> {
 	if (deviceIds.length === 0) return [];
 	const rows = await db
 		.select({ id: devices.id })
@@ -146,9 +143,9 @@ export async function addDevicesToCategory(
 	const toInsert = validIds.filter((id) => !existing.has(id));
 
 	if (toInsert.length > 0) {
-		await db.insert(deviceCategoryAssignments).values(
-			toInsert.map((deviceId) => ({ deviceId, categoryId })),
-		);
+		await db
+			.insert(deviceCategoryAssignments)
+			.values(toInsert.map((deviceId) => ({ deviceId, categoryId })));
 		appLogger.info(
 			'[CATEGORIES] Added %d device(s) to category %s (company %s)',
 			toInsert.length,
@@ -180,9 +177,9 @@ export async function setCategoryDevices(
 			.delete(deviceCategoryAssignments)
 			.where(eq(deviceCategoryAssignments.categoryId, categoryId));
 		if (validIds.length > 0) {
-			await tx.insert(deviceCategoryAssignments).values(
-				validIds.map((deviceId) => ({ deviceId, categoryId })),
-			);
+			await tx
+				.insert(deviceCategoryAssignments)
+				.values(validIds.map((deviceId) => ({ deviceId, categoryId })));
 		}
 	});
 

@@ -15,13 +15,13 @@ import { fetchTargetsByIds } from './sync-fetch';
 
 // Re-export everything from split files
 export {
-	type SyncState,
 	type ConnectionStatus,
-	type HawkbitUpdateStatus,
 	extractTargetData,
 	getProtectedStatus,
+	type HawkbitUpdateStatus,
 	mapUpdateStatus,
 	protectTargetStatuses,
+	type SyncState,
 	syncSingleDeviceSwr,
 } from './sync-core';
 export {

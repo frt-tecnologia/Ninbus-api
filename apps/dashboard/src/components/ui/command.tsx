@@ -1,10 +1,10 @@
 'use client';
 
-import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 import { Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import * as React from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
 const Command = React.forwardRef<
 	React.ElementRef<typeof CommandPrimitive>,
@@ -21,10 +21,7 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-const CommandDialog = ({
-	children,
-	...props
-}: React.ComponentProps<typeof Dialog>) => {
+const CommandDialog = ({ children, ...props }: React.ComponentProps<typeof Dialog>) => {
 	return (
 		<Dialog {...props}>
 			<DialogContent className="overflow-hidden p-0">
@@ -120,15 +117,9 @@ const CommandItem = React.forwardRef<
 ));
 CommandItem.displayName = CommandPrimitive.Item.displayName;
 
-const CommandShortcut = ({
-	className,
-	...props
-}: React.HTMLAttributes<HTMLSpanElement>) => (
+const CommandShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
 	<span
-		className={cn(
-			'ml-auto text-xs tracking-widest text-muted-foreground',
-			className,
-		)}
+		className={cn('ml-auto text-xs tracking-widest text-muted-foreground', className)}
 		{...props}
 	/>
 );
@@ -137,11 +128,11 @@ CommandShortcut.displayName = 'CommandShortcut';
 export {
 	Command,
 	CommandDialog,
-	CommandInput,
-	CommandList,
 	CommandEmpty,
 	CommandGroup,
+	CommandInput,
 	CommandItem,
-	CommandShortcut,
+	CommandList,
 	CommandSeparator,
+	CommandShortcut,
 };

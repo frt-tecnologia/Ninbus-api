@@ -32,11 +32,7 @@ export async function getCompanyById(companyId: string) {
  * If the owner's user account already exists, they are added immediately.
  * Otherwise, a pending designation is created and resolved when they sign up.
  */
-export async function createCompany(data: {
-	name: string;
-	ownerEmail: string;
-	createdBy: string;
-}) {
+export async function createCompany(data: { name: string; ownerEmail: string; createdBy: string }) {
 	const [company] = await db
 		.insert(companies)
 		.values({ name: data.name, createdBy: data.createdBy })
@@ -92,11 +88,7 @@ export async function getCompanyMembers(companyId: string) {
 		.where(eq(companyMembers.companyId, companyId));
 }
 
-export async function addCompanyMember(data: {
-	companyId: string;
-	userId: string;
-	role: string;
-}) {
+export async function addCompanyMember(data: { companyId: string; userId: string; role: string }) {
 	// Check if already a member
 	const [existing] = await db
 		.select()

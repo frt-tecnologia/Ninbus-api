@@ -1,8 +1,8 @@
 import { env } from '@common/config/env';
 import { closeDatabase } from '@common/db';
 import { appLogger } from '@common/logger';
-import { DeviceSyncEngine } from './modules/devices/sync';
 import { createApp } from './app';
+import { DeviceSyncEngine } from './modules/devices/sync';
 import { runStartupMigrations } from './scripts/migrate';
 
 // Run migrations before starting the server

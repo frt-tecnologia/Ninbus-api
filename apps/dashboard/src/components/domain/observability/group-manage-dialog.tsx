@@ -1,5 +1,8 @@
 'use client';
 
+import { Trash2 } from 'lucide-react';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { SearchField, Signal } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -17,9 +20,6 @@ import type { AggregatedCategory } from '@/lib/api/observability';
 import { notifyDataChanged } from '@/lib/data-events';
 import { connectionSignal, deviceSignal } from '@/lib/design/tokens';
 import type { Device } from '@/types/domain';
-import { Trash2 } from 'lucide-react';
-import * as React from 'react';
-import { toast } from 'sonner';
 import { GROUP_TYPE_LABELS, GroupTypeIcon } from './group-type-icon';
 
 /**
@@ -159,7 +159,7 @@ export function GroupManageDialog({
 
 				{/* Rename */}
 				<div className="space-y-1.5">
-					<label className="text-xs font-medium text-foreground">Nome do grupo</label>
+					<span className="text-xs font-medium text-foreground">Nome do grupo</span>
 					<div className="flex gap-2">
 						<Input
 							value={name}
@@ -181,14 +181,14 @@ export function GroupManageDialog({
 				{/* Devices with search */}
 				<div className="space-y-1.5">
 					<div className="flex items-center justify-between">
-						<label className="text-xs font-medium text-foreground">
+						<span className="text-xs font-medium text-foreground">
 							Dispositivos
 							{!loading && (
 								<span className="ml-1.5 text-muted-foreground">
 									({memberIds.size} no grupo · {allDevices.length} total)
 								</span>
 							)}
-						</label>
+						</span>
 					</div>
 					{!loading && allDevices.length > 0 && (
 						<SearchField
@@ -213,8 +213,12 @@ export function GroupManageDialog({
 									const checked = memberIds.has(d.id);
 									return (
 										<li key={d.id}>
-											<label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 hover:bg-secondary/60">
+											<label
+												htmlFor={`dev-${d.id}`}
+												className="flex cursor-pointer items-center gap-2.5 px-3 py-2 hover:bg-secondary/60"
+											>
 												<Checkbox
+													id={`dev-${d.id}`}
 													checked={checked}
 													disabled={busyDevice === d.id}
 													onCheckedChange={() => toggleDevice(d)}

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -113,21 +113,18 @@
 	}
 	body {
 		@apply bg-background text-foreground antialiased;
-		font-feature-settings: 'cv11', 'ss01';
-		font-variation-settings: 'opsz' 32;
-		font-family: 'Poppins', sans-serif;
+		font-feature-settings: "cv11", "ss01";
+		font-variation-settings: "opsz" 32;
+		font-family: "Poppins", sans-serif;
 	}
 	/* Subtle top-of-page grid texture for the "console" feel. Cheap, pure CSS. */
 	body::before {
-		content: '';
+		content: "";
 		position: fixed;
 		inset: 0;
 		pointer-events: none;
 		z-index: 0;
-		background-image: radial-gradient(
-			hsl(var(--border) / 0.5) 1px,
-			transparent 1px
-		);
+		background-image: radial-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px);
 		background-size: 32px 32px;
 		opacity: 0.4;
 		mask-image: linear-gradient(to bottom, black, transparent 60%);

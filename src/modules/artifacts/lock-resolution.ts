@@ -10,15 +10,16 @@
  *
  * Extracted from service.ts to keep file under 250 lines.
  */
+
+import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { artifacts, deployments } from '@common/db/schema';
 import type { HawkbitDistributionSet } from '@common/hawkbit/client';
 import { hawkbitDistributionSets, hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { HawkbitApiError } from '@common/hawkbit/http';
-import { hawkbitConfig } from '@common/config/hawkbit';
 import { appLogger } from '@common/logger';
-import { eq } from 'drizzle-orm';
 import { forceCloseActiveActionsForDS } from '@modules/deployments/actions';
+import { eq } from 'drizzle-orm';
 import { requireOwnership } from './service';
 import { ArtifactLockedError } from './types';
 
@@ -32,9 +33,7 @@ async function findBlockingDS(companyId: string, smId: number): Promise<HawkbitD
 	if (localDS.length === 0) return [];
 
 	const dsResults = await Promise.all(
-		localDS.map((row) =>
-			hawkbitDistributionSets.get(row.hawkbitDsId).catch(() => null),
-		),
+		localDS.map((row) => hawkbitDistributionSets.get(row.hawkbitDsId).catch(() => null)),
 	);
 
 	return dsResults.filter(
@@ -44,7 +43,11 @@ async function findBlockingDS(companyId: string, smId: number): Promise<HawkbitD
 }
 
 /** Classify action statistics: active (still running) vs completed. */
-function classifyDSStats(actions: Record<string, number>): { total: number; done: number; isActive: boolean } {
+function classifyDSStats(actions: Record<string, number>): {
+	total: number;
+	done: number;
+	isActive: boolean;
+} {
 	const total = actions['total'] ?? 0;
 	const finished = actions['FINISHED'] ?? 0;
 	const error = (actions['ERROR'] ?? 0) + (actions['WARNING'] ?? 0);
@@ -77,7 +80,11 @@ export async function resolveLockStatus(
 				try {
 					const stats = await hawkbitDistributionSets.getStatistics(ds.id);
 					const { isActive } = classifyDSStats(stats.actions ?? {});
-					return { id: ds.id, name: ds.name, status: isActive ? 'active' as const : 'completed' as const };
+					return {
+						id: ds.id,
+						name: ds.name,
+						status: isActive ? ('active' as const) : ('completed' as const),
+					};
 				} catch {
 					return { id: ds.id, name: ds.name, status: 'active' as const };
 				}
@@ -101,7 +108,11 @@ export async function resolveLockStatus(
 export async function deleteArtifact(
 	companyId: string,
 	smId: number,
-): Promise<{ deleted: boolean; message: string; cleanedUp?: Array<{ dsId: number; dsName: string }> }> {
+): Promise<{
+	deleted: boolean;
+	message: string;
+	cleanedUp?: Array<{ dsId: number; dsName: string }>;
+}> {
 	await requireOwnership(companyId, smId);
 	if (!hawkbitConfig.enabled) {
 		throw new Error('Artifact operations require hawkBit to be enabled');
@@ -161,7 +172,11 @@ export async function deleteArtifact(
 		}
 
 		// All completed — auto-clean DS then retry SM delete
-		appLogger.info('[ARTIFACT] SM #%d locked by %d completed DS. Auto-cleaning...', smId, completedBlocking.length);
+		appLogger.info(
+			'[ARTIFACT] SM #%d locked by %d completed DS. Auto-cleaning...',
+			smId,
+			completedBlocking.length,
+		);
 
 		const cleanedUp: Array<{ dsId: number; dsName: string }> = [];
 		for (const { ds } of completedBlocking) {
@@ -180,15 +195,19 @@ export async function deleteArtifact(
 		}
 
 		// Preserve local deployment records for history — only delete DS in hawkBit
-		appLogger.info('[ARTIFACT] Preserved %d local deployment records for history', cleanedUp.length);
+		appLogger.info(
+			'[ARTIFACT] Preserved %d local deployment records for history',
+			cleanedUp.length,
+		);
 
 		// Retry SM delete — now unlocked
 		await hawkbitSoftwareModules.delete(smId);
 		await db.delete(artifacts).where(eq(artifacts.hawkbitSmId, smId));
 
-		const msg = cleanedUp.length > 0
-			? `Artefato deletado. ${cleanedUp.length} implantação(ões) concluída(s) desvinculada(s). O histórico de deployment foi preservado.`
-			: 'Artifact deleted successfully';
+		const msg =
+			cleanedUp.length > 0
+				? `Artefato deletado. ${cleanedUp.length} implantação(ões) concluída(s) desvinculada(s). O histórico de deployment foi preservado.`
+				: 'Artifact deleted successfully';
 
 		return { deleted: true, message: msg, cleanedUp: cleanedUp.length > 0 ? cleanedUp : undefined };
 	}

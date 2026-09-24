@@ -73,7 +73,7 @@ export function decimalSerialToHex(serialDecimal: string): string | null {
 	if (parts.length !== 5) return null;
 
 	const AA = parseInt(parts[0]!, 10);
-	if (isNaN(AA) || AA < 0 || AA > 99) return null;
+	if (Number.isNaN(AA) || AA < 0 || AA > 99) return null;
 
 	// M: 1 hex char (0-9, A-C)
 	const mChar = parts[1]!.toUpperCase();
@@ -81,31 +81,31 @@ export function decimalSerialToHex(serialDecimal: string): string | null {
 
 	// PP: decimal, padded to 2 digits
 	const ppVal = parseInt(parts[2]!, 10);
-	if (isNaN(ppVal) || ppVal < 0 || ppVal > 99) return null;
+	if (Number.isNaN(ppVal) || ppVal < 0 || ppVal > 99) return null;
 	const ppStr = ppVal.toString().padStart(2, '0');
 	// Each char must be a valid nibble (0-9 for PP since max is 99)
 	if (!/^\d{2}$/.test(ppStr)) return null;
 
 	// SSS: decimal, padded to 3 digits
 	const sssVal = parseInt(parts[3]!, 10);
-	if (isNaN(sssVal) || sssVal < 0 || sssVal > 999) return null;
+	if (Number.isNaN(sssVal) || sssVal < 0 || sssVal > 999) return null;
 	const sssStr = sssVal.toString().padStart(3, '0');
 	if (!/^\d{3}$/.test(sssStr)) return null;
 
 	// NNNNN: decimal, padded to 5 digits
 	const nnnnnVal = parseInt(parts[4]!, 10);
-	if (isNaN(nnnnnVal) || nnnnnVal < 0 || nnnnnVal > 99999) return null;
+	if (Number.isNaN(nnnnnVal) || nnnnnVal < 0 || nnnnnVal > 99999) return null;
 	const nnnnnStr = nnnnnVal.toString().padStart(5, '0');
 	if (!/^\d{5}$/.test(nnnnnStr)) return null;
 
 	// Build nibble stream: M(1) + PP(2) + SSS(3) + NNNNN(5) + FFF = 14 nibbles
-	const nibbleStream = mChar + ppStr + sssStr + nnnnnStr + 'FFF';
+	const nibbleStream = `${mChar}${ppStr}${sssStr}${nnnnnStr}FFF`;
 
 	// Pack: AA as binary byte, then nibble pairs as bytes
 	const bytes = [AA];
 	for (let i = 0; i < nibbleStream.length; i += 2) {
 		const high = parseInt(nibbleStream[i]!, 16);
-		const low = (i + 1 < nibbleStream.length) ? parseInt(nibbleStream[i + 1]!, 16) : 0;
+		const low = i + 1 < nibbleStream.length ? parseInt(nibbleStream[i + 1]!, 16) : 0;
 		bytes.push((high << 4) | low);
 	}
 
@@ -131,7 +131,7 @@ export function hexToDecimalSerial(hexString: string): string | null {
 	}
 
 	// Reserved nibbles must be FFF — serial numbers always have these.
-	if ((bytes[6]! & 0x0F) !== 0x0F || bytes[7] !== 0xFF) return null;
+	if ((bytes[6]! & 0x0f) !== 0x0f || bytes[7] !== 0xff) return null;
 
 	// AA: first byte as decimal
 	const AA = bytes[0]!;
@@ -140,8 +140,8 @@ export function hexToDecimalSerial(hexString: string): string | null {
 	// Extract nibble stream from bytes 1-7 (14 nibbles)
 	let nibbles = '';
 	for (let i = 1; i < bytes.length; i++) {
-		nibbles += ((bytes[i]! >> 4) & 0x0F).toString(16).toUpperCase();
-		nibbles += (bytes[i]! & 0x0F).toString(16).toUpperCase();
+		nibbles += ((bytes[i]! >> 4) & 0x0f).toString(16).toUpperCase();
+		nibbles += (bytes[i]! & 0x0f).toString(16).toUpperCase();
 	}
 
 	// Strip last 3 nibbles (FFF reserved) → 11 data nibbles
@@ -152,13 +152,13 @@ export function hexToDecimalSerial(hexString: string): string | null {
 	if (!/^[0-9A-C]$/.test(mChar)) return null;
 
 	const ppVal = parseInt(data.substring(1, 3), 10);
-	if (isNaN(ppVal) || ppVal > 99) return null;
+	if (Number.isNaN(ppVal) || ppVal > 99) return null;
 
 	const sssVal = parseInt(data.substring(3, 6), 10);
-	if (isNaN(sssVal) || sssVal > 999) return null;
+	if (Number.isNaN(sssVal) || sssVal > 999) return null;
 
 	const nnnnnVal = parseInt(data.substring(6, 11), 10);
-	if (isNaN(nnnnnVal) || nnnnnVal > 99999) return null;
+	if (Number.isNaN(nnnnnVal) || nnnnnVal > 99999) return null;
 
 	const pad = (n: number, d: number) => String(n).padStart(d, '0');
 	return `${pad(AA, 2)}.${mChar}.${pad(ppVal, 2)}.${pad(sssVal, 3)}.${pad(nnnnnVal, 5)}`;

@@ -1,17 +1,17 @@
 import { withAuth } from '@common/middleware/auth-guard';
 import {
+	designateMemberSchema,
 	ErrorResponseSchema,
 	MemberDeleteResponseSchema,
 	MemberListResponseSchema,
 	MemberUpdateResponseSchema,
-	designateMemberSchema,
 	updateMemberRoleSchema,
 } from '@modules/companies/schemas';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';
 import { designateMember } from './designation';
-import { LastOwnerError } from './service';
 import * as service from './service';
+import { LastOwnerError } from './service';
 
 /**
  * Company member management routes.

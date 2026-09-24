@@ -1,5 +1,9 @@
 'use client';
 
+import { ArrowLeft, Cpu, HardDrive } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import { FirmwareTable } from '@/components/domain/firmware/firmware-table';
 import { FirmwareUploadDialog } from '@/components/domain/firmware/firmware-upload-dialog';
 import { PageHeader } from '@/components/layout/page-header';
@@ -8,10 +12,6 @@ import { ConfirmDialog } from '@/components/system/confirm-dialog';
 import { useFetch } from '@/hooks/useFetch';
 import { ApiClientError, firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
-import { ArrowLeft, Cpu, HardDrive } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useCallback, useState } from 'react';
-import { toast } from 'sonner';
 
 /**
  * Firmware — the factory's firmware release catalog, nested under the
@@ -35,13 +35,19 @@ export default function FirmwarePage() {
 		try {
 			const res = await firmwareService.remove(release.id);
 			if (res?.hawkbitKept) {
-				toast.warning(res.message ?? `Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`);
+				toast.warning(
+					res.message ??
+						`Release ${release.version} removida do catálogo (binário mantido no hawkBit como histórico).`,
+				);
 			} else {
 				toast.success(res?.message ?? `Release ${release.version} excluída.`);
 			}
 			setToDelete(null);
 		} catch (e) {
-			if (e instanceof ApiClientError && (e.raw as { code?: string } | undefined)?.code === 'COUNTER_FLOOR_BURNED') {
+			if (
+				e instanceof ApiClientError &&
+				(e.raw as { code?: string } | undefined)?.code === 'COUNTER_FLOOR_BURNED'
+			) {
 				setRealignPending(release);
 			} else {
 				toast.error(e instanceof Error ? e.message : 'Falha ao excluir');
@@ -58,7 +64,10 @@ export default function FirmwarePage() {
 		setDeleting(release.id);
 		try {
 			const res = await firmwareService.remove(release.id, { realignFloor: true });
-			toast.success(res?.message ?? `Release ${release.version} excluída (piso do counter transferido para a release mais antiga).`);
+			toast.success(
+				res?.message ??
+					`Release ${release.version} excluída (piso do counter transferido para a release mais antiga).`,
+			);
 			setRealignPending(null);
 			setToDelete(null);
 		} catch (e) {

@@ -229,4 +229,4 @@ export async function syncDeviceStatusFromHawkbit(targetId: string) {
 	}
 }
 
-export { linkDevice, provisionDevice, listUnclaimedDevices } from './provisioning';
+export { linkDevice, listUnclaimedDevices, provisionDevice } from './provisioning';

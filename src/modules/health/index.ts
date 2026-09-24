@@ -1,7 +1,7 @@
 import { db } from '@common/db';
+import { DeviceSyncEngine } from '@modules/devices/sync';
 import { sql } from 'drizzle-orm';
 import { Elysia, t } from 'elysia';
-import { DeviceSyncEngine } from '@modules/devices/sync';
 
 export const healthModule = new Elysia({ prefix: '/health' }).get(
 	'/',
@@ -26,7 +26,7 @@ export const healthModule = new Elysia({ prefix: '/health' }).get(
 			uptime: process.uptime(),
 			database: dbStatus,
 			responseTime: `${responseTime}ms`,
-				sync: {
+			sync: {
 				mode: syncState.mode,
 				lastSyncAt: syncState.lastFullSyncAt?.toISOString() ?? null,
 				isRunning: syncState.isRunning,

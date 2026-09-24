@@ -1,4 +1,4 @@
-import * as React from 'react';
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -23,9 +23,7 @@ export function Toolbar({
 			)}
 		>
 			<div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
-			{actions && (
-				<div className="flex shrink-0 items-center gap-2">{actions}</div>
-			)}
+			{actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
 		</div>
 	);
 }

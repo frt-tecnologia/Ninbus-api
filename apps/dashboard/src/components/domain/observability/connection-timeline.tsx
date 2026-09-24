@@ -1,9 +1,9 @@
 'use client';
 
+import * as React from 'react';
 import { Empty } from '@/components/system';
 import type { SessionBand } from '@/lib/api/observability';
 import { cn } from '@/lib/utils';
-import * as React from 'react';
 
 /**
  * <ConnectionTimeline> — the SIGNATURE observability visual.
@@ -88,6 +88,7 @@ export function ConnectionTimeline({
 	};
 
 	// Time axis ticks (~5 evenly spaced).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `to`/`width` are transitively required (total and xFor derive from them); biome can't see transitive deps.
 	const ticks = React.useMemo(() => {
 		const count = 5;
 		const out: { x: number; label: string }[] = [];
@@ -99,7 +100,6 @@ export function ConnectionTimeline({
 			});
 		}
 		return out;
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [from, to, width]);
 
 	if (loading) {

@@ -1,6 +1,6 @@
-import * as React from 'react';
-import { cn } from '@/lib/utils';
+import type * as React from 'react';
 import type { SignalTone } from '@/lib/design/tokens';
+import { cn } from '@/lib/utils';
 
 /**
  * <BarMeter> — a horizontal proportion meter: a labeled bar whose filled

@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
 import type * as React from 'react';
+import { cn } from '@/lib/utils';
 
 /**
  * <Section> — the standard content container: a bordered surface with a header

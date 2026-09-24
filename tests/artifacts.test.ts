@@ -498,7 +498,10 @@ describe('Artifacts Module', () => {
 			expect(r.status).toBe(200);
 			const body = await r.json();
 			expect(body.total).toBe(2);
-			expect(body.data.map((c: any) => c.name).sort()).toEqual(['Grupo Firmware A', 'Grupo Firmware B']);
+			expect(body.data.map((c: any) => c.name).sort()).toEqual([
+				'Grupo Firmware A',
+				'Grupo Firmware B',
+			]);
 		});
 
 		it('PATCH replaces the set (idempotent)', async () => {

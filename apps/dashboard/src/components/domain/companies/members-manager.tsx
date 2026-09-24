@@ -1,5 +1,10 @@
 'use client';
 
+import { ExternalLink, Trash2, UserPlus, Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { Empty, Id, SearchField } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,13 +28,8 @@ import type { CompanyRole, Member } from '@/lib/api';
 import { memberService, userService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
 import { ROUTES } from '@/lib/routes';
-import type { Company } from '@/types/domain';
-import type { User } from '@/types/domain';
-import { ExternalLink, Trash2, UserPlus, Users } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import * as React from 'react';
-import { useCallback } from 'react';
-import { toast } from 'sonner';
+import type { Company, User } from '@/types/domain';
+
 const ROLES: { value: CompanyRole; label: string }[] = [
 	{ value: 'owner', label: 'Proprietário' },
 	{ value: 'admin', label: 'Administrador' },

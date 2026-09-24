@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { Poppins, JetBrains_Mono } from 'next/font/google';
+import { JetBrains_Mono, Poppins } from 'next/font/google';
 import { Toaster } from 'sonner';
-import { ThemeProvider } from '@/components/theme-provider';
 import { KillSwitchSW } from '@/components/kill-switch-sw';
+import { ThemeProvider } from '@/components/theme-provider';
 import { BRAND_LOGOS } from '@/lib/brand-logos';
 import './globals.css';
 
@@ -42,11 +42,7 @@ export const metadata: Metadata = {
 	},
 };
 
-export default function RootLayout({
-	children,
-}: {
-	children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="pt-BR" suppressHydrationWarning>
 			<body className={`${sans.variable} ${mono.variable} font-sans`}>

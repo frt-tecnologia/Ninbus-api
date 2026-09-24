@@ -1,4 +1,4 @@
-import { type KeyObject, createHash, createPrivateKey } from 'node:crypto';
+import { createHash, createPrivateKey, type KeyObject } from 'node:crypto';
 /**
  * Server-side OTA signer + canonical packager — faithful port of
  * tools/ota_sign.py + tools/ota_pack.py (repo Ninbus-v4).
@@ -43,7 +43,7 @@ import { type KeyObject, createHash, createPrivateKey } from 'node:crypto';
  * self-verified against the key's public half before shipping.
  */
 import { readFileSync } from 'node:fs';
-import type { Readable } from 'stream';
+import type { Readable } from 'node:stream';
 import { env } from '@common/config/env';
 // Raw-digest ECDSA (Prehashed contract): Bun's BoringSSL rejects
 // crypto.sign(null, digest, key) with NO_DEFAULT_DIGEST while Node/OpenSSL

@@ -4,7 +4,11 @@
  * Pure functions that transform raw hawkBit action status entries
  * into semantic phases with download progress for the frontend.
  */
-import type { HawkbitActionStatusType, DeploymentPhase, EnrichedActionStatus } from './deployment-status';
+import type {
+	DeploymentPhase,
+	EnrichedActionStatus,
+	HawkbitActionStatusType,
+} from './deployment-status';
 
 // ---------------------------------------------------------------------------
 // Message Detection
@@ -37,7 +41,9 @@ export function isInstallMessage(message: string): boolean {
 export function isRebootMessage(message: string): boolean {
 	if (!message) return false;
 	const lower = message.toLowerCase();
-	return lower.includes('rebooting') || lower.includes('reboot to apply') || lower.includes('reboot');
+	return (
+		lower.includes('rebooting') || lower.includes('reboot to apply') || lower.includes('reboot')
+	);
 }
 
 export function isDownloadMessage(message: string): boolean {
@@ -70,19 +76,28 @@ export function isRetrievedMessage(message: string): boolean {
  */
 export function actionStatusToPhase(status: HawkbitActionStatusType): DeploymentPhase {
 	switch (status) {
-		case 'retrieved': return 'pending';
-		case 'download': return 'downloading';
-		case 'downloaded': return 'downloaded';
-		case 'running': return 'installing';
-		case 'finished': return 'installed';
+		case 'retrieved':
+			return 'pending';
+		case 'download':
+			return 'downloading';
+		case 'downloaded':
+			return 'downloaded';
+		case 'running':
+			return 'installing';
+		case 'finished':
+			return 'installed';
 		case 'error':
 		case 'warning':
-		case 'cancel_rejected': return 'error';
+		case 'cancel_rejected':
+			return 'error';
 		case 'canceled':
-		case 'canceling': return 'canceled';
+		case 'canceling':
+			return 'canceled';
 		case 'scheduled':
-		case 'wait_for_confirmation': return 'assigned';
-		default: return 'unknown';
+		case 'wait_for_confirmation':
+			return 'assigned';
+		default:
+			return 'unknown';
 	}
 }
 
@@ -157,9 +172,9 @@ export function computeLatestPhase(
 		if (isRetrievedMessage(msg)) return 'pending';
 		if (isInstallMessage(msg)) return 'installing';
 
-		const hasDownloaded = statusHistory.some(s => s.type === 'downloaded');
+		const hasDownloaded = statusHistory.some((s) => s.type === 'downloaded');
 		if (hasDownloaded) return 'installing';
-		const hasRetrieved = statusHistory.some(s => s.type === 'retrieved');
+		const hasRetrieved = statusHistory.some((s) => s.type === 'retrieved');
 		if (!hasRetrieved) return 'assigned';
 		return 'installing';
 	}
@@ -183,6 +198,6 @@ export function getLatestProgress(
 		const progress = parseDownloadProgress(entry.messages?.join(' ') ?? '');
 		if (progress !== null) return progress;
 	}
-	const hasDownload = statusHistory.some(s => s.type === 'download');
+	const hasDownload = statusHistory.some((s) => s.type === 'download');
 	return hasDownload ? 0 : null;
 }

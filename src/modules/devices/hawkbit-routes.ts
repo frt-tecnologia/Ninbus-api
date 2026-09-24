@@ -42,7 +42,7 @@ export const deviceHawkbitRoutes = withAuth(
 				const { checkDDiReadiness } = await import('@modules/deployments/ddi-diagnostics');
 				const diag = await checkDDiReadiness(result.device.hawkbitTargetId);
 				return { data: diag };
-			} catch (error: any) {
+			} catch {
 				set.status = 503;
 				return { error: 'Service Unavailable', message: 'hawkBit is currently unavailable' };
 			}
@@ -61,7 +61,11 @@ export const deviceHawkbitRoutes = withAuth(
 					'Diagnostic endpoint that simulates what the device would see when polling DDI. ' +
 					'Checks for active update/cancel actions, DS completeness, and potential blockers.',
 			},
-			response: { 200: t.Object({ data: t.Any() }), 400: ErrorResponseSchema, 403: ErrorResponseSchema },
+			response: {
+				200: t.Object({ data: t.Any() }),
+				400: ErrorResponseSchema,
+				403: ErrorResponseSchema,
+			},
 		},
 	)
 

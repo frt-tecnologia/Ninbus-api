@@ -1,17 +1,14 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { UserPlus, X } from 'lucide-react';
-import type { User } from '@/types/domain';
-import type { CompanyRole } from '@/lib/api';
-import { memberService, userService } from '@/lib/api';
-import { notifyDataChanged } from '@/lib/data-events';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
 	Select,
 	SelectContent,
@@ -20,7 +17,10 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import { useFetch } from '@/hooks/useFetch';
-import { useCallback } from 'react';
+import type { CompanyRole } from '@/lib/api';
+import { memberService, userService } from '@/lib/api';
+import { notifyDataChanged } from '@/lib/data-events';
+import type { User } from '@/types/domain';
 
 const ROLES: { value: CompanyRole; label: string }[] = [
 	{ value: 'owner', label: 'Owner' },
@@ -59,9 +59,7 @@ export function MemberAddForm({
 		const all = platformUsers.data?.data ?? [];
 		if (!term) return all.slice(0, 8);
 		return all
-			.filter(
-				(u) => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term),
-			)
+			.filter((u) => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term))
 			.slice(0, 8);
 	}, [platformUsers.data, query]);
 

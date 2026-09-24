@@ -9,10 +9,14 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
-import { enrichActionStatus, getLatestProgress } from '@common/types/deployment-status-helpers';
 import type { EnrichedActionStatus } from '@common/types/deployment-status';
+import { enrichActionStatus, getLatestProgress } from '@common/types/deployment-status-helpers';
 import type { ChangedDevice } from '@modules/devices/sync-helpers';
-import { getCompanyDsIds, emitFinalEvents, emitDeploymentStatsForDs } from './sync-progress-helpers';
+import {
+	emitDeploymentStatsForDs,
+	emitFinalEvents,
+	getCompanyDsIds,
+} from './sync-progress-helpers';
 
 // ---------------------------------------------------------------------------
 // Constants & state
@@ -100,11 +104,17 @@ async function pollAndEmitDeviceAction(
 
 		// Skip poll if action hasn't changed since last cycle
 		const cached = actionCache.get(controllerId);
-		if (cached && cached.actionId === updateAction.id && cached.lastModifiedAt === updateAction.lastModifiedAt) {
+		if (
+			cached &&
+			cached.actionId === updateAction.id &&
+			cached.lastModifiedAt === updateAction.lastModifiedAt
+		) {
 			return null;
 		}
 
-		const statusResult = await hawkbitTargets.getActionStatus(controllerId, updateAction.id, { limit: 5 });
+		const statusResult = await hawkbitTargets.getActionStatus(controllerId, updateAction.id, {
+			limit: 5,
+		});
 
 		// Update cache
 		actionCache.set(controllerId, {
@@ -114,9 +124,11 @@ async function pollAndEmitDeviceAction(
 
 		if (statusResult.content.length === 0) {
 			sseEmitter.emit(companyId, 'device.action.status', {
-				deviceId, controllerId,
+				deviceId,
+				controllerId,
 				actionId: updateAction.id,
-				latestStatus: 'running', phase: 'assigned',
+				latestStatus: 'running',
+				phase: 'assigned',
 				progress: null,
 				message: 'Assignment initiated — waiting for device poll',
 				timestamp: new Date().toISOString(),
@@ -134,14 +146,27 @@ async function pollAndEmitDeviceAction(
 		if (dsId) {
 			try {
 				const { freezeOnTerminalPhase } = await import('./snapshot');
-				await freezeOnTerminalPhase(dsId, controllerId, enriched.phase, updateAction.id, updateAction.type, latest.type);
+				await freezeOnTerminalPhase(
+					dsId,
+					controllerId,
+					enriched.phase,
+					updateAction.id,
+					updateAction.type,
+					latest.type,
+				);
 			} catch (e: any) {
-				appLogger.debug('[SYNC-PROGRESS] snapshot freeze failed for %s DS %d: %s', controllerId, dsId, e?.message ?? 'unknown');
+				appLogger.debug(
+					'[SYNC-PROGRESS] snapshot freeze failed for %s DS %d: %s',
+					controllerId,
+					dsId,
+					e?.message ?? 'unknown',
+				);
 			}
 		}
 
 		sseEmitter.emit(companyId, 'device.action.status', {
-			deviceId, controllerId,
+			deviceId,
+			controllerId,
 			actionId: updateAction.id,
 			latestStatus: latest.type,
 			phase: enriched.phase,
@@ -152,7 +177,11 @@ async function pollAndEmitDeviceAction(
 
 		return { controllerId, actionId: updateAction.id, dsId: dsIdMap.get(controllerId) ?? null };
 	} catch (error: any) {
-		appLogger.debug('[SYNC-PROGRESS] Failed to poll action for %s: %s', controllerId, error?.message ?? 'unknown');
+		appLogger.debug(
+			'[SYNC-PROGRESS] Failed to poll action for %s: %s',
+			controllerId,
+			error?.message ?? 'unknown',
+		);
 		return null;
 	}
 }
@@ -180,7 +209,7 @@ export async function emitActionProgressEvents(changedDevices: ChangedDevice[]):
 		lastCachePurge = now;
 	}
 
-// Step 1: Final events for devices that LEFT pending
+	// Step 1: Final events for devices that LEFT pending
 	const nonPending = changedDevices.filter((d) => d.hawkbitUpdateStatus !== 'pending');
 	if (nonPending.length > 0 && previouslyPending.size > 0) {
 		emitFinalEvents(nonPending, previouslyPending).catch(() => {});
@@ -215,7 +244,12 @@ export async function emitActionProgressEvents(changedDevices: ChangedDevice[]):
 			toPoll.push(uniquePending[(start + i) % uniquePending.length]!);
 		}
 		roundRobinOffset = start + MAX_DEVICES_PER_CYCLE;
-		appLogger.debug('[SYNC-PROGRESS] Round-robin: polling %d/%d (offset=%d)', toPoll.length, uniquePending.length, start);
+		appLogger.debug(
+			'[SYNC-PROGRESS] Round-robin: polling %d/%d (offset=%d)',
+			toPoll.length,
+			uniquePending.length,
+			start,
+		);
 	}
 
 	appLogger.debug('[SYNC-PROGRESS] Polling action status for %d device(s)', toPoll.length);
@@ -235,7 +269,9 @@ export async function emitActionProgressEvents(changedDevices: ChangedDevice[]):
 		const dsIdMap = await batchResolveDsIds(controllerIds, companyDsIds);
 
 		const results = await parallelLimit(
-			companyDevices.map((d) => () => pollAndEmitDeviceAction(companyId, d.deviceId, d.controllerId, dsIdMap)),
+			companyDevices.map(
+				(d) => () => pollAndEmitDeviceAction(companyId, d.deviceId, d.controllerId, dsIdMap),
+			),
 			10,
 		);
 

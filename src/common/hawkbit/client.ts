@@ -8,21 +8,20 @@ import type { NinbusArtifactType } from './constants';
 import { hawkbitDistributionSetTypes } from './distribution-sets';
 import { hawkbitSoftwareModuleTypes } from './software-modules';
 
-// Re-export all sub-modules
-export { HawkbitApiError } from './http';
-export { hawkbitTargets } from './targets';
-export { hawkbitDistributionSets, hawkbitDistributionSetTypes } from './distribution-sets';
-export { hawkbitSoftwareModules, hawkbitSoftwareModuleTypes } from './software-modules';
-
+export type { NinbusArtifactType } from './constants';
 // Re-export constants and types
 export {
-	NINBUS_ARTIFACT_TYPES,
-	NINBUS_ARTIFACT_TYPE_META,
-	NINBUS_DEVICE_TYPE,
 	isNinbusArtifactType,
+	NINBUS_ARTIFACT_TYPE_META,
+	NINBUS_ARTIFACT_TYPES,
+	NINBUS_DEVICE_TYPE,
 	resolveArtifactType,
 } from './constants';
-export type { NinbusArtifactType } from './constants';
+export { hawkbitDistributionSets, hawkbitDistributionSetTypes } from './distribution-sets';
+// Re-export all sub-modules
+export { HawkbitApiError } from './http';
+export { hawkbitSoftwareModules, hawkbitSoftwareModuleTypes } from './software-modules';
+export { hawkbitTargets } from './targets';
 
 // Re-export all types
 export type {

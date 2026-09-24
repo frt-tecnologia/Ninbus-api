@@ -1,14 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { TONE_FILL, BRAND_FILL, safePct, type ChartBar } from './shared';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { BRAND_FILL, type ChartBar, safePct, TONE_FILL } from './shared';
 
 /**
  * <ActivityChart> — a vertical bar chart over a discrete axis (days, weeks…).
@@ -38,10 +33,7 @@ export function ActivityChart({
 	emptyLabel?: string;
 	className?: string;
 }) {
-	const max = React.useMemo(
-		() => Math.max(1, ...bars.map((b) => b.value)),
-		[bars],
-	);
+	const max = React.useMemo(() => Math.max(1, ...bars.map((b) => b.value)), [bars]);
 	const labelEvery = Math.ceil(bars.length / 7); // avoid x-axis label crowding
 
 	return (
@@ -83,7 +75,11 @@ export function ActivityChart({
 														height: `${pct}%`,
 														minHeight: b.value > 0 ? 3 : 0,
 														background:
-															b.value > 0 ? (b.tone ? TONE_FILL[tone] : BRAND_FILL.violet) : 'hsl(var(--muted) / 0.4)',
+															b.value > 0
+																? b.tone
+																	? TONE_FILL[tone]
+																	: BRAND_FILL.violet
+																: 'hsl(var(--muted) / 0.4)',
 													}}
 												/>
 											</button>

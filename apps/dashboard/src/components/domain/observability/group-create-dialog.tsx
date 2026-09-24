@@ -1,5 +1,8 @@
 'use client';
 
+import { Plus } from 'lucide-react';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -20,9 +23,6 @@ import {
 import { http } from '@/lib/api/http';
 import { notifyDataChanged } from '@/lib/data-events';
 import type { ActionResponse } from '@/types/domain';
-import { Plus } from 'lucide-react';
-import * as React from 'react';
-import { toast } from 'sonner';
 import { GROUP_TYPE_LABELS, GroupTypeIcon } from './group-type-icon';
 
 const TYPES = ['garage', 'bus_line', 'region', 'yard', 'custom'] as const;
@@ -97,7 +97,9 @@ export function GroupCreateDialog({
 					</DialogHeader>
 					<div className="space-y-3 py-3">
 						<div className="space-y-1.5">
-							<label htmlFor="group-type" className="text-xs font-medium text-foreground">Tipo</label>
+							<label htmlFor="group-type" className="text-xs font-medium text-foreground">
+								Tipo
+							</label>
 							<Select value={type} onValueChange={setType}>
 								<SelectTrigger id="group-type" className="h-8">
 									<SelectValue />
@@ -112,7 +114,9 @@ export function GroupCreateDialog({
 							</Select>
 						</div>
 						<div className="space-y-1.5">
-							<label htmlFor="group-name" className="text-xs font-medium text-foreground">Nome</label>
+							<label htmlFor="group-name" className="text-xs font-medium text-foreground">
+								Nome
+							</label>
 							<Input
 								id="group-name"
 								value={name}

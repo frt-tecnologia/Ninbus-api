@@ -1,17 +1,17 @@
 'use client';
 
-import { RangeProvider, Section, TimeRangePicker, last24h, useRange } from '@/components/system';
-import { Button } from '@/components/ui/button';
 import { Maximize2, Minimize2 } from 'lucide-react';
+import * as React from 'react';
+import { useCallback } from 'react';
+import { last24h, RangeProvider, Section, TimeRangePicker, useRange } from '@/components/system';
+import { Button } from '@/components/ui/button';
 import { useFetch } from '@/hooks/useFetch';
 import {
 	type ActivityLogEntry,
-	type SessionBand,
 	deviceService,
 	observabilityService,
+	type SessionBand,
 } from '@/lib/api';
-import * as React from 'react';
-import { useCallback } from 'react';
 import { ActivityFeed } from './activity-feed';
 import { ConnectionTimeline } from './connection-timeline';
 import { DeviceConnectionList } from './device-connection-list';
@@ -109,9 +109,7 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 	// Resolve which feed to render based on the expand state.
 	const expandedData = activityAll.data;
 	const feedEntries = (
-		activityExpanded
-			? (expandedData?.data ?? [])
-			: (activity.data?.data ?? [])
+		activityExpanded ? (expandedData?.data ?? []) : (activity.data?.data ?? [])
 	) as ActivityLogEntry[];
 	const feedLoading = activityExpanded ? activityAll.loading : activity.loading;
 
@@ -182,7 +180,11 @@ function ObservabilityBody({ companyId }: { companyId: string }) {
 						onClick={() => setActivityExpanded((v) => !v)}
 						aria-label={activityExpanded ? 'Minimizar' : 'Maximizar'}
 					>
-						{activityExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+						{activityExpanded ? (
+							<Minimize2 className="h-4 w-4" />
+						) : (
+							<Maximize2 className="h-4 w-4" />
+						)}
 						{activityExpanded ? 'Minimizar' : 'Maximizar'}
 					</Button>
 				}

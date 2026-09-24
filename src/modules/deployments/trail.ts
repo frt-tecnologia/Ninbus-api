@@ -9,8 +9,8 @@ import { db } from '@common/db';
 import { deployments } from '@common/db/schema';
 import { hawkbitDistributionSets, hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { eq } from 'drizzle-orm';
 import type { DeploymentPhase } from '@common/types/deployment-status';
+import { eq } from 'drizzle-orm';
 import { getSnapshot } from './snapshot';
 import { resolveActionStatus } from './trail-helpers';
 
@@ -87,10 +87,16 @@ export async function getDeploymentTargetStatuses(
 			try {
 				const parsed = JSON.parse(local.targetIds);
 				if (Array.isArray(parsed)) controllerIds = parsed.filter((x) => typeof x === 'string');
-			} catch { /* malformed JSON — fall through to hawkBit */ }
+			} catch {
+				/* malformed JSON — fall through to hawkBit */
+			}
 		}
 	} catch (dbErr: any) {
-		appLogger.warn('[TRAIL] Failed to read local target_ids for DS %d: %s', dsId, dbErr?.message ?? 'unknown');
+		appLogger.warn(
+			'[TRAIL] Failed to read local target_ids for DS %d: %s',
+			dsId,
+			dbErr?.message ?? 'unknown',
+		);
 	}
 
 	// Fallback: no local record → use hawkBit current assignment (best effort).
@@ -121,7 +127,9 @@ export async function getDeploymentTargetStatuses(
 				const target = await hawkbitTargets.get(controllerId);
 				name = target.name;
 				updateStatus = target.updateStatus ?? 'unknown';
-			} catch { /* target may have been deleted — keep controllerId as name */ }
+			} catch {
+				/* target may have been deleted — keep controllerId as name */
+			}
 
 			// FROZEN SNAPSHOT SHORTCIRCUIT: if this target has a frozen snapshot entry,
 			// use it directly — the hawkBit action may have disappeared (cancelled /
@@ -148,12 +156,20 @@ export async function getDeploymentTargetStatuses(
 			let actionInfo: TargetDeploymentStatus['action'] = null;
 			try {
 				const actionsForDs = await hawkbitTargets.getActions(controllerId, {
-					q: `distributionSet.id==${dsId}`, sort: 'id:DESC', limit: 5,
+					q: `distributionSet.id==${dsId}`,
+					sort: 'id:DESC',
+					limit: 5,
 				});
-				const match = actionsForDs.content.find((a) => a.type === 'update') ?? actionsForDs.content[0] ?? null;
+				const match =
+					actionsForDs.content.find((a) => a.type === 'update') ?? actionsForDs.content[0] ?? null;
 				if (match) actionInfo = await resolveActionStatus(controllerId, match);
 			} catch (err: any) {
-				appLogger.debug('[TRAIL] actions query failed for %s DS %d: %s', controllerId, dsId, err?.message ?? 'unknown');
+				appLogger.debug(
+					'[TRAIL] actions query failed for %s DS %d: %s',
+					controllerId,
+					dsId,
+					err?.message ?? 'unknown',
+				);
 			}
 			return { controllerId, name, updateStatus, action: actionInfo };
 		}),
@@ -198,17 +214,13 @@ export async function getTargetStatusTrail(
 	const statusResult = await hawkbitTargets.getActionStatus(controllerId, targetActionId);
 
 	// Enrich all status entries and reverse to chronological order
-	const trail = statusResult.content
-		.map(enrichActionStatus)
-		.reverse(); // oldest → newest
+	const trail = statusResult.content.map(enrichActionStatus).reverse(); // oldest → newest
 
 	// Compute current phase and progress from latest entry
 	const latest = statusResult.content[0];
 	const phase = latest ? enrichActionStatus(latest).phase : 'unknown';
 	const progress = getLatestProgress(statusResult.content);
-	const currentMessage = latest
-		? (latest.messages?.join(' ') ?? latest.type)
-		: action.status;
+	const currentMessage = latest ? (latest.messages?.join(' ') ?? latest.type) : action.status;
 
 	return {
 		controllerId: target.controllerId,

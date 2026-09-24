@@ -1,8 +1,6 @@
 import * as React from 'react';
+import { DEPLOYMENT_PIPELINE, type PipelineStage, TONE_TEXT } from '@/lib/design/tokens';
 import { cn } from '@/lib/utils';
-import { DEPLOYMENT_PIPELINE, type PipelineStage } from '@/lib/design/tokens';
-import { TONE_TEXT } from '@/lib/design/tokens';
-import { SHAPE_CLASS } from './signal';
 
 /**
  * <Pipeline> — the SIGNATURE component of the dashboard.
@@ -54,10 +52,7 @@ export function Pipeline({ counts = {}, stages = DEPLOYMENT_PIPELINE, className 
 							</div>
 						</div>
 						{!isLast && (
-							<div
-								className="mx-2 mb-4 mt-auto h-px flex-1 self-end bg-border"
-								aria-hidden
-							/>
+							<div className="mx-2 mb-4 mt-auto h-px flex-1 self-end bg-border" aria-hidden />
 						)}
 					</React.Fragment>
 				);

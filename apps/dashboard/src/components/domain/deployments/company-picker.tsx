@@ -1,15 +1,8 @@
 'use client';
 
+import { Building2, Check, ChevronsUpDown, Layers } from 'lucide-react';
 import * as React from 'react';
-import { Check, ChevronsUpDown, Layers, Building2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { Company } from '@/types/domain';
 import { Button } from '@/components/ui/button';
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from '@/components/ui/popover';
 import {
 	Command,
 	CommandEmpty,
@@ -18,6 +11,9 @@ import {
 	CommandItem,
 	CommandList,
 } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import type { Company } from '@/types/domain';
 
 /**
  * <CompanyPicker> — a searchable company selector with an explicit
@@ -52,7 +48,7 @@ export function CompanyPicker({
 		? 'Carregando…'
 		: isAll
 			? 'Todas as empresas'
-			: selected?.name ?? 'Selecionar empresa';
+			: (selected?.name ?? 'Selecionar empresa');
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -87,12 +83,7 @@ export function CompanyPicker({
 									setOpen(false);
 								}}
 							>
-								<Check
-									className={cn(
-										'mr-2 h-4 w-4',
-										isAll ? 'opacity-100' : 'opacity-0',
-									)}
-								/>
+								<Check className={cn('mr-2 h-4 w-4', isAll ? 'opacity-100' : 'opacity-0')} />
 								<Layers className="mr-2 h-4 w-4 text-muted-foreground" />
 								Todas as empresas
 							</CommandItem>
@@ -108,10 +99,7 @@ export function CompanyPicker({
 									}}
 								>
 									<Check
-										className={cn(
-											'mr-2 h-4 w-4',
-											value === c.id ? 'opacity-100' : 'opacity-0',
-										)}
+										className={cn('mr-2 h-4 w-4', value === c.id ? 'opacity-100' : 'opacity-0')}
 									/>
 									<Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
 									<span className="truncate">{c.name}</span>

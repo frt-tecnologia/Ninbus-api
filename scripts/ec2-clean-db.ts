@@ -14,28 +14,28 @@
  *   bun run scripts/ec2-clean-db.ts
  */
 
-import { db, closeDatabase } from '@common/db';
+import { closeDatabase, db } from '@common/db';
 import { sql } from 'drizzle-orm';
 
 // ─── hawkBit DB tables (standard hawkBit 1.0.3 schema) ───
 const HAWKBIT_TABLES = [
-	'sp_action_status',          // action status history
-	'sp_action',                 // deployment actions
-	'sp_target_status',          // target status history
-	'sp_target_update_status',   // target update status
-	'sp_target_security_token',  // security tokens
-	'sp_target_filter_query',    // target filter queries
-	'sp_tag',                    // target/software module tags
-	'sp_target_tag',             // target ↔ tag
-	'sp_software_module_tag',    // software module ↔ tag
-	'sp_distribution_set_tag',   // distribution set ↔ tag
-	'sp_distribution_set_type',  // distribution set types (keep? has required defaults)
-	'sp_distribution_set',       // distribution sets
+	'sp_action_status', // action status history
+	'sp_action', // deployment actions
+	'sp_target_status', // target status history
+	'sp_target_update_status', // target update status
+	'sp_target_security_token', // security tokens
+	'sp_target_filter_query', // target filter queries
+	'sp_tag', // target/software module tags
+	'sp_target_tag', // target ↔ tag
+	'sp_software_module_tag', // software module ↔ tag
+	'sp_distribution_set_tag', // distribution set ↔ tag
+	'sp_distribution_set_type', // distribution set types (keep? has required defaults)
+	'sp_distribution_set', // distribution sets
 	'sp_distribution_set_type_element', // DS type → SM type mapping
-	'sp_software_module',        // software modules
-	'sp_artifact',               // artifact binaries metadata
-	'sp_target',                 // targets (devices)
-	'sp_target_attributes',      // target attributes
+	'sp_software_module', // software modules
+	'sp_artifact', // artifact binaries metadata
+	'sp_target', // targets (devices)
+	'sp_target_attributes', // target attributes
 ];
 
 async function cleanNinbusApiDb() {
@@ -92,17 +92,19 @@ async function cleanHawkbitDb() {
 
 	try {
 		// Truncate all hawkBit tables in one statement
-		const tableList = HAWKBIT_TABLES.map(t => `"public"."${t}"`).join(', ');
+		const tableList = HAWKBIT_TABLES.map((t) => `"public"."${t}"`).join(', ');
 
 		await hawkbitDb.execute(sql.raw(`TRUNCATE TABLE ${tableList} CASCADE`));
 		console.log('  ✅ All hawkBit tables truncated');
 
 		// Recreate required default distribution set type (hawkBit needs this)
-		await hawkbitDb.execute(sql.raw(`
+		await hawkbitDb.execute(
+			sql.raw(`
 			INSERT INTO sp_distribution_set_type (id, created_at, last_modified_at, name, key, deleted)
 			VALUES (nextval('sp_distribution_set_type_seq'), now(), now(), 'os', 'os', false)
 			ON CONFLICT DO NOTHING
-		`));
+		`),
+		);
 		console.log('  ✅ Default DS type "os" ensured');
 	} catch (error: any) {
 		// Some tables might not exist depending on hawkBit version/config

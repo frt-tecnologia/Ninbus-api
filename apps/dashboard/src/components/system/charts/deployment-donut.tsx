@@ -1,16 +1,11 @@
 'use client';
 
-import * as React from 'react';
+import type * as React from 'react';
 import { Pie, PieChart, ResponsiveContainer } from 'recharts';
-import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SignalTone } from '@/lib/design/tokens';
-import { TONE_FILL, BRAND_FILL, TONE_TEXT_CLASS, type BrandColor } from './shared';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { BRAND_FILL, type BrandColor, TONE_FILL, TONE_TEXT_CLASS } from './shared';
 
 export interface DonutSegment {
 	value: number;
@@ -69,7 +64,13 @@ export function DeploymentDonut({
 				<ChartShell size={size}>
 					<PieChart>
 						<Pie
-							data={loading ? SKELETON_SLICES : positive.length ? positive : [{ ...data[0], value: 1, fill: 'hsl(var(--muted))' }]}
+							data={
+								loading
+									? SKELETON_SLICES
+									: positive.length
+										? positive
+										: [{ ...data[0], value: 1, fill: 'hsl(var(--muted))' }]
+							}
 							dataKey="value"
 							nameKey="label"
 							innerRadius={innerRadius}

@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 /**
  * Middleware — lightweight auth check before rendering.
@@ -13,7 +13,8 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 export function middleware(req: NextRequest) {
 	const { pathname } = req.nextUrl;
-	const isAdminArea = pathname.startsWith('/') && !pathname.startsWith('/auth/') && !pathname.startsWith('/api/');
+	const isAdminArea =
+		pathname.startsWith('/') && !pathname.startsWith('/auth/') && !pathname.startsWith('/api/');
 	if (!isAdminArea) return NextResponse.next();
 
 	const hasCookie = req.cookies.has('auth.session_token') || req.cookies.has('auth.session-token');

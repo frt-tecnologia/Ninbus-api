@@ -1,16 +1,16 @@
 'use client';
 
+import { Calendar, Check, ChevronDown, Clock } from 'lucide-react';
 import * as React from 'react';
-import { Calendar, ChevronDown, Check, Clock } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import {
-	type TimeRange,
-	useRange,
-	PRESETS,
 	CUSTOM_LABEL,
+	PRESETS,
+	type TimeRange,
 	toLocalInput,
+	useRange,
 } from './time-range-context';
 
 /**
@@ -105,7 +105,9 @@ function Picker({
 								}}
 								className={cn(
 									'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-									active ? 'bg-primary/10 font-medium text-foreground' : 'text-muted-foreground hover:bg-secondary',
+									active
+										? 'bg-primary/10 font-medium text-foreground'
+										: 'text-muted-foreground hover:bg-secondary',
 								)}
 							>
 								<span className="flex items-center gap-2">
@@ -130,19 +132,25 @@ function Picker({
 						onClick={() => setShowCustom((s) => !s)}
 						className={cn(
 							'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-							range.label === CUSTOM_LABEL ? 'bg-primary/10 font-medium text-foreground' : 'text-muted-foreground hover:bg-secondary',
+							range.label === CUSTOM_LABEL
+								? 'bg-primary/10 font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary',
 						)}
 					>
 						<span className="flex items-center gap-2">
 							<Calendar className="h-3.5 w-3.5" />
 							{CUSTOM_LABEL}
 						</span>
-						{(range.label === CUSTOM_LABEL || showCustom) && <Check className="h-3.5 w-3.5 text-primary" />}
+						{(range.label === CUSTOM_LABEL || showCustom) && (
+							<Check className="h-3.5 w-3.5 text-primary" />
+						)}
 					</button>
 					{showCustom && (
 						<div className="mt-1.5 space-y-2 rounded-md bg-secondary/40 p-2">
 							<label className="block">
-								<span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">De</span>
+								<span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+									De
+								</span>
 								<input
 									type="datetime-local"
 									value={fromVal}
@@ -151,7 +159,9 @@ function Picker({
 								/>
 							</label>
 							<label className="block">
-								<span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Até</span>
+								<span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+									Até
+								</span>
 								<input
 									type="datetime-local"
 									value={toVal}
@@ -159,7 +169,13 @@ function Picker({
 									className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
 								/>
 							</label>
-							<Button type="button" size="sm" className="h-7 w-full text-xs" onClick={applyCustom} disabled={!fromVal || !toVal}>
+							<Button
+								type="button"
+								size="sm"
+								className="h-7 w-full text-xs"
+								onClick={applyCustom}
+								disabled={!fromVal || !toVal}
+							>
 								Aplicar
 							</Button>
 						</div>

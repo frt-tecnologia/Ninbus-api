@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react';
-import { requireAdmin } from '@/lib/auth/session';
+import type { ReactNode } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
+import { requireAdmin } from '@/lib/auth/session';
 
 /**
  * Admin layout — wraps every /admin/* page.
@@ -14,11 +14,7 @@ import { AppShell } from '@/components/layout/app-shell';
  */
 export const dynamic = 'force-dynamic';
 
-export default async function AdminLayout({
-	children,
-}: {
-	children: ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
 	const user = await requireAdmin();
 	return <AppShell userEmail={user.email}>{children}</AppShell>;
 }

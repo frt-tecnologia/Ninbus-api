@@ -1,13 +1,9 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { signOut } from '@/lib/auth/client';
 import { LogOut } from 'lucide-react';
-import {
-	Avatar,
-	AvatarFallback,
-} from '@/components/ui/avatar';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -16,6 +12,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { signOut } from '@/lib/auth/client';
 import { ROUTES } from '@/lib/routes';
 
 /**
@@ -32,10 +29,7 @@ export function UserMenu({ email }: { email: string }) {
 	const router = useRouter();
 	const [signingOut, setSigningOut] = React.useState(false);
 
-	const initials = (email || '?')
-		.split('@')[0]
-		.slice(0, 2)
-		.toUpperCase();
+	const initials = (email || '?').split('@')[0].slice(0, 2).toUpperCase();
 
 	async function handleSignOut() {
 		setSigningOut(true);
@@ -56,18 +50,14 @@ export function UserMenu({ email }: { email: string }) {
 		<DropdownMenu>
 			<DropdownMenuTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring">
 				<Avatar className="h-8 w-8 border border-border">
-					<AvatarFallback className="bg-secondary text-xs font-semibold">
-						{initials}
-					</AvatarFallback>
+					<AvatarFallback className="bg-secondary text-xs font-semibold">{initials}</AvatarFallback>
 				</Avatar>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-56">
 				<DropdownMenuLabel className="font-normal">
 					<div className="flex flex-col">
 						<span className="text-xs text-muted-foreground">Operador</span>
-						<span className="truncate font-mono text-xs text-foreground">
-							{email}
-						</span>
+						<span className="truncate font-mono text-xs text-foreground">{email}</span>
 					</div>
 				</DropdownMenuLabel>
 				<DropdownMenuSeparator />

@@ -9,10 +9,9 @@ import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
-import { normalizeSerial, isNinbusSerial } from '@common/utils/serial-number';
+import { isNinbusSerial, normalizeSerial } from '@common/utils/serial-number';
 import { and, eq, isNull } from 'drizzle-orm';
 import { syncTargetName } from './name-sync';
-
 
 // ---------------------------------------------------------------------------
 // Factory provisioning — creates hawkBit target + local unclaimed device
@@ -27,17 +26,31 @@ export async function provisionDevice(data: {
 	// Normalize serial number: dotted/hex → canonical hex + display
 	const normalized = normalizeSerial(data.serialNumber);
 	if (!normalized) {
-		return { success: false, device: null, error: 'Invalid serial number format. Expected 16-char uppercase hex (e.g. 255FFFFFFFFFFFF) or dotted byte pairs (e.g. 25.5F.FF.FF.FF.FF.FF.FF)' };
+		return {
+			success: false,
+			device: null,
+			error:
+				'Invalid serial number format. Expected 16-char uppercase hex (e.g. 255FFFFFFFFFFFF) or dotted byte pairs (e.g. 25.5F.FF.FF.FF.FF.FF.FF)',
+		};
 	}
 	if (!isNinbusSerial(normalized.hex)) {
-		return { success: false, device: null, error: `Serial number must be exactly 16 hex chars (8 bytes). Got ${normalized.hex.length} chars: "${normalized.hex}". Ninbus serials are always 8 bytes from EEPROM or STM32 UID fallback.` };
+		return {
+			success: false,
+			device: null,
+			error: `Serial number must be exactly 16 hex chars (8 bytes). Got ${normalized.hex.length} chars: "${normalized.hex}". Ninbus serials are always 8 bytes from EEPROM or STM32 UID fallback.`,
+		};
 	}
 
 	const serialHex = normalized.hex;
 	const serialDisplay = normalized.display;
 	const displayName = data.name || serialDisplay;
 
-	appLogger.info('[PROVISION] Normalized serial: "%s" → hex=%s, display=%s', data.serialNumber, serialHex, serialDisplay);
+	appLogger.info(
+		'[PROVISION] Normalized serial: "%s" → hex=%s, display=%s',
+		data.serialNumber,
+		serialHex,
+		serialDisplay,
+	);
 
 	// Check if serial number is already registered (by hex format)
 	const [existing] = await db.select().from(devices).where(eq(devices.serialNumber, serialHex));
@@ -48,19 +61,35 @@ export async function provisionDevice(data: {
 	// Create hawkBit target with factory deviceKey — controllerId MUST be hex format
 	if (hawkbitConfig.enabled) {
 		try {
-			await hawkbitTargets.create({ controllerId: serialHex, name: displayName, securityToken: data.deviceKey });
+			await hawkbitTargets.create({
+				controllerId: serialHex,
+				name: displayName,
+				securityToken: data.deviceKey,
+			});
 			appLogger.info('[PROVISION] Created hawkBit target: %s', serialHex);
 		} catch (error: any) {
 			// Target might already exist in hawkBit (e.g. device already polled)
-			appLogger.warn('[PROVISION] hawkBit target creation for %s: %s. Continuing.', serialHex, error?.message ?? error);
+			appLogger.warn(
+				'[PROVISION] hawkBit target creation for %s: %s. Continuing.',
+				serialHex,
+				error?.message ?? error,
+			);
 		}
 	}
 
 	// Insert into local DB — unclaimed, no company
-	const [device] = await db.insert(devices).values({
-		companyId: null, name: displayName, serialNumber: serialHex, serialDisplay: serialDisplay,
-		hawkbitTargetId: serialHex, status: 'unclaimed', createdBy: data.userId,
-	}).returning();
+	const [device] = await db
+		.insert(devices)
+		.values({
+			companyId: null,
+			name: displayName,
+			serialNumber: serialHex,
+			serialDisplay: serialDisplay,
+			hawkbitTargetId: serialHex,
+			status: 'unclaimed',
+			createdBy: data.userId,
+		})
+		.returning();
 
 	if (!device) return { success: false, device: null, error: 'Failed to create device' };
 	return { success: true, device };
@@ -113,10 +142,16 @@ export async function claimDevice(data: {
 
 	// Claim the unclaimed device
 	const displayName = data.name || existing.name;
-	const [claimed] = await db.update(devices).set({
-		companyId: data.companyId, name: displayName,
-		status: existing.hawkbitTargetId ? 'accepted' : 'pending', updatedAt: new Date(),
-	}).where(eq(devices.id, existing.id)).returning();
+	const [claimed] = await db
+		.update(devices)
+		.set({
+			companyId: data.companyId,
+			name: displayName,
+			status: existing.hawkbitTargetId ? 'accepted' : 'pending',
+			updatedAt: new Date(),
+		})
+		.where(eq(devices.id, existing.id))
+		.returning();
 
 	// Propagate the user-chosen name to hawkBit so the deployment target list
 	// shows the same name as the device list. Best-effort — see syncTargetName.
@@ -124,7 +159,12 @@ export async function claimDevice(data: {
 		await syncTargetName(existing.hawkbitTargetId, displayName, 'claim');
 	}
 
-	appLogger.info('[CLAIM] Device %s (%s) claimed by company %s', serialHex, serialDisplay, data.companyId);
+	appLogger.info(
+		'[CLAIM] Device %s (%s) claimed by company %s',
+		serialHex,
+		serialDisplay,
+		data.companyId,
+	);
 	return { success: true, device: claimed };
 }
 
@@ -170,9 +210,7 @@ export async function linkDevice(
 				name: device.name,
 				securityToken: deviceKey,
 			});
-			appLogger.info(
-				`[PROVISION] Linked device ${device.id} → hawkBit target ${controllerId}`,
-			);
+			appLogger.info(`[PROVISION] Linked device ${device.id} → hawkBit target ${controllerId}`);
 		} catch (error: any) {
 			appLogger.error(
 				`[PROVISION] hawkBit target creation failed for ${controllerId}: ${error?.message ?? error}`,

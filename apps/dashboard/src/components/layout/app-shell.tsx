@@ -1,10 +1,10 @@
 'use client';
 
+import { Menu } from 'lucide-react';
+import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { registerServiceWorker } from '@/lib/pwa/use-pwa-install';
-import { Menu } from 'lucide-react';
-import * as React from 'react';
 import { Brand } from './brand';
 import { InstallAppButton } from './install-app-button';
 import { SidebarNav } from './sidebar-nav';

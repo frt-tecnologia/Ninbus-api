@@ -1,6 +1,9 @@
 'use client';
 
+import { FileSpreadsheet, FileText } from 'lucide-react';
+import * as React from 'react';
 import { type Column, DataTable } from '@/components/data/data-table';
+import { FirmwareForceCell } from '@/components/domain/firmware/firmware-force-dialog';
 import { Id, Relative, SearchField, Signal, Time, Toolbar } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,10 +17,7 @@ import { connectionSignal, deviceSignal, firmwareSignal } from '@/lib/design/tok
 import { exportToExcel, exportToPdf } from '@/lib/export';
 import { formatDateTime } from '@/lib/utils';
 import type { Company, Device } from '@/types/domain';
-import { FileSpreadsheet, FileText } from 'lucide-react';
-import * as React from 'react';
 import { DeviceCategoryEditor } from './device-category-editor';
-import { FirmwareForceCell } from '@/components/domain/firmware/firmware-force-dialog';
 
 /**
  * Dense device table — the operator's primary fleet view. Serials/keys in mono,
@@ -132,7 +132,10 @@ export function DeviceTable({
 		{ header: 'Conexão', accessor: (d: Device) => connectionSignal(d.connectionStatus).label },
 		{ header: 'Firmware', accessor: (d: Device) => d.firmwareVersion ?? '—' },
 		{ header: 'Firmware controlador', accessor: (d: Device) => d.controllerFirmwareVersion ?? '—' },
-		{ header: 'Situação firmware', accessor: (d: Device) => firmwareSignal(d.firmwareStatus).label },
+		{
+			header: 'Situação firmware',
+			accessor: (d: Device) => firmwareSignal(d.firmwareStatus).label,
+		},
 		{ header: 'Última conexão', accessor: (d: Device) => formatDateTime(d.lastSeenAt) },
 		{ header: 'Adicionado', accessor: (d: Device) => formatDateTime(d.createdAt) },
 	];

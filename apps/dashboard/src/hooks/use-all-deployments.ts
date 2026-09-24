@@ -29,6 +29,7 @@ export function useAllDeployments(companies: Array<{ id: string }>) {
 	// must do the same or the deployments + overview pages go stale on actions.
 	useEffect(() => subscribeData(() => setNonce((n) => n + 1)), []);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `companies` is intentionally captured — the effect re-runs only when the stable company-id key or the mutation-bus nonce changes, avoiding refetch loops on every render.
 	useEffect(() => {
 		if (!companies.length) {
 			setDeployments([]);
@@ -64,7 +65,6 @@ export function useAllDeployments(companies: Array<{ id: string }>) {
 		return () => {
 			active = false;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [key, nonce]);
 
 	const byCompany = groupByCompany(deployments);
@@ -76,7 +76,9 @@ function groupByCompany(deps: EnrichedDeployment[]): Record<string, EnrichedDepl
 	for (const d of deps) {
 		const cid = d.companyId;
 		if (!cid) continue;
-		(map[cid] ??= []).push(d);
+		const bucket = map[cid];
+		if (bucket) bucket.push(d);
+		else map[cid] = [d];
 	}
 	return map;
 }

@@ -1,5 +1,5 @@
 import { companies, companyMembers, pendingCompanyMembers } from '@common/db/schema';
-import { ErrorResponseSchema, dateTimeString } from '@common/schemas';
+import { dateTimeString, ErrorResponseSchema } from '@common/schemas';
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-typebox';
 import { t } from 'elysia';
 

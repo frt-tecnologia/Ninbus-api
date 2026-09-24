@@ -1,5 +1,8 @@
 'use client';
 
+import { UserPlus } from 'lucide-react';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -21,9 +24,6 @@ import {
 import { useFetch } from '@/hooks/useFetch';
 import { companyService, designationService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
-import { UserPlus } from 'lucide-react';
-import * as React from 'react';
-import { toast } from 'sonner';
 
 const ROLES = [
 	{ value: 'viewer', label: 'Visualizador' },

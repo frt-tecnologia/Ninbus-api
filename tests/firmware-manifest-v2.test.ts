@@ -13,8 +13,8 @@ import { p256 } from '@noble/curves/nist.js';
 import {
 	buildNinbusTar,
 	buildSignedManifest,
-	packVersionString,
 	type ManifestV2Options,
+	packVersionString,
 } from '../src/modules/firmware/ota-signer';
 import { unpackVersionText, validateCanonicalTar } from '../src/modules/firmware/tar-validator';
 

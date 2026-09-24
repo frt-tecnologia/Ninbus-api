@@ -1,4 +1,4 @@
-import * as React from 'react';
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -83,7 +83,6 @@ function humanize(ms: number): string {
 	const min = Math.round(sec / 60);
 	const hr = Math.round(min / 60);
 	const day = Math.round(hr / 24);
-	const suffix = ms >= 0 ? 'atrás' : 'agora';
 	if (sec < 45) return 'agora';
 	if (min < 60) return `há ${min} min`;
 	if (hr < 24) return `há ${hr} h`;

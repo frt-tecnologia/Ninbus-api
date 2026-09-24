@@ -1,8 +1,11 @@
 'use client';
 
+import { Cpu, FileSpreadsheet, FileText, HardDrive, Package } from 'lucide-react';
+import * as React from 'react';
 import { type Column, DataTable } from '@/components/data/data-table';
 import { Id, Relative, SearchField, Signal, Time, Toolbar } from '@/components/system';
 import { Button } from '@/components/ui/button';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import {
 	Select,
 	SelectContent,
@@ -10,20 +13,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import { exportToExcel, exportToPdf } from '@/lib/export';
 import { firmwareSignal } from '@/lib/design/tokens';
+import { exportToExcel, exportToPdf } from '@/lib/export';
+import { compareVersionTags } from '@/lib/semver';
 import { formatDateTime } from '@/lib/utils';
 import type { FirmwareRelease } from '@/types/domain';
-import { Cpu, FileSpreadsheet, FileText, HardDrive, Package } from 'lucide-react';
-import {
-	Empty,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyTitle,
-} from '@/components/ui/empty';
-import * as React from 'react';
 import { FirmwareGateActions, ReleaseStatusBadge } from './firmware-gate-actions';
-import { compareVersionTags } from '@/lib/semver';
 
 /**
  * Factory firmware catalog — chronological list (newest first from the API)
@@ -102,17 +97,13 @@ export function FirmwareTable({
 			header: 'Mais recente',
 			sortValue: (r) =>
 				releases.some(
-					(o) =>
-						o.artifactType === r.artifactType &&
-						compareVersionTags(o.version, r.version) > 0,
+					(o) => o.artifactType === r.artifactType && compareVersionTags(o.version, r.version) > 0,
 				)
 					? 'superseded'
 					: 'latest',
 			render: (r) => {
 				const superseded = releases.some(
-					(o) =>
-						o.artifactType === r.artifactType &&
-						compareVersionTags(o.version, r.version) > 0,
+					(o) => o.artifactType === r.artifactType && compareVersionTags(o.version, r.version) > 0,
 				);
 				return <Signal token={firmwareSignal(superseded ? 'superseded' : 'latest')} size="sm" />;
 			},
@@ -231,7 +222,9 @@ export function FirmwareTable({
 								<Package className="opacity-60" />
 							</div>
 							<EmptyTitle>
-								{releases.length === 0 ? 'Nenhum firmware no catálogo' : 'Nenhuma release encontrada'}
+								{releases.length === 0
+									? 'Nenhum firmware no catálogo'
+									: 'Nenhuma release encontrada'}
 							</EmptyTitle>
 							<EmptyDescription>
 								{releases.length === 0

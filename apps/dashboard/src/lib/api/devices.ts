@@ -1,11 +1,11 @@
-import { http } from './http';
 import type {
+	ActionResponse,
 	Device,
 	DeviceCategory,
 	ListResponse,
 	ProvisionDeviceInput,
-	ActionResponse,
 } from '@/types/domain';
+import { http } from './http';
 
 /**
  * Device service — wraps all device-related API calls.
@@ -22,9 +22,7 @@ export const deviceService = {
 	},
 
 	async listByCompany(companyId: string): Promise<ListResponse<Device>> {
-		return http.get<ListResponse<Device>>(
-			`/admin/companies/${companyId}/devices`,
-		);
+		return http.get<ListResponse<Device>>(`/admin/companies/${companyId}/devices`);
 	},
 
 	async provision(input: ProvisionDeviceInput): Promise<ActionResponse> {
@@ -32,9 +30,7 @@ export const deviceService = {
 	},
 
 	async deprovision(serialNumber: string): Promise<ActionResponse> {
-		return http.delete<ActionResponse>(
-			`/devices/deprovision/${encodeURIComponent(serialNumber)}`,
-		);
+		return http.delete<ActionResponse>(`/devices/deprovision/${encodeURIComponent(serialNumber)}`);
 	},
 
 	/** Force-refresh every device's connection status from hawkBit. */
@@ -43,10 +39,7 @@ export const deviceService = {
 	},
 
 	/** List the categories (groups) assigned to a device. */
-	async listCategories(
-		companyId: string,
-		deviceId: string,
-	): Promise<ListResponse<DeviceCategory>> {
+	async listCategories(companyId: string, deviceId: string): Promise<ListResponse<DeviceCategory>> {
 		return http.get<ListResponse<DeviceCategory>>(
 			`/companies/${companyId}/devices/${deviceId}/categories`,
 		);
@@ -58,9 +51,8 @@ export const deviceService = {
 		deviceId: string,
 		categoryIds: string[],
 	): Promise<ActionResponse> {
-		return http.put<ActionResponse>(
-			`/companies/${companyId}/devices/${deviceId}/categories`,
-			{ categoryIds },
-		);
+		return http.put<ActionResponse>(`/companies/${companyId}/devices/${deviceId}/categories`, {
+			categoryIds,
+		});
 	},
 };

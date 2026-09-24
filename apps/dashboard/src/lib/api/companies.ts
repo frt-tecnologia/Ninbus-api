@@ -1,12 +1,12 @@
-import { http } from './http';
 import type {
+	ActionResponse,
 	Company,
 	CompanyDetail,
 	CompanyStatusUpdate,
 	CreateCompanyInput,
 	ListResponse,
-	ActionResponse,
 } from '@/types/domain';
+import { http } from './http';
 
 /**
  * Company service — platform-level company management (super admin).
@@ -25,29 +25,18 @@ export const companyService = {
 	},
 
 	async get(companyId: string): Promise<CompanyDetail> {
-		return http.get<{ data: CompanyDetail }>(
-			`/admin/companies/${companyId}`,
-		).then((r) => r.data);
+		return http.get<{ data: CompanyDetail }>(`/admin/companies/${companyId}`).then((r) => r.data);
 	},
 
 	async create(input: CreateCompanyInput): Promise<ActionResponse> {
 		return http.post<ActionResponse>('/companies', input);
 	},
 
-	async setStatus(
-		companyId: string,
-		status: CompanyStatusUpdate,
-	): Promise<ActionResponse> {
-		return http.put<ActionResponse>(
-			`/admin/companies/${companyId}/status`,
-			status,
-		);
+	async setStatus(companyId: string, status: CompanyStatusUpdate): Promise<ActionResponse> {
+		return http.put<ActionResponse>(`/admin/companies/${companyId}/status`, status);
 	},
 
-	async update(
-		companyId: string,
-		data: Partial<Pick<Company, 'name'>>,
-	): Promise<ActionResponse> {
+	async update(companyId: string, data: Partial<Pick<Company, 'name'>>): Promise<ActionResponse> {
 		return http.put<ActionResponse>(`/companies/${companyId}`, data);
 	},
 

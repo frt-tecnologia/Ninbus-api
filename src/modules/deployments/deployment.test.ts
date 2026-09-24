@@ -8,23 +8,20 @@
  * - DS statistics summarization
  * - DDI readiness check logic
  */
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
-	parseDownloadProgress,
-	isInstallMessage,
-	isDownloadMessage,
-	isAssignmentMessage,
-	isRetrievedMessage,
-	isRebootMessage,
 	actionStatusToPhase,
-	enrichActionStatus,
 	computeLatestPhase,
+	enrichActionStatus,
 	getLatestProgress,
+	isAssignmentMessage,
+	isDownloadMessage,
+	isInstallMessage,
+	isRebootMessage,
+	isRetrievedMessage,
+	parseDownloadProgress,
 } from '@common/types/deployment-status-helpers';
-import {
-	computeDeploymentStatus,
-	summarizeStatistics,
-} from '@modules/deployments/enrichment';
+import { computeDeploymentStatus, summarizeStatistics } from '@modules/deployments/enrichment';
 
 // ---------------------------------------------------------------------------
 // parseDownloadProgress
@@ -367,9 +364,7 @@ describe('computeLatestPhase', () => {
 	});
 
 	test('detects downloading from running with download message', () => {
-		const history = [
-			{ type: 'running' as const, messages: ['downloading 50%'] },
-		];
+		const history = [{ type: 'running' as const, messages: ['downloading 50%'] }];
 		expect(computeLatestPhase(history)).toBe('downloading');
 	});
 
@@ -425,16 +420,12 @@ describe('getLatestProgress', () => {
 	});
 
 	test('returns 0 if download type exists but no percentage', () => {
-		const history = [
-			{ type: 'download' as const, messages: ['downloading artifact'] },
-		];
+		const history = [{ type: 'download' as const, messages: ['downloading artifact'] }];
 		expect(getLatestProgress(history)).toBe(0);
 	});
 
 	test('returns null if no download entries', () => {
-		const history = [
-			{ type: 'running' as const, messages: ['installing NFX'] },
-		];
+		const history = [{ type: 'running' as const, messages: ['installing NFX'] }];
 		expect(getLatestProgress(history)).toBeNull();
 	});
 });
@@ -476,7 +467,9 @@ describe('computeDeploymentStatus', () => {
 	});
 
 	test('returns canceled for dsDeleted option', () => {
-		expect(computeDeploymentStatus({ FINISHED: 5, total: 5 }, 5, { dsDeleted: true })).toBe('canceled');
+		expect(computeDeploymentStatus({ FINISHED: 5, total: 5 }, 5, { dsDeleted: true })).toBe(
+			'canceled',
+		);
 	});
 
 	test('is case-insensitive for status keys', () => {
@@ -533,23 +526,31 @@ describe('DDI v2 feedback flow', () => {
 			{ id: 7, type: 'downloaded' as const, messages: ['download complete'] },
 			{ id: 8, type: 'running' as const, messages: ['processing artifact'] },
 			{ id: 9, type: 'running' as const, messages: ['installing NFX to controller'] },
-			{ id: 10, type: 'running' as const, messages: ['NFX staged, rebooting to apply to controller'] },
-			{ id: 11, type: 'finished' as const, messages: ['installed successfully, controller verified OK'] },
+			{
+				id: 10,
+				type: 'running' as const,
+				messages: ['NFX staged, rebooting to apply to controller'],
+			},
+			{
+				id: 11,
+				type: 'finished' as const,
+				messages: ['installed successfully, controller verified OK'],
+			},
 		];
 
 		// Verify each status produces the expected phase
 		const enriched = statuses.map(enrichActionStatus);
-		expect(enriched[0]!.phase).toBe('installing');  // deployment started
-		expect(enriched[1]!.phase).toBe('downloading');  // downloading artifact
-		expect(enriched[2]!.progress).toBe(25);         // 25%
-		expect(enriched[3]!.progress).toBe(50);         // 50%
-		expect(enriched[4]!.progress).toBe(75);         // 75%
-		expect(enriched[5]!.progress).toBe(100);        // 100%
-		expect(enriched[6]!.phase).toBe('downloaded');  // download complete
-		expect(enriched[7]!.phase).toBe('installing');  // processing artifact
-		expect(enriched[8]!.phase).toBe('installing');  // installing NFX
-		expect(enriched[9]!.phase).toBe('installing');  // NFX staged, rebooting
-		expect(enriched[10]!.phase).toBe('installed');   // installed successfully
+		expect(enriched[0]!.phase).toBe('installing'); // deployment started
+		expect(enriched[1]!.phase).toBe('downloading'); // downloading artifact
+		expect(enriched[2]!.progress).toBe(25); // 25%
+		expect(enriched[3]!.progress).toBe(50); // 50%
+		expect(enriched[4]!.progress).toBe(75); // 75%
+		expect(enriched[5]!.progress).toBe(100); // 100%
+		expect(enriched[6]!.phase).toBe('downloaded'); // download complete
+		expect(enriched[7]!.phase).toBe('installing'); // processing artifact
+		expect(enriched[8]!.phase).toBe('installing'); // installing NFX
+		expect(enriched[9]!.phase).toBe('installing'); // NFX staged, rebooting
+		expect(enriched[10]!.phase).toBe('installed'); // installed successfully
 
 		// Latest phase should be installed
 		expect(computeLatestPhase(statuses.reverse())).toBe('installed');
@@ -559,7 +560,11 @@ describe('DDI v2 feedback flow', () => {
 		const statuses = [
 			{ id: 1, type: 'running' as const, messages: ['deployment started'] },
 			{ id: 2, type: 'download' as const, messages: ['downloading artifact'] },
-			{ id: 3, type: 'error' as const, messages: ['E004: controller decompression failed, config invalid'] },
+			{
+				id: 3,
+				type: 'error' as const,
+				messages: ['E004: controller decompression failed, config invalid'],
+			},
 		];
 
 		const enriched = statuses.map(enrichActionStatus);
@@ -571,9 +576,7 @@ describe('DDI v2 feedback flow', () => {
 	});
 
 	test('download failure produces error phase', () => {
-		const statuses = [
-			{ id: 1, type: 'error' as const, messages: ['download failed'] },
-		];
+		const statuses = [{ id: 1, type: 'error' as const, messages: ['download failed'] }];
 
 		expect(enrichActionStatus(statuses[0]!).phase).toBe('error');
 	});
@@ -586,15 +589,23 @@ describe('deployment status after deletion', () => {
 	test('deleted DS returns canceled status', () => {
 		// When a DS is deleted, computeDeploymentStatus should return 'canceled'
 		// even if the DS had finished targets
-		expect(computeDeploymentStatus({ FINISHED: 5, total: 5 }, 5, { dsDeleted: true })).toBe('canceled');
+		expect(computeDeploymentStatus({ FINISHED: 5, total: 5 }, 5, { dsDeleted: true })).toBe(
+			'canceled',
+		);
 	});
 
 	test('deleted DS with active targets returns canceled', () => {
-		expect(computeDeploymentStatus({ RUNNING: 5, total: 5 }, 5, { dsDeleted: true })).toBe('canceled');
+		expect(computeDeploymentStatus({ RUNNING: 5, total: 5 }, 5, { dsDeleted: true })).toBe(
+			'canceled',
+		);
 	});
 
 	test('deleted DS with mixed status returns canceled', () => {
-		expect(computeDeploymentStatus({ FINISHED: 2, DOWNLOAD: 2, ERROR: 1, total: 5 }, 5, { dsDeleted: true })).toBe('canceled');
+		expect(
+			computeDeploymentStatus({ FINISHED: 2, DOWNLOAD: 2, ERROR: 1, total: 5 }, 5, {
+				dsDeleted: true,
+			}),
+		).toBe('canceled');
 	});
 
 	test('active deployment with all finished shows completed', () => {
@@ -606,7 +617,7 @@ describe('deployment status after deletion', () => {
 // ---------------------------------------------------------------------------
 // Status Protection — prevents sync from overwriting post-deletion state
 // ---------------------------------------------------------------------------
-import { protectTargetStatuses, getProtectedStatus } from '@modules/devices/sync-helpers';
+import { getProtectedStatus, protectTargetStatuses } from '@modules/devices/sync-helpers';
 
 describe('status protection after deployment deletion', () => {
 	test('protectTargetStatuses enforces status for protected targets', () => {
@@ -625,7 +636,6 @@ describe('status protection after deployment deletion', () => {
 		// Immediately should be protected
 		expect(getProtectedStatus('TARGET_EXPIRE')).toBe('in_sync');
 		// After a small delay, should expire
-		const { setTimeout } = require('timers/promises');
 		// Use a sync approach — just check that TTL mechanism exists
 		// The real test is that the protection map is checked with expiry
 	});

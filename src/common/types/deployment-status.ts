@@ -53,9 +53,18 @@
 // ---------------------------------------------------------------------------
 
 export const HAWKBIT_ACTION_STATUS_TYPES = [
-	'retrieved', 'running', 'download', 'downloaded', 'finished',
-	'error', 'warning', 'canceled', 'canceling', 'cancel_rejected',
-	'scheduled', 'wait_for_confirmation',
+	'retrieved',
+	'running',
+	'download',
+	'downloaded',
+	'finished',
+	'error',
+	'warning',
+	'canceled',
+	'canceling',
+	'cancel_rejected',
+	'scheduled',
+	'wait_for_confirmation',
 ] as const;
 
 export type HawkbitActionStatusType = (typeof HAWKBIT_ACTION_STATUS_TYPES)[number];
@@ -65,7 +74,12 @@ export type HawkbitActionStatusType = (typeof HAWKBIT_ACTION_STATUS_TYPES)[numbe
 // ---------------------------------------------------------------------------
 
 export const DDI_EXECUTION_STATUS = [
-	'proceeding', 'canceled', 'scheduled', 'rejected', 'closed', 'downloaded',
+	'proceeding',
+	'canceled',
+	'scheduled',
+	'rejected',
+	'closed',
+	'downloaded',
 ] as const;
 export type DdiExecutionStatus = (typeof DDI_EXECUTION_STATUS)[number];
 
@@ -77,8 +91,16 @@ export type DdiResultStatus = (typeof DDI_RESULT_STATUS)[number];
 // ---------------------------------------------------------------------------
 
 export const DEPLOYMENT_PHASE_VALUES = [
-	'assigned', 'pending', 'downloading', 'downloaded', 'installing', 'rebooting',
-	'installed', 'error', 'canceled', 'unknown',
+	'assigned',
+	'pending',
+	'downloading',
+	'downloaded',
+	'installing',
+	'rebooting',
+	'installed',
+	'error',
+	'canceled',
+	'unknown',
 ] as const;
 export type DeploymentPhase = (typeof DEPLOYMENT_PHASE_VALUES)[number];
 

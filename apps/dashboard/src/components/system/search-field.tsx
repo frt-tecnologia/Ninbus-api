@@ -1,7 +1,7 @@
 'use client';
+import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Search, X } from 'lucide-react';
 
 /**
  * <SearchField> — reusable search input with a leading search icon and an

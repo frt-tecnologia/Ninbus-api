@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
 import { BRAND_LOGOS } from '@/lib/brand-logos';
+import { cn } from '@/lib/utils';
 
 /**
  * <Brand> — the "Logo Ninbus | FRT" lockup.
@@ -58,15 +58,11 @@ export function Brand({
 function BrandLockup({ className }: { className?: string }) {
 	return (
 		<div className={cn('flex items-center gap-2.5 leading-none', className)}>
-			<span className="text-sm font-semibold tracking-tight text-foreground">
-				Ninbus
-			</span>
+			<span className="text-sm font-semibold tracking-tight text-foreground">Ninbus</span>
 			<span aria-hidden className="text-muted-foreground/40">
 				|
 			</span>
-			<span className="text-sm font-semibold tracking-tight text-foreground">
-				FRT
-			</span>
+			<span className="text-sm font-semibold tracking-tight text-foreground">FRT</span>
 			{/* eslint-disable-next-line @next/next/no-img-element */}
 			<img
 				src={BRAND_LOGOS.frt}

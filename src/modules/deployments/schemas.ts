@@ -20,28 +20,39 @@ export const NINBUS_ARTIFACT_TYPE_VALUES = [
 	ARTIFACT_TYPE_NFX_CONFIGURATION,
 ] as const;
 
-export const createOtaDeploymentSchema = t.Object({
-	name: t.String({ minLength: 1, maxLength: 255 }),
-	artifactName: t.String({ minLength: 1, description: 'Artifact name or numeric SM ID' }),
-	artifactType: t.Union(
-		[
-			t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, { description: 'STM32F407 → NAND → Reboot' }),
-			t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, { description: 'LightDot → CAN Bus' }),
-			t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, { description: 'NFX/FRZ → CAN → LightDot' }),
-		],
-		{ description: 'Determines the update path on the embedded device.' },
-	),
-	version: t.Optional(t.String({ maxLength: 64 })),
-	deviceIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
-	categoryIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
-	allDevices: t.Optional(t.Boolean()),
-}, {
-	default: { name: 'Deployment', artifactName: 'sm-1', artifactType: 'firmware-ninbus', allDevices: true },
-});
+export const createOtaDeploymentSchema = t.Object(
+	{
+		name: t.String({ minLength: 1, maxLength: 255 }),
+		artifactName: t.String({ minLength: 1, description: 'Artifact name or numeric SM ID' }),
+		artifactType: t.Union(
+			[
+				t.Literal(ARTIFACT_TYPE_NINBUS_FIRMWARE, { description: 'STM32F407 → NAND → Reboot' }),
+				t.Literal(ARTIFACT_TYPE_CONTROLLER_FIRMWARE, { description: 'LightDot → CAN Bus' }),
+				t.Literal(ARTIFACT_TYPE_NFX_CONFIGURATION, { description: 'NFX/FRZ → CAN → LightDot' }),
+			],
+			{ description: 'Determines the update path on the embedded device.' },
+		),
+		version: t.Optional(t.String({ maxLength: 64 })),
+		deviceIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+		categoryIds: t.Optional(t.Array(t.String({ format: 'uuid' }))),
+		allDevices: t.Optional(t.Boolean()),
+	},
+	{
+		default: {
+			name: 'Deployment',
+			artifactName: 'sm-1',
+			artifactType: 'firmware-ninbus',
+			allDevices: true,
+		},
+	},
+);
 
-export const abortActionSchema = t.Object({
-	force: t.Optional(t.Boolean({ default: true })),
-}, { default: { force: true } });
+export const abortActionSchema = t.Object(
+	{
+		force: t.Optional(t.Boolean({ default: true })),
+	},
+	{ default: { force: true } },
+);
 
 // ── Deployment Status (computed from hawkBit action statistics) ─────
 
@@ -72,9 +83,7 @@ export const DEPLOYMENT_STATUS_VALUES = [
 ] as const;
 export type DeploymentStatusType = (typeof DEPLOYMENT_STATUS_VALUES)[number];
 
-export const DeploymentStatusSchema = t.Union(
-	DEPLOYMENT_STATUS_VALUES.map((s) => t.Literal(s)),
-);
+export const DeploymentStatusSchema = t.Union(DEPLOYMENT_STATUS_VALUES.map((s) => t.Literal(s)));
 
 export const DeploymentStatisticsSummarySchema = t.Object({
 	totalTargets: t.Number(),
@@ -95,7 +104,9 @@ export const DSMetadataSchema = t.Object({
 export const EnrichedDistributionSetSchema = t.Object({
 	id: t.Number(),
 	name: t.String(),
-	displayName: t.Optional(t.String({ description: 'User-visible deployment name extracted from DS description' })),
+	displayName: t.Optional(
+		t.String({ description: 'User-visible deployment name extracted from DS description' }),
+	),
 	/** Artifact version (semantic, e.g. "2.1.0"). Merged from local DB audit; falls back to DS version. */
 	version: t.Optional(t.String()),
 	type: t.Optional(t.String()),
@@ -204,11 +215,11 @@ export const ArtifactTypeListResponseSchema = t.Object({
 // ── Target Status Schemas (enriched with phase + progress) ───────────
 // (moved to trail-schemas.ts to keep this file under 250 lines)
 export {
+	EnrichedActionStatusEntrySchema,
 	TargetActionStatusSchema,
 	TargetDeploymentStatusSchema,
-	EnrichedActionStatusEntrySchema,
-	TargetStatusTrailDataSchema,
 	TargetStatusesResponseSchema,
+	TargetStatusTrailDataSchema,
 	TargetStatusTrailResponseSchema,
 } from './trail-schemas';
 

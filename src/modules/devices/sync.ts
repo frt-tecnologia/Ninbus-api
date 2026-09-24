@@ -20,12 +20,12 @@ import { eq } from 'drizzle-orm';
 import { syncFirmwareVersions } from './firmware-sync';
 import { fetchAllHawkBitTargets } from './sync-fetch';
 import {
+	markOverdueDevicesOffline,
 	type SyncState,
 	syncCompanyOnDemand,
 	syncNewTargets,
 	syncSingleDeviceSwr,
 } from './sync-helpers';
-import { markOverdueDevicesOffline } from './sync-helpers';
 import { syncHybrid, syncPeriodic } from './sync-strategies';
 
 // ---------------------------------------------------------------------------

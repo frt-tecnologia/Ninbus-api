@@ -2,7 +2,9 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { createHash, verify as cryptoVerify, generateKeyPairSync } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import tar from 'tar-stream';
+
 const tarMod = tar;
+
 import { p256 } from '@noble/curves/nist.js';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
@@ -49,22 +51,6 @@ function buildLeU32Pair(a: number, b: number): Buffer {
 	buf.writeUInt32LE(a, 0);
 	buf.writeUInt32LE(b, 4);
 	return buf;
-}
-
-function tarEntryNames(buffer: Buffer): Promise<string[]> {
-	return new Promise((resolve, reject) => {
-		const names: string[] = [];
-		const extract = tar.extract();
-		// @ts-expect-error tar-stream header typing
-		extract.on('entry', (header, stream, next) => {
-			names.push(header.name);
-			stream.resume();
-			next();
-		});
-		extract.on('finish', () => resolve(names));
-		extract.on('error', reject);
-		extract.end(buffer);
-	});
 }
 
 /** Pack a canonical v4 tar exactly like ota_pack.py (USTAR, mtime=0). */

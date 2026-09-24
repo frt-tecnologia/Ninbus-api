@@ -12,9 +12,12 @@ import type {
 } from './types';
 
 export const hawkbitDistributionSets = {
-	list(params?: { offset?: number; limit?: number; sort?: string; q?: string }): Promise<
-		HawkbitPagedResponse<HawkbitDistributionSet>
-	> {
+	list(params?: {
+		offset?: number;
+		limit?: number;
+		sort?: string;
+		q?: string;
+	}): Promise<HawkbitPagedResponse<HawkbitDistributionSet>> {
 		return hawkbitRequest({ method: 'GET', path: '/rest/v1/distributionsets', query: params });
 	},
 
@@ -63,7 +66,11 @@ export const hawkbitDistributionSets = {
 	},
 
 	/** Assign multiple targets to a distribution set (creates deployments). */
-	assignTargets(dsId: number, targetIds: string[], params?: { offline?: boolean; type?: 'forced' | 'soft' | 'timeforced' | 'downloadonly' }): Promise<void> {
+	assignTargets(
+		dsId: number,
+		targetIds: string[],
+		params?: { offline?: boolean; type?: 'forced' | 'soft' | 'timeforced' | 'downloadonly' },
+	): Promise<void> {
 		return hawkbitRequest({
 			method: 'POST',
 			path: `/rest/v1/distributionsets/${dsId}/assignedTargets`,

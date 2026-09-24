@@ -11,9 +11,12 @@ import type {
 } from './types';
 
 export const hawkbitSoftwareModules = {
-	list(params?: { offset?: number; limit?: number; sort?: string; q?: string }): Promise<
-		HawkbitPagedResponse<HawkbitSoftwareModule>
-	> {
+	list(params?: {
+		offset?: number;
+		limit?: number;
+		sort?: string;
+		q?: string;
+	}): Promise<HawkbitPagedResponse<HawkbitSoftwareModule>> {
 		return hawkbitRequest({ method: 'GET', path: '/rest/v1/softwaremodules', query: params });
 	},
 

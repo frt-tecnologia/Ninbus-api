@@ -1,9 +1,9 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { FlaskConical } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -14,7 +14,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { firmwareService, deviceService } from '@/lib/api';
+import { deviceService, firmwareService } from '@/lib/api';
 import type { FirmwareRelease } from '@/types/domain';
 
 /**
@@ -31,7 +31,9 @@ export function FirmwareTestDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const [devices, setDevices] = React.useState<Awaited<ReturnType<typeof deviceService.listAll>>['data']>([]);
+	const [devices, setDevices] = React.useState<
+		Awaited<ReturnType<typeof deviceService.listAll>>['data']
+	>([]);
 	const [selected, setSelected] = React.useState<Set<string>>(new Set());
 	const [query, setQuery] = React.useState('');
 	const [loading, setLoading] = React.useState(false);
@@ -49,9 +51,10 @@ export function FirmwareTestDialog({
 		}
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: fetch-once-when-opened — including loading/devices in deps would retry-loop on persistent fetch failures.
 	React.useEffect(() => {
 		if (open && devices.length === 0 && !loading) void load();
-	}, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [open]);
 
 	function toggle(id: string) {
 		setSelected((prev) => {
@@ -71,7 +74,8 @@ export function FirmwareTestDialog({
 		try {
 			const res = await firmwareService.deploy([...selected], undefined, release.id);
 			toast.success(
-				(res as { message?: string }).message ?? `Teste agendado para ${selected.size} dispositivo(s)`,
+				(res as { message?: string }).message ??
+					`Teste agendado para ${selected.size} dispositivo(s)`,
 			);
 			onOpenChange(false);
 			setSelected(new Set());
@@ -92,8 +96,8 @@ export function FirmwareTestDialog({
 						Testar release {release.version}
 					</DialogTitle>
 					<DialogDescription>
-						Envie esta release para dispositivos piloto antes de publicá-la. A atualização é
-						forçada (instala no próximo contato) e não depende de aprovação do usuário.
+						Envie esta release para dispositivos piloto antes de publicá-la. A atualização é forçada
+						(instala no próximo contato) e não depende de aprovação do usuário.
 					</DialogDescription>
 				</DialogHeader>
 				<Input
@@ -124,7 +128,9 @@ export function FirmwareTestDialog({
 						</li>
 					))}
 					{!loading && filtered.length === 0 && (
-						<li className="py-4 text-center text-muted-foreground">Nenhum dispositivo encontrado.</li>
+						<li className="py-4 text-center text-muted-foreground">
+							Nenhum dispositivo encontrado.
+						</li>
 					)}
 				</ul>
 				<DialogFooter>

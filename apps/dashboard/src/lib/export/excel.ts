@@ -16,11 +16,7 @@ export interface ExcelOptions {
 	sheetName?: string;
 }
 
-export function exportToExcel<T>(
-	rows: T[],
-	columns: ExcelColumn<T>[],
-	opts: ExcelOptions,
-): void {
+export function exportToExcel<T>(rows: T[], columns: ExcelColumn<T>[], opts: ExcelOptions): void {
 	const data = rows.map((row) => {
 		const obj: Record<string, string | number> = {};
 		for (const col of columns) {

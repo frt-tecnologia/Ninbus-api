@@ -8,15 +8,15 @@ import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ActionStatusListResponseSchema,
 	DeploymentStatisticsResponseSchema,
+	deploymentActionParams,
+	deploymentParams,
 	ErrorResponseSchema,
 	GenericActionResponseSchema,
 	RawActionListResponseSchema,
 	RawDiagnosticResponseSchema,
 	RawTargetListResponseSchema,
-	TargetStatusTrailResponseSchema,
 	TargetStatusesResponseSchema,
-	deploymentActionParams,
-	deploymentParams,
+	TargetStatusTrailResponseSchema,
 } from '@modules/deployments/schemas';
 import { Elysia, t } from 'elysia';
 import { classifyDeploymentError } from './errors';

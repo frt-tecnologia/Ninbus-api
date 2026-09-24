@@ -2,8 +2,8 @@ import { withAuth } from '@common/middleware/auth-guard';
 import {
 	ArtifactCategoryAssignResponseSchema,
 	ArtifactCategoryListResponseSchema,
-	ErrorResponseSchema,
 	assignArtifactCategoriesSchema,
+	ErrorResponseSchema,
 } from '@modules/artifacts/schemas';
 import { logActivity } from '@modules/observability/activity-service';
 import { Elysia, t } from 'elysia';

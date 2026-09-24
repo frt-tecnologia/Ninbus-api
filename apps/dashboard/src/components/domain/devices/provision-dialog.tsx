@@ -1,9 +1,10 @@
 'use client';
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Plus, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import { toast } from 'sonner';
+import { Field } from '@/components/system';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -15,7 +16,6 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Field } from '@/components/system';
 import { deviceService } from '@/lib/api';
 import { notifyDataChanged } from '@/lib/data-events';
 
@@ -41,7 +41,11 @@ export function ProvisionDialog({ onDone }: { onDone?: () => void }) {
 		e.preventDefault();
 		setLoading(true);
 		const res = await deviceService
-			.provision({ serialNumber: serial.trim(), deviceKey: deviceKey.trim(), name: name.trim() || undefined })
+			.provision({
+				serialNumber: serial.trim(),
+				deviceKey: deviceKey.trim(),
+				name: name.trim() || undefined,
+			})
 			.then(() => null)
 			.catch((err: unknown) => (err instanceof Error ? err.message : 'Falha ao provisionar'));
 		setLoading(false);
@@ -58,7 +62,13 @@ export function ProvisionDialog({ onDone }: { onDone?: () => void }) {
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
+		<Dialog
+			open={open}
+			onOpenChange={(v) => {
+				setOpen(v);
+				if (!v) reset();
+			}}
+		>
 			<DialogTrigger asChild>
 				<Button size="sm">
 					<Plus className="h-4 w-4" />
@@ -70,8 +80,8 @@ export function ProvisionDialog({ onDone }: { onDone?: () => void }) {
 					<DialogHeader>
 						<DialogTitle>Provisionar dispositivo</DialogTitle>
 						<DialogDescription>
-							Registra o dispositivo na plataforma e cria o alvo no hawkBit pelo
-							número de série + chave de fábrica.
+							Registra o dispositivo na plataforma e cria o alvo no hawkBit pelo número de série +
+							chave de fábrica.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="mt-4 flex flex-col gap-4">
@@ -86,7 +96,12 @@ export function ProvisionDialog({ onDone }: { onDone?: () => void }) {
 								autoComplete="off"
 							/>
 						</Field>
-						<Field label="Chave de fábrica (device key)" htmlFor="dkey" required hint="Gravada no firmware do dispositivo.">
+						<Field
+							label="Chave de fábrica (device key)"
+							htmlFor="dkey"
+							required
+							hint="Gravada no firmware do dispositivo."
+						>
 							<Input
 								id="dkey"
 								required

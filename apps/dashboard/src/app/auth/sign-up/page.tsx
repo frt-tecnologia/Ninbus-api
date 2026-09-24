@@ -1,15 +1,15 @@
 'use client';
 
+import { Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { type FormEvent, Suspense, useState } from 'react';
 import { Brand } from '@/components/layout/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { signIn, signUp } from '@/lib/auth/client';
 import { BRAND_LOGOS } from '@/lib/brand-logos';
 import { ROUTES } from '@/lib/routes';
-import { Eye, EyeOff } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { type FormEvent, Suspense, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
 

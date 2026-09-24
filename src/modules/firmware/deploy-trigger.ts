@@ -5,8 +5,8 @@
  */
 import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
-import { deployments, devices } from '@common/db/schema';
 import type { firmwareReleases } from '@common/db/schema';
+import { deployments, devices } from '@common/db/schema';
 import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { appLogger } from '@common/logger';
 import { deploySoftwareModuleToTargets } from '@modules/deployments/deploy';

@@ -107,7 +107,10 @@ export const sendTemplatedEmail = async ({
 	required?: boolean;
 }): Promise<void> => {
 	if (!hasResendKey()) {
-		appLogger.info({ to, template, variables }, 'Templated email not sent — RESEND_API_KEY not configured');
+		appLogger.info(
+			{ to, template, variables },
+			'Templated email not sent — RESEND_API_KEY not configured',
+		);
 		if (required && shouldThrow(required)) {
 			throw new EmailSendError(
 				'Email service is not configured (RESEND_API_KEY missing). Cannot send required email.',
@@ -141,13 +144,15 @@ async function sendViaResend(
 	label: string,
 	required: boolean,
 ): Promise<void> {
-	let result;
+	let result: Awaited<ReturnType<Resend['emails']['send']>>;
 	try {
 		const resend = new Resend(env.RESEND_API_KEY);
 		// The payload shape is one of the union members of CreateEmailOptions;
 		// cast via `unknown` because the union type can't be statically inferred
 		// from a dynamically-built record (html/text OR template).
-		result = await resend.emails.send(payload as unknown as Parameters<typeof resend.emails.send>[0]);
+		result = await resend.emails.send(
+			payload as unknown as Parameters<typeof resend.emails.send>[0],
+		);
 	} catch (error) {
 		appLogger.error({ to, label, error }, 'Error sending email via Resend');
 		if (shouldThrow(required)) {

@@ -1,6 +1,6 @@
-import * as React from 'react';
-import { cn } from '@/lib/utils';
+import type * as React from 'react';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 /**
  * <Field> — label + control wrapper for forms. Pairs with shadcn <Input> /
@@ -17,15 +17,7 @@ type FieldProps = {
 	children: React.ReactNode;
 };
 
-export function Field({
-	label,
-	htmlFor,
-	hint,
-	error,
-	required,
-	className,
-	children,
-}: FieldProps) {
+export function Field({ label, htmlFor, hint, error, required, className, children }: FieldProps) {
 	return (
 		<div className={cn('flex flex-col gap-1.5', className)}>
 			<Label htmlFor={htmlFor} className="text-xs text-muted-foreground">
@@ -33,9 +25,7 @@ export function Field({
 				{required && <span className="ml-0.5 text-signal-fault">*</span>}
 			</Label>
 			{children}
-			{hint && !error && (
-				<p className="text-xs text-muted-foreground">{hint}</p>
-			)}
+			{hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
 			{error && <p className="text-xs text-signal-fault">{error}</p>}
 		</div>
 	);

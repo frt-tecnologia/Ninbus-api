@@ -7,9 +7,9 @@
  * - When hawkBit throws, the error is swallowed (best-effort) — the local DB
  *   mutation must NOT be blocked by a hawkBit outage.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { hawkbitTargets } from '@common/hawkbit/client';
-import { syncTargetName, syncDeviceNameToHawkbit } from '@modules/devices/name-sync';
+import { syncDeviceNameToHawkbit, syncTargetName } from '@modules/devices/name-sync';
 
 // Monkey-patch the shared client (stable across Bun versions, unlike mock.module).
 const realUpdate = hawkbitTargets.update;

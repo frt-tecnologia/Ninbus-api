@@ -14,9 +14,12 @@ import type {
 } from './types';
 
 export const hawkbitTargets = {
-	list(params?: { offset?: number; limit?: number; sort?: string; q?: string }): Promise<
-		HawkbitPagedResponse<HawkbitTarget>
-	> {
+	list(params?: {
+		offset?: number;
+		limit?: number;
+		sort?: string;
+		q?: string;
+	}): Promise<HawkbitPagedResponse<HawkbitTarget>> {
 		return hawkbitRequest({
 			method: 'GET',
 			path: '/rest/v1/targets',
@@ -31,9 +34,7 @@ export const hawkbitTargets = {
 		});
 	},
 
-	create(
-		data: HawkbitTargetRequestBody | HawkbitTargetRequestBody[],
-	): Promise<HawkbitTarget[]> {
+	create(data: HawkbitTargetRequestBody | HawkbitTargetRequestBody[]): Promise<HawkbitTarget[]> {
 		return hawkbitRequest<HawkbitTarget[]>({
 			method: 'POST',
 			path: '/rest/v1/targets',
@@ -149,7 +150,7 @@ export const hawkbitTargets = {
 			if (force !== true) {
 				throw new Error(
 					`Failed to cancel action #${actionId} for target ${targetId}. ` +
-					'Use forceQuitAction() for cancel-type actions or pass force=true.',
+						'Use forceQuitAction() for cancel-type actions or pass force=true.',
 				);
 			}
 		}
@@ -162,7 +163,7 @@ export const hawkbitTargets = {
 			try {
 				await hawkbitRequest({
 					method: 'DELETE',
-				path: `/rest/v1/targets/${encodeURIComponent(targetId)}/actions/${actionId}`,
+					path: `/rest/v1/targets/${encodeURIComponent(targetId)}/actions/${actionId}`,
 					query: { force: true },
 				});
 			} catch {

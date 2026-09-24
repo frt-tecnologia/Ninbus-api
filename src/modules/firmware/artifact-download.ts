@@ -11,9 +11,9 @@ import { hawkbitSoftwareModules } from '@common/hawkbit/client';
 import { getFirmwareReleaseById } from './catalog';
 import { FirmwareValidationError } from './errors';
 import {
+	CANONICAL_DATA_MEMBERS,
 	type CanonicalArtifactType,
 	type CanonicalTarInfo,
-	CANONICAL_DATA_MEMBERS,
 	extractTar,
 	InvalidPackageError,
 	validateCanonicalTar,

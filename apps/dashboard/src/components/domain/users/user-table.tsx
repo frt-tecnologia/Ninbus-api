@@ -1,10 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { type Column, DataTable } from '@/components/data/data-table';
 import { Id, Signal, Time } from '@/components/system';
 import type { SignalToken } from '@/lib/design/tokens';
 import type { User } from '@/types/domain';
-import Link from 'next/link';
 
 function roleSignal(u: User): SignalToken {
 	return u.isSuperAdmin

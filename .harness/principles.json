@@ -1191,6 +1191,38 @@
       "category": "security",
       "learnedAt": "2026-09-23T01:46:18.746Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-biome-ignore-placement",
+      "rule": "Biome does NOT honor eslint-disable comments. Suppression comments must be `// biome-ignore lint/<group>/<rule>: <explanation>` placed on the line DIRECTLY ABOVE the diagnostic anchor — for useExhaustiveDependencies that is the useEffect/useMemo call line, not the dependency array. Wrongly placed suppressions trigger an additional `suppressions/unused` warning while the original error remains.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-24T18:08:59.880Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-gitattributes-lf-biome",
+      "rule": "With core.autocrlf=true on Windows and biome lineEnding:\"lf\", any git stash/checkout cycle rewrites tracked files as CRLF in the working tree → hundreds of phantom format errors. ALWAYS commit a .gitattributes with `* text=auto eol=lf` (+ binary exclusions for png/woff/pem/jar/fir/frz/bin) in repos that enforce LF formatting. Never git-stash to compare test baselines on Windows without it.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-24T18:08:59.887Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-biome-v2-migration",
+      "rule": "Biome v1→v2 config migration: run `bunx biome migrate --write` after upgrading @biomejs/biome. Key renames: files.ignore → files.includes with `!**/pattern` negations; organizeImports → assist.actions.source.organizeImports; linter recommended → preset:\"recommended\". For Tailwind CSS files set css.parser.tailwindDirectives:true (css.linter has NO rules key in 2.5.x — disable css.linter.enabled if @apply/@tailwind trip it). Upgrade + migrate + `check --write .` + manually fix remaining: the order matters.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-24T18:08:59.892Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-github-actions-ec2-ssh",
+      "rule": "For GitHub Actions → EC2 SSH deploys, NEVER whitelist GitHub IP ranges (api.github.com/meta 'actions' list changes weekly, hundreds of CIDRs). Instead: (1) get runner's own IP via checkip.amazonaws.com, (2) aws ec2 authorize-security-group-ingress for that /32 on port 22 (IAM user needs only Authorize/RevokeSecurityGroupIngress on the one SG), (3) SSH, (4) revoke with `if: always()` so the rule is removed even on failed deploys. Port 22 stays closed to the world otherwise. Also `tr -d '\\r'` the PEM secret (Windows CRLF breaks OpenSSH) and never cancel-in-progress CI runs on main (a cancelled deploy between docker-compose down/up leaves production down).",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-09-24T18:08:59.896Z",
+      "reinforcementCount": 1
     }
   ]
 }

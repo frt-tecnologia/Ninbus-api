@@ -2,17 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    # release/hawkbit-api = PRODUCTION branch (deploy target on EC2)
+    branches: [main, dev, release/hawkbit-api]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Never cancel a run on main mid-flight: it may contain the deploy job,
+  # Never cancel a production run mid-flight: it may contain the deploy job,
   # and cancelling between `docker-compose down` and `up` would leave
   # production down. Feature/PR runs still cancel each other as usual.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release/hawkbit-api' }}
 
 env:
   # CI-safe values — also written to .env.test below (bun test loads it via --env-file).
@@ -133,7 +134,8 @@ jobs:
         run: bun run test
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Deploy: runs ONLY on pushes to main, after lint + tests pass.
+  # Deploy: runs ONLY on pushes to release/hawkbit-api (PRODUCTION),
+  # after lint + tests pass.
   #
   # SSH port 22 stays closed to the world. Before connecting, this job
   # temporarily authorizes its OWN runner IP in the EC2 security group via the
@@ -143,7 +145,7 @@ jobs:
   deploy-ec2:
     name: Deploy to EC2 (production)
     needs: lint-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release/hawkbit-api'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-production
@@ -196,10 +198,10 @@ jobs:
           set -euo pipefail
           cd ~/Ninbus-api
 
-          # Server must track the branch that was pushed (deploy only fires on main)
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
+          # Server must track the production branch that was pushed
+          git fetch origin release/hawkbit-api
+          git checkout release/hawkbit-api
+          git reset --hard origin/release/hawkbit-api
 
           echo "── down (removes containers + volumes) ──"
           sudo docker-compose down -v

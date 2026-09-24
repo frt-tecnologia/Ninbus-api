@@ -5,11 +5,12 @@ Pipeline em `.github/workflows/ci.yml`:
 ```
 push/PR ──► lint (biome) ──► migrate ──► testes (Postgres 17 service)
                                     │
-              (push em main apenas) ▼
+              (push em release/hawkbit-api apenas) ▼
                               deploy-ec2 ──► SSH na instância ──► git reset + rebuild total
 ```
 
-O deploy **só roda em push para `main`** e **só depois que lint + testes passam**. O job:
+O deploy **só roda em push para `release/hawkbit-api`** (branch de produção)
+e **só depois que lint + testes passam**. O job:
 
 1. Descobre o **IP público do próprio runner** (`https://checkip.amazonaws.com`);
 2. Autoriza esse IP (`/32`, porta 22) no **security group** da EC2 via AWS CLI;
@@ -91,9 +92,10 @@ Crie uma policy inline e anexe só o necessário:
 
 ## Pré-requisitos na EC2 (uma única vez)
 
-1. Repo clonado em `~/Ninbus-api` e **checkout em `main`** (o deploy faz
-   `git reset --hard origin/main` — se o servidor estiver em outra branch,
-   o reset já resolve, mas alterações locais não-commitadas são descartadas);
+1. Repo clonado em `~/Ninbus-api` e **checkout em `release/hawkbit-api`** (o
+   deploy faz `git reset --hard origin/release/hawkbit-api` — se o servidor
+   estiver em outra branch, o reset já resolve, mas alterações locais
+   não-commitadas são descartadas);
 2. Git da instância autenticado no GitHub (deploy key somente-leitura ou
    HTTPS com token) para o `git fetch` funcionar;
 3. `docker` + `docker-compose` instalados (já estão, é o fluxo manual atual);
@@ -102,11 +104,11 @@ Crie uma policy inline e anexe só o necessário:
 ## Notas operacionais
 
 - `concurrency: deploy-production` impede dois deploys simultâneos, e runs de
-  CI em `main` nunca são cancelados por um push novo (só enfileiram) para não
-  abortar um rebuild no meio;
+  CI em `release/hawkbit-api` nunca são cancelados por um push novo (só
+  enfileiram) para não abortar um rebuild no meio;
 - Se um deploy falhar no meio, a regra de SSH ainda é revogada (`if: always()`);
 - O `docker system prune -a --volumes -f` apaga **todas** as imagens e volumes
   não usados — é o runbook escolhido para liberar memória/disco antes do build
   (derruba e reconstroi tudo, como pedido);
 - Para rodar só lint+testes manualmente: **Actions → CI → Run workflow**
-  (deploy continua restrito a push em `main`).
+  (deploy continua restrito a push em `release/hawkbit-api`).

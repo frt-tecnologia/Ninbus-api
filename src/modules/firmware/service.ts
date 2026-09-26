@@ -31,4 +31,4 @@ export {
 	getCompanyFirmwareStatus,
 } from './status-service';
 export { type FirmwareUploadInput, uploadFirmwareRelease } from './upload';
-export { compareVersions } from './versioning';
+export { compareVersions, fleetVersionFloorVerdict } from './versioning';

@@ -255,6 +255,18 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				}
 			}
 
+			if (/^0023_/.test(entry.tag)) {
+				// Index-level check — drizzle-kit generated; the file also re-states the
+				// 0022 columns/enum (tolerated via ignored 42701/42710, needed on fresh
+				// CI DBs). Skip when the index is present to avoid re-execution locks.
+				const idx = await client`SELECT indexname FROM pg_indexes
+					WHERE schemaname = 'public' AND tablename = 'devices' AND indexname = 'devices_company_id_idx'`;
+				if (idx.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);
 			const sql = fs.readFileSync(sqlFile, 'utf8');

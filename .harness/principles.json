@@ -1231,6 +1231,38 @@
       "category": "testing",
       "learnedAt": "2026-09-24T19:48:10.551Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-idempotent-state-transitions",
+      "rule": "State-transition endpoints (publish/unpublish, activate/deactivate, lock/unlock) MUST be idempotent: when the resource is ALREADY in the target state, return 200 with a no-op message instead of 409 Conflict. The 409 suggests client error, but a stale UI row or double-submit is normal — punishing it with an error breaks UX and triggers console errors. Return {resource, noop} from the service so routes craft honest messages and log noop in the audit trail. Never re-run expensive validation gates (hawkBit re-download, integrity checks) on the no-op path — the transition was already validated when it first happened.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-26T15:44:00.494Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-pilot-floor-self-lock",
+      "rule": "When a publication gate compares a release against a floor derived from fleet STATE (max reported version), the release's OWN pilot/rollout can SET that floor: the test device installs the draft, reports the release's version via DDI, and the gate's strict > comparison then blocks the release forever (X > X = false). Verdicts on fleet-derived floors must treat EQUALITY as pass (the floor came from this very release — devices on it classify up_to_date and never receive an offer; the test device is evidence, not a conflict). Only strictly-lower = downgrade = block (unless signed allow_downgrade). Anti-replay stays in the separate counter-monotonic check. Extract such verdicts into pure functions (fleetVersionFloorVerdict) so the pilot→publish regression is unit-testable without hawkBit.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-26T16:02:21.434Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-fk-no-index",
+      "rule": "PostgreSQL foreign keys do NOT index the referencing column — only the referenced PK gets one. Every table with a FK that is filtered (WHERE company_id = $1, user_id, etc.) needs an explicit index declared in the schema. Symptom: Seq Scan on every company-scoped query, latency growing linearly with the table (bench: 50k devices, only devices_pkey existed). Check with pg_indexes before assuming FK = indexed. drizzle: index('table_col_idx').on(table.col) + drizzle-kit generate.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-26T17:16:26.068Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-snapshot-chain-repair",
+      "rule": "NEVER hand-write drizzle migration files/journal/snapshots. If `drizzle-kit generate` fails with 'snapshot.json data is malformed', the chain is corrupt (usually hand-crafted snapshots: duplicate id of the parent, illegal keys like autoincrement on non-serial columns, or missing snapshot for the journal tip). Repair order: (1) diff the failing snapshot against the last good one to find illegal keys, (2) fix id/prevId chain (fresh uuid, prevId = parent's id), (3) then generate NATIVELY — the tool re-emits catch-up statements for schema changes that were hand-applied, which is safe under the project's migrate.ts (ignores 42701/42710/42P07) and necessary for fresh CI databases. Verify with EXPLAIN that the index is actually used (optimizer picks Seq Scan legitimately when one tenant dominates the table).",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-09-26T17:16:26.074Z",
+      "reinforcementCount": 1
     }
   ]
 }

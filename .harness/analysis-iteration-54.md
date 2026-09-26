@@ -1,58 +1,58 @@
 # Iteration 54 Analysis
 
 **Phase**: completed
-**Date**: 2026-09-24T18:11:40.590Z
+**Date**: 2026-09-26T17:15:57.424Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Build clean (1369 modules). Tests: 488/502 pass; the 14 failures were verified PRE-EXISTING by stashing changes and re-running — identical failures on base (environmental: shared Neon test DB auth state, nginx posture check, SSE timing, DDI). Changes in this iteration are behavior-neutral (lint-level): catch(err)→catch, isNaN→Number.isNaN (identical for parseInt numbers), template literals, type annotation on `let result`, unused import/var removal, node: protocol imports. One real bug fixed: useFetch `sync` param was documented but never used (subscribe effect now respects it). Dashboard still builds (no TS-breaking edits; only attribute/import changes).
+Endpoint validado ao vivo no docker com frota sintética de 50k devices: paginação funcionando (devices=página, summary=frota inteira, hasMore correto), cap de refresh limitando o fan-out hawkBit (1ª chamada 6,8s vs 26,2s com apenas 1k outdated — e ~13min extrapolado com 50k), índice usado (EXPLAIN Index Scan 0,053ms na empresa pequena; Seq Scan corretamente escolhido quando a empresa domina a tabela — decisão do otimizador, não defeito).
 
-**Evidence**: bun run build → bundled 1369 modules OK. bun run lint → exit 0. bun run test → 488 pass / 14 fail, all 14 reproduced identically on stashed base commit (devices claim/hawkbit-disabled/DELETE: superAdmin login fails on shared Neon DB → 404 cascade; nginx posture, SSE timing, DDI v2 — environmental).
+**Evidence**: Bench ao vivo pré/pós: 26,2s→6,8s (1ª), 9,3s→6,0s (steady), 14,2MB→290KB; ?limit=5000+offset=1000 → 5000 devices/1,4MB/hasMore=true; summary.total=50000 correto na página; FRT Express 4 devices → 0,57s; 82/82 testes
 
 ### ✅ Code Quality
 
-All source files remain under 250 lines (no files added to src/; changes were in-place). Biome v2 organizeImports now enforced across 318 files (154 violations auto-fixed). No new inline response schemas. No logging changes.
+Extração para função pura testável seguindo o padrão fleetVersionFloorVerdict; paginação isolada no service (summary full + slice) sem tocar a classificação; rota apenas declara query schema com defaults (t.Integer default 1000). migrate.ts +18 linhas seguindo o padrão de skip-checks existente (arquivo de script, já >250 pré-existentemente).
 
-**Evidence**: git diff shows only formatting/import-sort changes plus targeted small fixes. biome check . → 0 errors. Longest new file: .github/workflows/ci.yml (infrastructure, not a module).
+**Evidence**: selectRefreshCandidates extraída como função pura; slice de página no service; query schema com defaults; schemas.ts ganhou hasMore documentado; biome clean; arquivos do módulo <250 (version-refresh 117, status-service 137, status-routes 122)
 
 ### ✅ Schema Organization
 
-Untouched by this iteration — schemas.ts files only received formatter/import-sort changes (verified via git diff: no semantic edits in any schemas.ts).
+Response schema atualizado no schemas.ts do módulo com JSDoc explicando paginação; query schemas locais na rota conforme convenção (params/query podem viver na rota).
 
-**Evidence**: git diff src/modules/**/schemas.ts shows formatting-only changes.
+**Evidence**: hasMore adicionado a FirmwareStatusResponseSchema em schemas.ts; query schema (limit/offset) local na rota (permitido: route-specific); nenhuma response schema inline
 
 ### ✅ Error Handling
 
-Two-level hawkBit protection unchanged. Only edit near error paths: removed unused `catch (error: any)` binding in hawkbit-routes.ts (behavior identical — error was never referenced).
+O cap de 100 pulls/request é proteção de erro por si (frota outdated inteira não trava mais o request); hawkbitConfig.enabled guard mantido; refresh continua best-effort silencioso por device.
 
-**Evidence**: hawkbit-routes.ts 503 branch unchanged except unused catch binding removed.
+**Evidence**: Cap evita timeout-minutos no hawkBit; pulls continuam best-effort catch; paginação protege o client de 14MB; defaults validados (min 1, max 5000)
 
 ### ✅ Test Coverage
 
-All 10 integration + unit test files intact; only dead code removed (unused tarEntryNames helper in firmware.test.ts, unused require in deployment.test.ts). 502 tests still discovered and run. Same 14 environmental failures as base — not a coverage regression.
+Regressões cobertas: fan-out cap (o incidente do bench), TTL por device, e o contrato de paginação (devices página vs summary frota) validado via app.handle no padrão dos testes existentes.
 
-**Evidence**: Full run: 502 tests across 23 files, 488 pass; failures identical on base (devices.test.ts 6/6 matched, DDI matched).
+**Evidence**: 4 testes novos selectRefreshCandidates (cap 5000→100, skip up_to_date, TTL window, unlinked); teste de paginação (?limit=2&offset=1 → 2 devices, summary.total=4, hasMore=true) + hasMore:false no default pequeno; 82/82
 
 ### ✅ Config Centralization
 
-No new app config vars introduced. CI workflow generates .env.test (gitignored locally because it contains a real Neon URL) with CI-safe values pointing at the service Postgres — workflow infrastructure, not app code, so env.ts flow is preserved.
+Sem novas variáveis de ambiente; constantes de rate-limit do refresh seguem o padrão local existente (REFRESH_TTL_MS/REFRESH_CONCURRENCY).
 
-**Evidence**: CI heredoc mirrors .env.test values; DATABASE_URL overridden by workflow env (shell env wins over --env-file in bun).
+**Evidence**: Nenhum process.env novo; REFRESH_MAX_PER_CALL é constante de módulo documentada (não config de env — inline por design, como REFRESH_TTL_MS existente)
 
 ### ✅ Security
 
-Deploy uses GitHub Secrets exclusively (EC2_SSH_KEY/AWS keys never in code). SG port 22 opened only for the runner's /32 during deploy and revoked with if:always(). IAM user needs only Authorize/RevokeSecurityGroupIngress on one SG (documented minimal policy). PEM handled via mktemp + chmod 600 + trap cleanup + tr -d '\r'. global-bundle.pem explicitly documented as NOT needed in GitHub (server-side RDS TLS only).
+RBAC inalterado; a página é fatiada APÓS o filtro por empresa (nenhum leak); migration nativa não introduz superfície nova; dev/test DBs migrados nativamente, prod aguarda deploy.
 
-**Evidence**: ci.yml contains zero literal secrets; SG ingress limited to runner /32 tcp/22 with always-revoke; docs include minimal IAM policy scoped to one SG ARN.
+**Evidence**: companyRole viewer+ e ownership por companyId inalterados; paginação não expõe dados cross-tenant (query sempre WHERE company_id); skip-check 0023 segue padrão (não enfraquece boot: journal sem SQL file continua fail-fast)
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-4 principles learned: p-biome-ignore-placement, p-gitattributes-lf-biome, p-biome-v2-migration, p-github-actions-ec2-ssh. New doc docs/deploy-github-actions.md documents the full pipeline and credentials setup.
+Dois princípios aprendidos: (1) FK do Postgres NÃO indexa a coluna referenciadora — toda tabela com FK filtrada precisa de índice explícito; (2) cadeia de snapshots drizzle-kit quebrada (id duplicado/autoincrement indevido/missing snapshot) trava db:generate — reparar metadados antes, nunca hand-write migration. Gargalo residual documentado como follow-up (summary no SQL p/ empresa única gigante).
 
-**Evidence**: harness_learn_principle x4 → 'Total principles: 153'. docs/deploy-github-actions.md created with secrets table + SG discovery + IAM policy.
+**Evidence**: Princípios p-fk-no-index e p-snapshot-chain-repair aprendidos; SKILL.md documenta bench 50k + contrato paginado + gargalo residual; MESSAGE doc atualizado para o agente do frontend
 
 ## Overall Notes
 
-Branch fix/ci-biome-ec2-deploy criada (sem commit, conforme pedido). (1) Biome 1.9.4→2.5.14: devDep upgraded, config migrated (preset/assist/files.includes/css parser), 266+ files reformatted/organized, ~35 lint errors fixed properly (unused imports/vars, a11y label/svg/role fixes, node: protocol, Number.isNaN, dead test helper removed, real useFetch sync-param bug fixed). bun run lint exit 0. (2) CI: frozen lockfile, CI-generated .env.test (was gitignored → bun test --env-file failed in CI), conditional cancel-in-progress (never cancels deploy on main). (3) Deploy: deploy-ec2 job on push→main after tests; auto authorizes runner IP /32 in SG via AWS CLI, SSH rebuild runbook (down -v → prune → up --build no-BuildKit), revoke if:always, CRLF-safe PEM. Docs: docs/deploy-github-actions.md with full secrets table, SG discovery, IAM minimal policy. .gitattributes added (LF enforcement). 4 principles learned. Residual: 14 test failures are environmental/pre-existing on shared Neon test DB (verified identical on base via stash); CI's fresh postgres expected green. 6 lint warnings accepted (intentional <img> logos, 1 template literal in diagnostic script).
+RESPOSTA À PERGUNTA DE ESCALA (50k devices) COM EVIDÊNCIA MEDIDA + 3 CORREÇÕES. BENCH (frota sintética 50k no docker local, 49k up_to_date/1k outdated): ANTES — 1ª chamada 26,2s c/ 1k pulls hawkBit (extrapolação p/ 50k outdated pós-publish: ~13min), steady-state 9,3s, payload 14,2MB, Seq Scan (devices só tinha PK — FK do Postgres NÃO indexa a coluna referenciadora). DEPOIS — default: 6,8s/290KB (49× menor), steady 6,0s, limit=5000: 5,8s/1,4MB, empresa realista (4 devices): 0,57s; Index Scan 0,053ms confirmado por EXPLAIN. CORREÇÕES: (1) migration 0023 devices_company_id_idx — GERADA NATIVAMENTE via drizzle-kit generate após reparo da cadeia de snapshots PRÉ-EXISTENTE quebrada (0021 com id duplicado do 0020 + autoincrement indevido na coluna counter; 0022 sem snapshot); migrate.ts ganhou skip-check /^0023_/ (padrão do arquivo); aplicada nativamente no dev DB e no test DB (migrate.ts ignora 42701/42710/42P07 — statements catch-up da 0022 no arquivo são seguros em DBs já migrados e necessários em CI fresh). (2) refresh on-demand CAPADO em 100 pulls/request (selectRefreshCandidates — função pura, 4 testes unitários). (3) PAGINAÇÃO no status: ?limit (default 1000, max 5000) + ?offset + hasMore; summary SEMPRE sobre a frota inteira (badge correto). 82/82 testes firmware; build/biome/tsc limpos (45 erros tsc pré-existentes inalterados); docker rebuilt; dados de bench limpos (2 companies cascade, release deletada via API, 21 devices reais intactos). Gargalo residual documentado (frota 50k numa única empresa: ~6s transporte de rows DB→app; follow-up: summary no SQL). MESSAGE doc + SKILL.md atualizados com o contrato paginado. Sem commit.

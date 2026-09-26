@@ -1,9 +1,235 @@
 {
-  "id": "9ba26423-dbea-442a-9880-41056e2f5358",
-  "prevId": "5feaa859-eee3-483b-9d45-526645761a5f",
+  "id": "768eaee2-ac6f-4388-8ffc-98a6e70ec0ce",
+  "prevId": "9ba26423-dbea-442a-9880-41056e2f5358",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.artifact_category_assignments": {
+      "name": "artifact_category_assignments",
+      "schema": "",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_artifact_category_category": {
+          "name": "idx_artifact_category_category",
+          "columns": [
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "artifact_category_assignments_artifact_id_artifacts_id_fk": {
+          "name": "artifact_category_assignments_artifact_id_artifacts_id_fk",
+          "tableFrom": "artifact_category_assignments",
+          "tableTo": "artifacts",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifact_category_assignments_category_id_categories_id_fk": {
+          "name": "artifact_category_assignments_category_id_categories_id_fk",
+          "tableFrom": "artifact_category_assignments",
+          "tableTo": "categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "artifact_category_assignments_artifact_id_category_id_pk": {
+          "name": "artifact_category_assignments_artifact_id_category_id_pk",
+          "columns": [
+            "artifact_id",
+            "category_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.artifacts": {
+      "name": "artifacts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hawkbit_sm_id": {
+          "name": "hawkbit_sm_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "artifact_type": {
+          "name": "artifact_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'1.0'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload_size": {
+          "name": "payload_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "package_size": {
+          "name": "package_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_artifacts_hawkbit_sm_id": {
+          "name": "idx_artifacts_hawkbit_sm_id",
+          "columns": [
+            {
+              "expression": "hawkbit_sm_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "artifacts_company_id_companies_id_fk": {
+          "name": "artifacts_company_id_companies_id_fk",
+          "tableFrom": "artifacts",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifacts_created_by_user_id_fk": {
+          "name": "artifacts_created_by_user_id_fk",
+          "tableFrom": "artifacts",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "artifacts_description_length_check": {
+          "name": "artifacts_description_length_check",
+          "value": "\"artifacts\".\"description\" IS NULL OR char_length(\"artifacts\".\"description\") <= 1000"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.account": {
       "name": "account",
       "schema": "",
@@ -313,6 +539,98 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.categories": {
+      "name": "categories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "category_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "categories_company_id_companies_id_fk": {
+          "name": "categories_company_id_companies_id_fk",
+          "tableFrom": "categories",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "categories_created_by_user_id_fk": {
+          "name": "categories_created_by_user_id_fk",
+          "tableFrom": "categories",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.companies": {
       "name": "companies",
       "schema": "",
@@ -461,8 +779,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pending_company_members": {
-      "name": "pending_company_members",
+    "public.deployments": {
+      "name": "deployments",
       "schema": "",
       "columns": {
         "id": {
@@ -478,33 +796,64 @@
           "primaryKey": false,
           "notNull": true
         },
-        "email": {
-          "name": "email",
+        "hawkbit_ds_id": {
+          "name": "hawkbit_ds_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "role": {
-          "name": "role",
-          "type": "company_role",
-          "typeSchema": "public",
+        "artifact_type": {
+          "name": "artifact_type",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "artifact_name": {
+          "name": "artifact_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "artifact_version": {
+          "name": "artifact_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "artifact_original_file": {
+          "name": "artifact_original_file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_count": {
+          "name": "target_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "target_ids": {
+          "name": "target_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_status_snapshot": {
+          "name": "target_status_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
         },
         "created_by": {
           "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_by": {
-          "name": "claimed_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -525,17 +874,11 @@
         }
       },
       "indexes": {
-        "idx_pending_members_company_email": {
-          "name": "idx_pending_members_company_email",
+        "idx_deployments_hawkbit_ds_id": {
+          "name": "idx_deployments_hawkbit_ds_id",
           "columns": [
             {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "email",
+              "expression": "hawkbit_ds_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -548,9 +891,9 @@
         }
       },
       "foreignKeys": {
-        "pending_company_members_company_id_companies_id_fk": {
-          "name": "pending_company_members_company_id_companies_id_fk",
-          "tableFrom": "pending_company_members",
+        "deployments_company_id_companies_id_fk": {
+          "name": "deployments_company_id_companies_id_fk",
+          "tableFrom": "deployments",
           "tableTo": "companies",
           "columnsFrom": [
             "company_id"
@@ -561,114 +904,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "pending_company_members_created_by_user_id_fk": {
-          "name": "pending_company_members_created_by_user_id_fk",
-          "tableFrom": "pending_company_members",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "pending_company_members_claimed_by_user_id_fk": {
-          "name": "pending_company_members_claimed_by_user_id_fk",
-          "tableFrom": "pending_company_members",
-          "tableTo": "user",
-          "columnsFrom": [
-            "claimed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.categories": {
-      "name": "categories",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "category_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "categories_company_id_companies_id_fk": {
-          "name": "categories_company_id_companies_id_fk",
-          "tableFrom": "categories",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "categories_created_by_user_id_fk": {
-          "name": "categories_created_by_user_id_fk",
-          "tableFrom": "categories",
+        "deployments_created_by_user_id_fk": {
+          "name": "deployments_created_by_user_id_fk",
+          "tableFrom": "deployments",
           "tableTo": "user",
           "columnsFrom": [
             "created_by"
@@ -880,7 +1118,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "devices_company_id_idx": {
+          "name": "devices_company_id_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "devices_company_id_companies_id_fk": {
           "name": "devices_company_id_companies_id_fk",
@@ -918,443 +1172,6 @@
           "value": "\"devices\".\"description\" IS NULL OR char_length(\"devices\".\"description\") <= 1000"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.posts": {
-      "name": "posts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author_id": {
-          "name": "author_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "posts_author_id_user_id_fk": {
-          "name": "posts_author_id_user_id_fk",
-          "tableFrom": "posts",
-          "tableTo": "user",
-          "columnsFrom": [
-            "author_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.artifact_category_assignments": {
-      "name": "artifact_category_assignments",
-      "schema": "",
-      "columns": {
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "category_id": {
-          "name": "category_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "assigned_at": {
-          "name": "assigned_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_artifact_category_category": {
-          "name": "idx_artifact_category_category",
-          "columns": [
-            {
-              "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "artifact_category_assignments_artifact_id_artifacts_id_fk": {
-          "name": "artifact_category_assignments_artifact_id_artifacts_id_fk",
-          "tableFrom": "artifact_category_assignments",
-          "tableTo": "artifacts",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "artifact_category_assignments_category_id_categories_id_fk": {
-          "name": "artifact_category_assignments_category_id_categories_id_fk",
-          "tableFrom": "artifact_category_assignments",
-          "tableTo": "categories",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "artifact_category_assignments_artifact_id_category_id_pk": {
-          "name": "artifact_category_assignments_artifact_id_category_id_pk",
-          "columns": [
-            "artifact_id",
-            "category_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.artifacts": {
-      "name": "artifacts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hawkbit_sm_id": {
-          "name": "hawkbit_sm_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "artifact_type": {
-          "name": "artifact_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'1.0'"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "original_filename": {
-          "name": "original_filename",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payload_size": {
-          "name": "payload_size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "package_size": {
-          "name": "package_size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_artifacts_hawkbit_sm_id": {
-          "name": "idx_artifacts_hawkbit_sm_id",
-          "columns": [
-            {
-              "expression": "hawkbit_sm_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "artifacts_company_id_companies_id_fk": {
-          "name": "artifacts_company_id_companies_id_fk",
-          "tableFrom": "artifacts",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "artifacts_created_by_user_id_fk": {
-          "name": "artifacts_created_by_user_id_fk",
-          "tableFrom": "artifacts",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "artifacts_description_length_check": {
-          "name": "artifacts_description_length_check",
-          "value": "\"artifacts\".\"description\" IS NULL OR char_length(\"artifacts\".\"description\") <= 1000"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.deployments": {
-      "name": "deployments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hawkbit_ds_id": {
-          "name": "hawkbit_ds_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "artifact_type": {
-          "name": "artifact_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "artifact_name": {
-          "name": "artifact_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "artifact_version": {
-          "name": "artifact_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "artifact_original_file": {
-          "name": "artifact_original_file",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_count": {
-          "name": "target_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        },
-        "target_ids": {
-          "name": "target_ids",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_status_snapshot": {
-          "name": "target_status_snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'{}'::jsonb"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_deployments_hawkbit_ds_id": {
-          "name": "idx_deployments_hawkbit_ds_id",
-          "columns": [
-            {
-              "expression": "hawkbit_ds_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "deployments_company_id_companies_id_fk": {
-          "name": "deployments_company_id_companies_id_fk",
-          "tableFrom": "deployments",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "deployments_created_by_user_id_fk": {
-          "name": "deployments_created_by_user_id_fk",
-          "tableFrom": "deployments",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.firmware_releases": {
@@ -1424,6 +1241,36 @@
           "primaryKey": false,
           "notNull": false
         },
+        "counter": {
+          "name": "counter",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manifest_version": {
+          "name": "manifest_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manifest_flags": {
+          "name": "manifest_flags",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate": {
+          "name": "gate",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate_at": {
+          "name": "gate_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -1443,12 +1290,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "counter": {
-          "name": "counter",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1842,9 +1683,219 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.pending_company_members": {
+      "name": "pending_company_members",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "company_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_by": {
+          "name": "claimed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_pending_members_company_email": {
+          "name": "idx_pending_members_company_email",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_company_members_company_id_companies_id_fk": {
+          "name": "pending_company_members_company_id_companies_id_fk",
+          "tableFrom": "pending_company_members",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pending_company_members_created_by_user_id_fk": {
+          "name": "pending_company_members_created_by_user_id_fk",
+          "tableFrom": "pending_company_members",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pending_company_members_claimed_by_user_id_fk": {
+          "name": "pending_company_members_claimed_by_user_id_fk",
+          "tableFrom": "pending_company_members",
+          "tableTo": "user",
+          "columnsFrom": [
+            "claimed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.posts": {
+      "name": "posts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "posts_author_id_user_id_fk": {
+          "name": "posts_author_id_user_id_fk",
+          "tableFrom": "posts",
+          "tableTo": "user",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
+    "public.category_type": {
+      "name": "category_type",
+      "schema": "public",
+      "values": [
+        "bus_line",
+        "garage",
+        "yard",
+        "region",
+        "custom"
+      ]
+    },
     "public.company_role": {
       "name": "company_role",
       "schema": "public",
@@ -1861,17 +1912,6 @@
       "values": [
         "active",
         "suspended"
-      ]
-    },
-    "public.category_type": {
-      "name": "category_type",
-      "schema": "public",
-      "values": [
-        "bus_line",
-        "garage",
-        "yard",
-        "region",
-        "custom"
       ]
     },
     "public.device_status": {
@@ -1936,7 +1976,8 @@
         "firmware.published",
         "firmware.unpublished",
         "firmware.deleted",
-        "firmware.deploy_forced"
+        "firmware.deploy_forced",
+        "firmware.artifact_downloaded"
       ]
     },
     "public.activity_entity": {

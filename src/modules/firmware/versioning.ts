@@ -34,3 +34,39 @@ function parseSemver(v: string): { core: [number, number, number]; pre: string |
 		pre: m[4] ?? null,
 	};
 }
+
+/**
+ * Publish-gate fleet-floor verdict. EQUAL is NOT a downgrade: the floor can
+ * come from this very release's pilot/test installs (or a prior rollout of
+ * the same tag) — devices already on it classify as up_to_date and never get
+ * an offer. Only strictly-lower needs signed allow_downgrade. Anti-replay
+ * stays guaranteed by the separate counter-monotonic check.
+ */
+export function fleetVersionFloorVerdict(
+	releaseVersion: string,
+	fleetFloorVersion: string | null,
+	allowDowngrade: boolean,
+): { passed: boolean; detail: string } {
+	if (!fleetFloorVersion) {
+		return {
+			passed: true,
+			detail: 'no device reports a firmware version yet — nothing to floor against.',
+		};
+	}
+	if (allowDowngrade) {
+		return { passed: true, detail: 'allow_downgrade is signed (bit0) — floor check waived.' };
+	}
+	const cmp = compareVersions(releaseVersion, fleetFloorVersion);
+	if (cmp === 0) {
+		return {
+			passed: true,
+			detail: `declared ${releaseVersion} matches the fleet floor ${fleetFloorVersion} — not a downgrade (the floor came from this very release's pilot/rollout installs; devices on it are already up_to_date).`,
+		};
+	}
+	return cmp > 0
+		? { passed: true, detail: `declared ${releaseVersion} > fleet floor ${fleetFloorVersion}` }
+		: {
+				passed: false,
+				detail: `declared ${releaseVersion} < fleet floor ${fleetFloorVersion} — re-sign with a higher version or --allow-downgrade.`,
+			};
+}

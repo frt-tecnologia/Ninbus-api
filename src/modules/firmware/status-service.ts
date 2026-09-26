@@ -29,7 +29,10 @@ export function classifyDeviceFirmware(
 		: 'update_available';
 }
 
-export async function getCompanyFirmwareStatus(companyId: string) {
+export async function getCompanyFirmwareStatus(
+	companyId: string,
+	page?: { limit: number; offset: number },
+) {
 	const [companyDevices, latestNinbus, latestController] = await Promise.all([
 		db
 			.select({
@@ -88,10 +91,17 @@ export async function getCompanyFirmwareStatus(companyId: string) {
 		{ total: rows.length, upToDate: 0, outdated: 0, unknown: 0, error: 0 },
 	);
 
+	// Pagination: summary always covers the FULL fleet; devices is the page
+	// slice (50k-fleet bench: an unbounded array serializes to a 14MB JSON).
+	const offset = page?.offset ?? 0;
+	const limit = page?.limit ?? rows.length;
+	const paged = rows.slice(offset, offset + limit);
+
 	return {
 		latest: { ninbus: latestNinbus, controller: latestController },
-		devices: rows,
+		devices: paged,
 		summary,
+		hasMore: offset + paged.length < rows.length,
 	};
 }
 

@@ -25,13 +25,33 @@ export const firmwareStatusRoutes = withAuth(
 )
 	.get(
 		'/status',
-		async ({ params }) => {
-			return getCompanyFirmwareStatus(params.companyId);
+		async ({ params, query }) => {
+			return getCompanyFirmwareStatus(params.companyId, {
+				limit: query.limit,
+				offset: query.offset,
+			});
 		},
 		{
 			auth: true,
 			companyRole: 'viewer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
+			query: t.Object({
+				limit: t.Optional(
+					t.Integer({
+						minimum: 1,
+						maximum: 5000,
+						default: 1000,
+						description: 'Page size (devices array). summary always covers the FULL fleet.',
+					}),
+				),
+				offset: t.Optional(
+					t.Integer({
+						minimum: 0,
+						default: 0,
+						description: 'Page offset. Iterate while hasMore=true.',
+					}),
+				),
+			}),
 			detail: {
 				tags: ['Firmware'],
 				summary: 'Firmware status of the company devices',
@@ -39,7 +59,9 @@ export const firmwareStatusRoutes = withAuth(
 					'Compares every accepted device\u2019s reported firmware version (DDI attributes, ' +
 					'synced into devices.firmwareVersion) against the latest factory release. ' +
 					'DB-only — no hawkBit calls. The response carries the devices the mobile may ' +
-					'update (firmwareStatus="update_available") plus the target release metadata.',
+					'update (firmwareStatus="update_available") plus the target release metadata. ' +
+					'PAGINATED: devices is capped (default 1000, max 5000) — iterate with ' +
+					'?offset while hasMore=true; summary/counts always cover the whole fleet.',
 			},
 			response: {
 				200: FirmwareStatusResponseSchema,

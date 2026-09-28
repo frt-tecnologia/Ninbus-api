@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
 	check,
+	index,
 	pgEnum,
 	pgTable,
 	primaryKey,
@@ -71,6 +72,10 @@ export const devices = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	},
 	(table) => [
+		// Company-scoped lookups (device lists, firmware status, sync, categories)
+		// — Postgres FKs do NOT index the referencing column (50k-fleet bench:
+		// seq scan on every WHERE company_id before this).
+		index('devices_company_id_idx').on(table.companyId),
 		// Defense-in-depth: the API schema caps description at 1000 chars; enforce at the DB too
 		// so direct writes (jobs/scripts) can't bypass it.
 		check(

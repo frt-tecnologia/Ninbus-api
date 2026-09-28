@@ -17,7 +17,7 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 		'/:releaseId/publish',
 		async ({ params, user, set }) => {
 			try {
-				const release = await setFirmwareReleaseStatus(params.releaseId, 'published');
+				const { release, noop } = await setFirmwareReleaseStatus(params.releaseId, 'published');
 				await logActivity({
 					actorUserId: user.id,
 					actorEmail: user.email,
@@ -26,10 +26,12 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 					entityType: 'firmware_release',
 					entityId: release.id,
 					entityLabel: `${release.name} v${release.version}`,
-					metadata: { status: release.status },
+					metadata: { status: release.status, noop },
 				});
 				return {
-					message: `Release ${release.version} is now available for download`,
+					message: noop
+						? `Release ${release.version} was already published — nothing to do`
+						: `Release ${release.version} is now available for download`,
 					data: release,
 				};
 			} catch (error) {
@@ -51,7 +53,8 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 				description:
 					'Flip a draft release to published. From this moment the mobile status ' +
 					'endpoint resolves it as the latest version (update_available) and the ' +
-					'opt-in trigger can apply it.',
+					'opt-in trigger can apply it. IDEMPOTENT: publishing an already-published ' +
+					'release returns 200 (no-op, message says "already published").',
 			},
 			response: {
 				200: FirmwarePublishResponseSchema,
@@ -67,7 +70,7 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 		'/:releaseId/unpublish',
 		async ({ params, user, set }) => {
 			try {
-				const release = await setFirmwareReleaseStatus(params.releaseId, 'draft');
+				const { release, noop } = await setFirmwareReleaseStatus(params.releaseId, 'draft');
 				await logActivity({
 					actorUserId: user.id,
 					actorEmail: user.email,
@@ -76,10 +79,12 @@ export const firmwareGateRoutes = withAuth(new Elysia({ prefix: '/api/admin/firm
 					entityType: 'firmware_release',
 					entityId: release.id,
 					entityLabel: `${release.name} v${release.version}`,
-					metadata: { status: release.status },
+					metadata: { status: release.status, noop },
 				});
 				return {
-					message: `Release ${release.version} is no longer available for download`,
+					message: noop
+						? `Release ${release.version} was already a draft — nothing to do`
+						: `Release ${release.version} is no longer available for download`,
 					data: release,
 				};
 			} catch (error) {

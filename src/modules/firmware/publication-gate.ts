@@ -14,7 +14,7 @@ import { extractImageFromTar } from './artifact-download';
 import { catalogCounterFloor, getFirmwareReleaseById } from './catalog';
 import { FirmwareValidationError } from './errors';
 import { InvalidPackageError, validateCanonicalTar } from './tar-validator';
-import { compareVersions } from './versioning';
+import { fleetVersionFloorVerdict } from './versioning';
 
 export interface GateCheck {
 	name: string;
@@ -151,17 +151,7 @@ export async function runPublicationGate(
 	const allowDowngrade = ((release.manifestFlags ?? 0) & 0x1) === 0x1;
 	checks.push({
 		name: 'fleet-version-floor',
-		passed:
-			!fleetFloorVersion ||
-			allowDowngrade ||
-			compareVersions(release.version, fleetFloorVersion) > 0,
-		detail: !fleetFloorVersion
-			? 'no device reports a firmware version yet — nothing to floor against.'
-			: allowDowngrade
-				? 'allow_downgrade is signed (bit0) — floor check waived.'
-				: compareVersions(release.version, fleetFloorVersion) > 0
-					? `declared ${release.version} > fleet floor ${fleetFloorVersion}`
-					: `declared ${release.version} ≤ fleet floor ${fleetFloorVersion} — re-sign with a higher version or --allow-downgrade.`,
+		...fleetVersionFloorVerdict(release.version, fleetFloorVersion, allowDowngrade),
 	});
 
 	return finish(releaseId, {
@@ -175,13 +165,16 @@ export async function runPublicationGate(
 	});
 }
 
-export async function setFirmwareReleaseStatus(releaseId: string, status: 'draft' | 'published') {
+/** Idempotent status flip: returns noop=true when the release was already
+ *  in the target status (e.g. stale dashboard row re-publishing) — no gate
+ *  re-run, no state change, HTTP 200. */
+export async function setFirmwareReleaseStatus(
+	releaseId: string,
+	status: 'draft' | 'published',
+): Promise<{ release: typeof firmwareReleases.$inferSelect; noop: boolean }> {
 	const release = await getFirmwareReleaseById(releaseId);
 	if (release.status === status) {
-		throw new FirmwareValidationError(
-			`Release ${release.version} is already ${status}.`,
-			'INVALID_STATUS',
-		);
+		return { release, noop: true };
 	}
 	if (status === 'published') {
 		const gate = await runPublicationGate(releaseId);
@@ -208,7 +201,7 @@ export async function setFirmwareReleaseStatus(releaseId: string, status: 'draft
 		release.version,
 		status,
 	);
-	return updated;
+	return { release: updated, noop: false };
 }
 
 async function reDownloadTar(smId: number): Promise<Buffer | null> {

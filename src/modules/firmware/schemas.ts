@@ -179,7 +179,10 @@ export const FirmwareStatusResponseSchema = t.Object({
 		ninbus: t.Union([FirmwareReleaseSchema, t.Null()]),
 		controller: t.Union([FirmwareReleaseSchema, t.Null()]),
 	}),
+	/** Page of devices (default limit 1000, max 5000 — iterate ?offset while
+	 *  hasMore; a 50k-device fleet unbounded would be a 14MB JSON payload). */
 	devices: t.Array(DeviceFirmwareStatusSchema),
+	/** Aggregates over the FULL fleet (not just the returned page). */
 	summary: t.Object({
 		total: t.Number(),
 		upToDate: t.Number(),
@@ -187,6 +190,8 @@ export const FirmwareStatusResponseSchema = t.Object({
 		unknown: t.Number(),
 		error: t.Number(),
 	}),
+	/** true when more pages exist beyond the returned slice. */
+	hasMore: t.Boolean(),
 });
 
 /** POST /devices/firmware/update — trigger the update for selected devices. */

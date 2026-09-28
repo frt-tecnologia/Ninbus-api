@@ -15,9 +15,17 @@ import {
 	parseCounter,
 	validateDerSignature,
 } from '../src/modules/firmware/ota-signer';
-import { compareVersions, extractImageFromTar } from '../src/modules/firmware/service';
+import {
+	compareVersions,
+	extractImageFromTar,
+	fleetVersionFloorVerdict,
+} from '../src/modules/firmware/service';
 import { classifyDeviceFirmware } from '../src/modules/firmware/status-service';
 import { validateCanonicalTar } from '../src/modules/firmware/tar-validator';
+import {
+	REFRESH_MAX_PER_CALL,
+	selectRefreshCandidates,
+} from '../src/modules/firmware/version-refresh';
 import { cleanAll } from './test-helpers';
 
 afterAll(async () => {
@@ -150,6 +158,63 @@ describe('classifyDeviceFirmware', () => {
 	});
 	it('hawkBit error wins', () => {
 		expect(classifyDeviceFirmware('4.0.1', 'error', '4.0.1')).toBe('error');
+	});
+});
+
+describe('fleetVersionFloorVerdict (pilot→publish regression)', () => {
+	// Incident: release deployed to a TEST device (pilot) installs fine, the
+	// device reports the release's OWN version via DDI, and then the publish
+	// gate blocked forever with "declared X ≤ fleet floor X" — equal is NOT a
+	// downgrade (the floor came from this very release).
+	it('equal version passes — pilot test device set the floor at the release version', () => {
+		const v = fleetVersionFloorVerdict('4.9.0', '4.9.0', false);
+		expect(v.passed).toBe(true);
+		expect(v.detail).toContain('not a downgrade');
+	});
+	it('higher version passes', () => {
+		expect(fleetVersionFloorVerdict('4.9.1', '4.9.0', false).passed).toBe(true);
+	});
+	it('lower version FAILS without signed allow_downgrade', () => {
+		const v = fleetVersionFloorVerdict('4.8.0', '4.9.0', false);
+		expect(v.passed).toBe(false);
+		expect(v.detail).toContain('allow-downgrade');
+	});
+	it('lower version passes WITH signed allow_downgrade', () => {
+		expect(fleetVersionFloorVerdict('4.8.0', '4.9.0', true).passed).toBe(true);
+	});
+	it('null floor (no device ever reported) passes', () => {
+		expect(fleetVersionFloorVerdict('4.9.0', null, false).passed).toBe(true);
+	});
+});
+
+describe('selectRefreshCandidates (fan-out cap)', () => {
+	// 50k-fleet bench incident: the uncapped first /status call after a
+	// publish pulled hawkBit attributes for EVERY outdated device (1k outdated
+	// = 26s request; 50k = minutes). The cap bounds it per request.
+	const mk = (n: number, firmwareVersion: string | null) => ({
+		id: `dev-${n}`,
+		hawkbitTargetId: `T${n}`,
+		firmwareVersion,
+	});
+
+	it('caps the fan-out at maxPerCall regardless of fleet size', () => {
+		const rows = Array.from({ length: 5000 }, (_, i) => mk(i, '1.0.0'));
+		const out = selectRefreshCandidates(rows, '9.9.1', 10_000_000, new Map());
+		expect(out).toHaveLength(REFRESH_MAX_PER_CALL);
+	});
+	it('skips devices already at/above the latest version', () => {
+		const rows = [mk(1, '9.9.1'), mk(2, '10.0.0')];
+		expect(selectRefreshCandidates(rows, '9.9.1', 10_000_000, new Map())).toHaveLength(0);
+	});
+	it('skips devices inside the per-device TTL window', () => {
+		const rows = [mk(1, '1.0.0')];
+		const pulled = new Map([['dev-1', 50_000]]); // pulled 10s ago
+		expect(selectRefreshCandidates(rows, '9.9.1', 60_000, pulled)).toHaveLength(0);
+		expect(selectRefreshCandidates(rows, '9.9.1', 120_000, pulled)).toHaveLength(1);
+	});
+	it('skips unlinked devices (no targetId)', () => {
+		const rows = [mk(1, null), { id: 'dev-2', hawkbitTargetId: null, firmwareVersion: null }];
+		expect(selectRefreshCandidates(rows, '9.9.1', 10_000_000, new Map())).toHaveLength(1);
 	});
 });
 
@@ -500,6 +565,25 @@ describe('Firmware Module', () => {
 		expect(byName['current-device'].controllerFirmwareVersion).toBe('1.2.0');
 		expect(byName['silent-device'].firmwareStatus).toBe('unknown');
 		expect(byName['failed-device'].firmwareStatus).toBe('error');
+		// Default page covers the whole (small) fleet — no truncation.
+		expect(body.hasMore).toBe(false);
+	});
+
+	it('GET firmware/status paginates: devices page vs full-fleet summary', async () => {
+		const res = await app.handle(
+			new Request(
+				`http://localhost/api/companies/${companyId}/devices/firmware/status?limit=2&offset=1`,
+				{
+					headers: { Cookie: ownerCookie },
+				},
+			),
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.devices).toHaveLength(2);
+		// summary always covers the FULL fleet, not the page.
+		expect(body.summary.total).toBe(4);
+		expect(body.hasMore).toBe(true);
 	});
 
 	it('GET firmware/status rejects members of another company (403)', async () => {
@@ -635,14 +719,17 @@ describe('Firmware Module', () => {
 		expect((await latest.json()).data.version).toBe('4.9.0');
 	});
 
-	it('publishing twice returns 409 (already published)', async () => {
+	it('publishing an already-published release is idempotent (200, no-op)', async () => {
 		const res = await app.handle(
 			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/publish`, {
 				method: 'POST',
 				headers: { Cookie: superAdminCookie },
 			}),
 		);
-		expect(res.status).toBe(409);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.data.status).toBe('published');
+		expect(body.message).toContain('already published');
 	});
 
 	it('unpublish hides the release from end users again', async () => {
@@ -662,6 +749,19 @@ describe('Firmware Module', () => {
 			}),
 		);
 		expect((await latest.json()).data.version).toBe('4.0.1');
+	});
+
+	it('unpublishing a draft release is idempotent (200, no-op)', async () => {
+		const res = await app.handle(
+			new Request(`http://localhost/api/admin/firmware/${draftReleaseId}/unpublish`, {
+				method: 'POST',
+				headers: { Cookie: superAdminCookie },
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.data.status).toBe('draft');
+		expect(body.message).toContain('already a draft');
 	});
 });
 

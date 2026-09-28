@@ -195,6 +195,15 @@ catch (error) {
 
 GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
 
+**GET /companies/:companyId/devices/firmware/status (50k-scale):** PAGINADO
+(`?limit` default 1000/max 5000 + `?offset`, `hasMore`; `summary` cobre a frota
+inteira) + refresh on-demand de versões stale **limitado a 100 pulls hawkBit por
+request** (`selectRefreshCandidates`) + índice `devices_company_id_idx`
+(migration 0023 — FK do Postgres NÃO indexa a coluna referenciadora). Bench 50k:
+payload 14,2MB→290KB; primeira chamada pós-publish 26s→~7s (era ~13min com frota
+inteira outdated). Gargalo residual por empresa gigante: transporte das 50k rows
+do DB p/ o app (~6s) — follow-up: agregação de summary no SQL.
+
 **Sync adaptativo:** Quando detecta devices pending, ativa fast sync (5s), pausa sync normal (30s), e polla action status para emitir SSE de progresso em tempo real. Quando deploy termina, retoma sync normal.
 
 **Scalability:** Max 50 devices/ciclo com round-robin, cache de action para skip de polls redundantes, deduplicação por controllerId, concurrency limit 10.
@@ -240,7 +249,7 @@ upload (draft) ──▶ deploy piloto (releaseId explícito, console admin) ─
 **Regras do contrato (incidentes 660–664):**
 - **Upload .tar de fábrica**: versão assinada no manifesto é a FONTE; a digitada é CONFERÊNCIA (mismatch = 400). Counter deve ser estritamente > max do catálogo.
 - **Upload .bin**: server assina v2 (FIRMWARE_SIGNING_KEY) com counter = max+1 automático (inclui drafts).
-- **Publish**: exige o gate completo — re-download do artefato servido, integridade do tar, sha256 da imagem recomputado, v2 com version == declarada, counter > max published, version > piso da frota (salvo allow_downgrade assinado). Veredito persistido em `firmware_releases.gate` (JSONB) + `gateAt`.
+- **Publish**: exige o gate completo — re-download do artefato servido, integridade do tar, sha256 da imagem recomputado, v2 com version == declarada, counter > max published, version ≥ piso da frota (igualdade NÃO é downgrade: o piso pode vir do próprio piloto/rollout da release — devices nele já classificam up_to_date; menor exige allow_downgrade assinado; `fleetVersionFloorVerdict` em versioning.ts). Veredito persistido em `firmware_releases.gate` (JSONB) + `gateAt`. Publish/unpublish são IDEMPOTENTES (status já no alvo → 200 no-op, sem re-rodar o gate).
 - **Anti-replay floor (bootloader)**: counter servido é queimado nos devices mesmo em falha/rollback. Delete da única portadora do counter servido → 409 `COUNTER_FLOOR_BURNED`; `?realignFloor=true` transfere o piso pra release mais antiga (runbook automatizado). **Console (dashboard)**: o 409 abre um 2º ConfirmDialog oferecendo "excluir transferindo o piso" — `firmwareService.remove(id, {realignFloor})` via `http.delete(path, query)`. Nunca exiba toast de sucesso sem o resolve real do fetch (bug clássico: bundle stale do browser mente — Ctrl+Shift+R após deploys do dashboard).
 - **Re-oferecimento**: última deployment do tipo com todos os targets em `error` + mesma versão + release ANTERIOR à deployment → 409 `REJECTED_ARTIFACT` (escape: `force: true` para falha transitória).
 

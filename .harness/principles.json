@@ -1263,6 +1263,22 @@
       "category": "process",
       "learnedAt": "2026-09-26T17:16:26.074Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-window-fn-filter-order",
+      "rule": "When computing session bands with LEAD/LAG window functions over transition events, NEVER filter the event type BEFORE the window (WHERE event='online' then LEAD) — the lead then points to the NEXT SAME-TYPE event, silently merging gaps of the opposite type into each band (online bands absorb offline periods, overstating uptime). Correct: run the window over ALL transitions in a CTE/subquery, THEN filter the driving event type outside (WITH ordered AS (... LEAD ... ) SELECT ... WHERE event='online') — each band then ends at the true next transition. Regression-test with an online→offline→online sequence asserting the first band's end equals the offline timestamp.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-09-28T14:36:36.155Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-drizzle-raw-date-param",
+      "rule": "In drizzle db.execute(sql\\`...\\`) templates, NEVER interpolate a raw JS Date as a parameter (${someDate}) — postgres.js serializes it via toString() as a LOCAL string (\"Sun Sep 28 2026 ... GMT-0300\") and Postgres rejects it for timestamptz, throwing a confusing \"Failed query\". Always use the column helpers (lt/gte/lte(col, date)) inside the template — they encode Date params correctly. Same rule for new raw-SQL helpers: probe them directly (service call, not HTTP) so the real driver error surfaces instead of a generic 500.",
+      "origin": "learned",
+      "category": "testing",
+      "learnedAt": "2026-09-28T14:36:36.297Z",
+      "reinforcementCount": 1
     }
   ]
 }

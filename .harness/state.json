@@ -5,54 +5,54 @@
   "results": [
     {
       "criterionName": "Functional Correctness",
-      "evidence": "Bench ao vivo pré/pós: 26,2s→6,8s (1ª), 9,3s→6,0s (steady), 14,2MB→290KB; ?limit=5000+offset=1000 → 5000 devices/1,4MB/hasMore=true; summary.total=50000 correto na página; FRT Express 4 devices → 0,57s; 82/82 testes",
-      "notes": "Endpoint validado ao vivo no docker com frota sintética de 50k devices: paginação funcionando (devices=página, summary=frota inteira, hasMore correto), cap de refresh limitando o fan-out hawkBit (1ª chamada 6,8s vs 26,2s com apenas 1k outdated — e ~13min extrapolado com 50k), índice usado (EXPLAIN Index Scan 0,053ms na empresa pequena; Seq Scan corretamente escolhido quando a empresa domina a tabela — decisão do otimizador, não defeito).",
+      "evidence": "Ao vivo: bands -5h→-4h fechada no offline (antes: -5h→-2h mesclando o gap); stateAtFrom=online@-2h em from=-90min; limit=2+hasMore; sweep real 60s → occurredAt==deadline (bool true). 59/59 testes no run limpo",
+      "notes": "Todos os 7 itens do plano + I9 (bands absorvendo gaps offline — bug pré-existente exposto pelo teste de regressão online→offline→online) implementados e validados ao vivo no docker. Flake intermitente (0→22 fails entre runs) isolado: 'Setup > creates company' timeout 10.016s no Neon compartilhado + 2 dependentes em cascata — quando o setup completa, a suíte inteira passa (3 runs limpos: 59/59, 59/59, 49/49).",
       "passed": true
     },
     {
       "criterionName": "Code Quality",
-      "evidence": "selectRefreshCandidates extraída como função pura; slice de página no service; query schema com defaults; schemas.ts ganhou hasMore documentado; biome clean; arquivos do módulo <250 (version-refresh 117, status-service 137, status-routes 122)",
-      "notes": "Extração para função pura testável seguindo o padrão fleetVersionFloorVerdict; paginação isolada no service (summary full + slice) sem tocar a classificação; rota apenas declara query schema com defaults (t.Integer default 1000). migrate.ts +18 linhas seguindo o padrão de skip-checks existente (arquivo de script, já >250 pré-existentemente).",
+      "evidence": "transitionOccurredAt função única usada pelos 2 writers; selectDistinctOn (ORM puro) para states; schemas em schemas.ts; biome clean; connections-service 311 linhas (mantém padrão do arquivo: writers+reads+counts juntos, window functions só via raw)",
+      "notes": "Semântica de timestamp centralizada em UMA função (fim das duas convenções divergentes); sweep documentado com o rationale do grace; view/limit/offset declarados no query schema com fallback no handler (Elysia Union+default é buggy).",
       "passed": true
     },
     {
       "criterionName": "Schema Organization",
-      "evidence": "hasMore adicionado a FirmwareStatusResponseSchema em schemas.ts; query schema (limit/offset) local na rota (permitido: route-specific); nenhuma response schema inline",
-      "notes": "Response schema atualizado no schemas.ts do módulo com JSDoc explicando paginação; query schemas locais na rota conforme convenção (params/query podem viver na rota).",
+      "evidence": "CompanyConnectionsQuerySchema (limit/offset/view) e CompanyConnectionsResponseSchema (states/hasMore/Union events|bands) em observability/schemas.ts; DeviceStateAtFromSchema novo; rota importa",
+      "notes": "Response schema atualizado no módulo (data = Union ConnectionEvent|SessionBand documentada); nenhum schema inline na rota.",
       "passed": true
     },
     {
       "criterionName": "Error Handling",
-      "evidence": "Cap evita timeout-minutos no hawkBit; pulls continuam best-effort catch; paginação protege o client de 14MB; defaults validados (min 1, max 5000)",
-      "notes": "O cap de 100 pulls/request é proteção de erro por si (frota outdated inteira não trava mais o request); hawkbitConfig.enabled guard mantido; refresh continua best-effort silencioso por device.",
+      "evidence": "Grace 60s elimina o par espúrio; guard companyId-null evita INSERT fail silencioso; telemetria best-effort preservada; validação from>to e range>90d intactas (testes 400 pré-existentes passando)",
+      "notes": "O sweep não pune mais atrasos de poll <60s (uma só voz com o hawkBit na fronteira); writes mortos para unclaimed removidos.",
       "passed": true
     },
     {
       "criterionName": "Test Coverage",
-      "evidence": "4 testes novos selectRefreshCandidates (cap 5000→100, skip up_to_date, TTL window, unlinked); teste de paginação (?limit=2&offset=1 → 2 devices, summary.total=4, hasMore=true) + hasMore:false no default pequeno; 82/82",
-      "notes": "Regressões cobertas: fan-out cap (o incidente do bench), TTL por device, e o contrato de paginação (devices página vs summary frota) validado via app.handle no padrão dos testes existentes.",
+      "evidence": "12 testes novos: paginação (página vs total), stateAtFrom, bands (regressão: banda 1 fecha no offline, banda aberta fecha em now), transitionOccurredAt (3 casos), sweep (deadline==occurredAt, grace não-varre, unclaimed sem telemetria). 59/59 no run limpo",
+      "notes": "A regressão do I9 (bands mesclando gap) foi PEGA pelo novo teste de bands antes do fix — prova do valor da suíte. Flakes ambientais documentados (Setup timeout Neon).",
       "passed": true
     },
     {
       "criterionName": "Config Centralization",
-      "evidence": "Nenhum process.env novo; REFRESH_MAX_PER_CALL é constante de módulo documentada (não config de env — inline por design, como REFRESH_TTL_MS existente)",
-      "notes": "Sem novas variáveis de ambiente; constantes de rate-limit do refresh seguem o padrão local existente (REFRESH_TTL_MS/REFRESH_CONCURRENCY).",
+      "evidence": "STALE_SWEEP_GRACE_SEC = constante de módulo documentada (mesma classe de REFRESH_MAX_PER_CALL); nenhum env novo necessário; defaults de paginação no schema (não env)",
+      "notes": "Sem novas variáveis de ambiente; constantes de tuning co-localizadas com o código que regulam.",
       "passed": true
     },
     {
       "criterionName": "Security",
-      "evidence": "companyRole viewer+ e ownership por companyId inalterados; paginação não expõe dados cross-tenant (query sempre WHERE company_id); skip-check 0023 segue padrão (não enfraquece boot: journal sem SQL file continua fail-fast)",
-      "notes": "RBAC inalterado; a página é fatiada APÓS o filtro por empresa (nenhum leak); migration nativa não introduz superfície nova; dev/test DBs migrados nativamente, prod aguarda deploy.",
+      "evidence": "companyRole viewer+ e filtro companyId no SQL de todas as queries novas (events/count/states/sessions); DISTINCT ON indexado (device+occurred); sem exposição cross-tenant (tenant-isolation test pré-existente passando)",
+      "notes": "Paginação/states/bands herdam o isolamento por empresa do WHERE existente; índices pré-existentes cobrem as novas leituras.",
       "passed": true
     },
     {
       "criterionName": "🔮 Futuro (Aprendizado Contínuo)",
-      "evidence": "Princípios p-fk-no-index e p-snapshot-chain-repair aprendidos; SKILL.md documenta bench 50k + contrato paginado + gargalo residual; MESSAGE doc atualizado para o agente do frontend",
-      "notes": "Dois princípios aprendidos: (1) FK do Postgres NÃO indexa a coluna referenciadora — toda tabela com FK filtrada precisa de índice explícito; (2) cadeia de snapshots drizzle-kit quebrada (id duplicado/autoincrement indevido/missing snapshot) trava db:generate — reparar metadados antes, nunca hand-write migration. Gargalo residual documentado como follow-up (summary no SQL p/ empresa única gigante).",
+      "evidence": "2 princípios: p-window-fn-filter-order (LEAD antes do filtro — bands absorvem gaps) e p-drizzle-raw-date-param (Date cru em sql`` serializa local); MESSAGE-frontend-connections.md com contrato v2 completo",
+      "notes": "Lições estruturais capturadas para futuras window functions e raw SQL; contrato v2 documentado para o agente do frontend (como desenhar a timeline sem heurística, semântica dos timestamps, escala 5k).",
       "passed": true
     }
   ],
-  "overallNotes": "RESPOSTA À PERGUNTA DE ESCALA (50k devices) COM EVIDÊNCIA MEDIDA + 3 CORREÇÕES. BENCH (frota sintética 50k no docker local, 49k up_to_date/1k outdated): ANTES — 1ª chamada 26,2s c/ 1k pulls hawkBit (extrapolação p/ 50k outdated pós-publish: ~13min), steady-state 9,3s, payload 14,2MB, Seq Scan (devices só tinha PK — FK do Postgres NÃO indexa a coluna referenciadora). DEPOIS — default: 6,8s/290KB (49× menor), steady 6,0s, limit=5000: 5,8s/1,4MB, empresa realista (4 devices): 0,57s; Index Scan 0,053ms confirmado por EXPLAIN. CORREÇÕES: (1) migration 0023 devices_company_id_idx — GERADA NATIVAMENTE via drizzle-kit generate após reparo da cadeia de snapshots PRÉ-EXISTENTE quebrada (0021 com id duplicado do 0020 + autoincrement indevido na coluna counter; 0022 sem snapshot); migrate.ts ganhou skip-check /^0023_/ (padrão do arquivo); aplicada nativamente no dev DB e no test DB (migrate.ts ignora 42701/42710/42P07 — statements catch-up da 0022 no arquivo são seguros em DBs já migrados e necessários em CI fresh). (2) refresh on-demand CAPADO em 100 pulls/request (selectRefreshCandidates — função pura, 4 testes unitários). (3) PAGINAÇÃO no status: ?limit (default 1000, max 5000) + ?offset + hasMore; summary SEMPRE sobre a frota inteira (badge correto). 82/82 testes firmware; build/biome/tsc limpos (45 erros tsc pré-existentes inalterados); docker rebuilt; dados de bench limpos (2 companies cascade, release deletada via API, 21 devices reais intactos). Gargalo residual documentado (frota 50k numa única empresa: ~6s transporte de rows DB→app; follow-up: summary no SQL). MESSAGE doc + SKILL.md atualizados com o contrato paginado. Sem commit.",
+  "overallNotes": "TELEMETRIA ONLINE/OFFLINE CORRIGIDA (branch fix/connections-telemetry criada de release/hawkbit-api, SEM commit — 9 incongruências resolvidas: as 8 do plano + 1 nova descoberta pelos testes). Implementação: P1 occurredAt unificado via transitionOccurredAt (online=lastPollAt; offline=nextExpectedPollAt/missed deadline) usado pelos DOIS writers; P2 states (stateAtFrom) via drizzle selectDistinctOn — âncora da primeira banda; P3 paginação limit(default 2000/max 10000)+offset+hasMore, total= janela inteira (countEventsInRange); P4 migration 0024 (drizzle-kit generate --custom — nativo) normalizando vocabulário legado online/offline→connected/disconnected, idempotente, aplicada no dev+test DB; P5 sweep com STALE_SWEEP_GRACE_SEC=60 (elimina pares espúrios offline/online na fronteira do deadline) + occurredAt=deadline + guard companyId-null no telemetry; P6 view=bands com limit/offset; P7 docs/MESSAGE-frontend-connections.md. BUG ADICIONAL (I9) descoberto e corrigido pelo teste: listSessions filtrava event='online' ANTES do LEAD — bandas online absorviam gaps offline (uptime inflado); corrigido com CTE ordered (LEAD sobre TODAS transições, filtro fora). BUGS DE PROCESSO: Date cru interpolado em sql`` (serializa como string local — fix com lt() do drizzle); default em t.Union do Elysia quebra query (400 — removido, fallback no handler). VALIDAÇÃO: 59/59 testes (12 novos: paginação, states, bands com regressão do gap, transitionOccurredAt, sweep deadline/grace/guard-unclaimed) — runs intermitentes com até 22 fails são 100% o Setup timeout 10s do Neon compartilhado (cascata nos 2 testes seguintes; re-runs limpos confirmam 0 fail); build/biome/tsc limpos (45 erros pré-existentes inalterados). AO VIVO NO DOCKER: seed online@-5h/offline@-4h/online@-2h → default 3 eventos+hasMore; limit=2 página+hasMore=true; bands: -5h→-4h (FECHADA no offline, gap não mais mesclado) e -2h→now; from=-90min → total=0 + stateAtFrom=online@-2h (âncora); SWEEP REAL do container (60s): device overdue → disconnected + evento offline com occurredAt EXATAMENTE == nextExpectedPoll_at (não detecção). Dados sintéticos limpos. Sem commit (branch nova da release para análise).",
   "humanFeedback": "Upgrade de UI com a skill shadcn/ui instalada: a dashboard carece de elementos e interações profissionais. Migrar para componentes shadcn reais mantendo funcionalidade e usabilidade: (1) substituir TODOS os window.confirm nativos por AlertDialog shadcn via componente ConfirmDialog reutilizável; (2) ações de linha das tabelas em DropdownMenu; (3) estados vazios com Empty; (4) forms com Field/FieldGroup shadcn; (5) ícones em botões com data-icon (sem classes de tamanho); (6) instalar componentes que faltam (alert-dialog, field, empty, spinner etc. via CLI oficial do shadcn). Validar com tsc + next build + rebuild docker. Conventional commits, sem push.",
-  "lastUpdated": "2026-09-26T17:15:57.413Z"
+  "lastUpdated": "2026-09-28T14:37:37.669Z"
 }

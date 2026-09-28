@@ -8,7 +8,11 @@ import { devices } from '@common/db/schema';
 import { appLogger } from '@common/logger';
 import { normalizeSerial } from '@common/utils/serial-number';
 import { emitActionProgressEvents } from '@modules/deployments/sync-progress';
-import { recordConnectionTransition } from '@modules/observability/connections-service';
+import {
+	isOnlineStatus,
+	recordConnectionTransition,
+	transitionOccurredAt,
+} from '@modules/observability/connections-service';
 import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import { extractTargetData, getProtectedStatus } from './sync-core';
 import { fetchTargetsByIds } from './sync-fetch';
@@ -102,6 +106,7 @@ export async function batchUpdateDevicesFromTargets(
 					const previous = device.previousConnectionStatus ?? null;
 					const current = targetData.connectionStatus ?? null;
 					if (previous !== current) {
+						const onlineNow = isOnlineStatus(current);
 						void recordConnectionTransition({
 							deviceId: device.id,
 							companyId: device.companyId,
@@ -109,7 +114,11 @@ export async function batchUpdateDevicesFromTargets(
 							deviceName: device.name ?? device.hawkbitTargetId,
 							previous,
 							current,
-							occurredAt: targetData.lastPollAt ?? now,
+							// Unified rule: online = lastPollAt; offline = missed deadline.
+							occurredAt: transitionOccurredAt(onlineNow ? 'online' : 'offline', {
+								lastPollAt: targetData.lastPollAt ?? null,
+								nextExpectedPollAt: targetData.nextExpectedPollAt ?? null,
+							}),
 							ipAddress: targetData.ipAddress,
 						}).catch(() => {
 							/* telemetry is best-effort */
@@ -254,7 +263,7 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 
 /**
  * Staleness sweep — marks devices as DISCONNECTED when they missed their
- * expected poll window, independent of hawkBit availability.
+ * expected poll window (plus grace), independent of hawkBit availability.
  *
  * WHY: a device whose hawkBit target was deleted (orphan) stops appearing in
  * the sync's target map, so `batchUpdateDevicesFromTargets` skips it and its
@@ -262,10 +271,19 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
  * self-heals that: if `next_expected_poll_at` has passed, the device cannot be
  * connected. Cheap (1 indexed UPDATE), correct, and independent of hawkBit.
  *
+ * GRACE: hawkBit's own overdue verdict carries a tolerance window — a device
+ * polling a few seconds late is still `!overdue` there. Sweeping at the bare
+ * deadline made the two writers disagree at the boundary, emitting spurious
+ * offline(sweep)+online(hawkBit) event pairs. Sweeping only past
+ * deadline + STALE_SWEEP_GRACE_SEC keeps ONE voice per boundary case.
+ *
  * Returns the count of devices corrected (for logging / SSE).
  */
+export const STALE_SWEEP_GRACE_SEC = 60;
+
 export async function markOverdueDevicesOffline(): Promise<number> {
 	try {
+		const graceAgo = new Date(Date.now() - STALE_SWEEP_GRACE_SEC * 1000);
 		const corrected = await db
 			.update(devices)
 			.set({ connectionStatus: 'disconnected', updatedAt: new Date() })
@@ -273,7 +291,7 @@ export async function markOverdueDevicesOffline(): Promise<number> {
 				and(
 					inArray(devices.connectionStatus, ['connected', 'online']),
 					isNotNull(devices.nextExpectedPollAt),
-					lt(devices.nextExpectedPollAt, new Date()),
+					lt(devices.nextExpectedPollAt, graceAgo),
 				),
 			)
 			.returning({
@@ -281,6 +299,7 @@ export async function markOverdueDevicesOffline(): Promise<number> {
 				companyId: devices.companyId,
 				hawkbitTargetId: devices.hawkbitTargetId,
 				name: devices.name,
+				nextExpectedPollAt: devices.nextExpectedPollAt,
 			});
 
 		if (corrected.length > 0) {
@@ -303,15 +322,22 @@ export async function markOverdueDevicesOffline(): Promise<number> {
 				}
 			});
 			// Capture transition telemetry (connected→offline) for each.
+			// occurredAt = the MISSED DEADLINE (unified rule via transitionOccurredAt)
+			// — not detection time (biased offline bands late), not lastPollAt
+			// (biased them early by up to one polling interval).
 			for (const d of corrected) {
+				if (!d.companyId) continue; // telemetry row requires a company
 				void recordConnectionTransition({
 					deviceId: d.id,
-					companyId: d.companyId ?? '',
+					companyId: d.companyId,
 					hawkbitTargetId: d.hawkbitTargetId,
 					deviceName: d.name ?? d.hawkbitTargetId ?? d.id,
 					previous: 'connected',
 					current: 'disconnected',
-					occurredAt: new Date(),
+					occurredAt: transitionOccurredAt('offline', {
+						lastPollAt: null,
+						nextExpectedPollAt: d.nextExpectedPollAt,
+					}),
 				}).catch(() => {
 					/* best-effort */
 				});

@@ -14,7 +14,7 @@ import { db } from '@common/db';
 import { deviceConnections } from '@common/db/schema';
 import { appLogger } from '@common/logger';
 import { statusCoalescer } from '@common/sse';
-import { and, count, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, lte, sql } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Status classification
@@ -23,13 +23,39 @@ import { and, count, eq, gte, lte, sql } from 'drizzle-orm';
 const ONLINE_STATES = new Set(['online', 'connected']);
 
 /** Classify a raw connectionStatus string into online (true) / offline (false). */
-function isOnline(status: string | null | undefined): boolean {
+export function isOnline(status: string | null | undefined): boolean {
 	return !!status && ONLINE_STATES.has(status);
 }
+
+export { isOnline as isOnlineStatus };
 
 // ---------------------------------------------------------------------------
 // Write (called from sync, only on a real transition)
 // ---------------------------------------------------------------------------
+
+/** Poll timing facts needed to date a transition accurately. */
+export interface TransitionPollTiming {
+	/** Last successful DDI poll (hawkBit pollStatus.lastRequestAt). */
+	lastPollAt: Date | null;
+	/** Deadline the device missed (lastPoll + polling interval). */
+	nextExpectedPollAt: Date | null;
+}
+
+/**
+ * Single source for transition timestamps (both writers MUST use this):
+ * - online  → lastPollAt (the poll that re-established the connection);
+ * - offline → nextExpectedPollAt (the deadline the device missed — the
+ *   connection was lost AT the missed deadline, not at the last successful
+ *   poll nor at detection time; both biased timeline bands by up to one
+ *   polling interval in opposite directions).
+ */
+export function transitionOccurredAt(
+	event: 'online' | 'offline',
+	timing: TransitionPollTiming,
+): Date {
+	if (event === 'online') return timing.lastPollAt ?? new Date();
+	return timing.nextExpectedPollAt ?? timing.lastPollAt ?? new Date();
+}
 
 export interface ConnectionTransitionInput {
 	deviceId: string;
@@ -40,7 +66,7 @@ export interface ConnectionTransitionInput {
 	previous: string | null;
 	/** New connection status (from hawkBit). */
 	current: string | null;
-	/** Timestamp the event occurred (hawkBit poll time / now). */
+	/** Timestamp the event occurred (unified rule — see transitionOccurredAt). */
 	occurredAt: Date;
 	ipAddress?: string | null;
 }
@@ -104,6 +130,9 @@ export interface ListSessionsOptions {
 	deviceId?: string;
 	from: Date;
 	to: Date;
+	/** Page bounds (bands view can be as large as the events it derives from). */
+	limit?: number;
+	offset?: number;
 }
 
 /**
@@ -119,18 +148,36 @@ export async function listSessions(opts: ListSessionsOptions): Promise<SessionBa
 	if (opts.companyId) conditions.push(eq(deviceConnections.companyId, opts.companyId));
 	if (opts.deviceId) conditions.push(eq(deviceConnections.deviceId, opts.deviceId));
 
-	// LEAD finds the next event timestamp per device; COALESCE closes open bands at NOW().
+	// LEAD over ALL transitions (online AND offline) — filtering `event='online'
+	// BEFORE the window made each band span ACROSS offline gaps, merging offline
+	// time into the online band (overstated connectivity). The band of an
+	// 'online' event ends at the NEXT transition of that device (usually the
+	// matching 'offline'); still-open bands close at NOW().
+	const limitClause = opts.limit != null ? sql` LIMIT ${opts.limit}` : sql``;
+	const offsetClause = opts.offset ? sql` OFFSET ${opts.offset}` : sql``;
 	const rows = await db.execute(sql`
+		WITH ordered AS (
+			SELECT
+				device_id,
+				hawkbit_target_id,
+				device_name,
+				occurred_at,
+				event,
+				ip_address,
+				LEAD(occurred_at) OVER (PARTITION BY device_id ORDER BY occurred_at, id) AS next_at
+			FROM device_connections
+			WHERE ${and(...conditions)}
+		)
 		SELECT
 			device_id AS "deviceId",
 			hawkbit_target_id AS "hawkbitTargetId",
 			device_name AS "deviceName",
 			occurred_at AS "start",
-			COALESCE(LEAD(occurred_at) OVER (PARTITION BY device_id ORDER BY occurred_at), NOW()) AS "end",
+			COALESCE(next_at, NOW()) AS "end",
 			ip_address AS "ipAddress"
-		FROM device_connections
-		WHERE ${and(...conditions)} AND event = 'online'
-		ORDER BY occurred_at ASC
+		FROM ordered
+		WHERE event = 'online'
+		ORDER BY occurred_at ASC${limitClause}${offsetClause}
 	`);
 
 	// `db.execute()` with postgres-js returns the rows array directly (it is NOT
@@ -197,6 +244,44 @@ export interface ListConnectionEventsOptions {
 	deviceId?: string;
 	from: Date;
 	to: Date;
+	/** Page bounds — unbounded reads at 5k devices would flood the client. */
+	limit?: number;
+	offset?: number;
+}
+
+export interface DeviceStateAtFrom {
+	deviceId: string;
+	/** 'online' | 'offline' — the state carried INTO the window (null = no prior event). */
+	stateAtFrom: 'online' | 'offline' | null;
+	/** When that prior event occurred (null when stateAtFrom is null). */
+	since: Date | null;
+}
+
+/**
+ * Per-device state at the START of the window: the LAST event strictly before
+ * `from` (DISTINCT ON via the ORM). Without this, a device online since before
+ * `from` whose first in-window event is an `offline` renders the initial band
+ * wrong — the client had to guess. Pass with the page so bands start at `from`.
+ */
+export async function listStateAtFrom(opts: {
+	companyId: string;
+	from: Date;
+	deviceId?: string;
+}): Promise<DeviceStateAtFrom[]> {
+	const conditions = [
+		eq(deviceConnections.companyId, opts.companyId),
+		lt(deviceConnections.occurredAt, opts.from),
+	];
+	if (opts.deviceId) conditions.push(eq(deviceConnections.deviceId, opts.deviceId));
+	return await db
+		.selectDistinctOn([deviceConnections.deviceId], {
+			deviceId: deviceConnections.deviceId,
+			stateAtFrom: deviceConnections.event,
+			since: deviceConnections.occurredAt,
+		})
+		.from(deviceConnections)
+		.where(and(...conditions))
+		.orderBy(deviceConnections.deviceId, desc(deviceConnections.occurredAt));
 }
 
 /**
@@ -226,7 +311,9 @@ export async function listConnectionEvents(
 		})
 		.from(deviceConnections)
 		.where(and(...conditions))
-		.orderBy(deviceConnections.occurredAt);
+		.orderBy(deviceConnections.occurredAt)
+		.limit(opts.limit ?? 2000)
+		.offset(opts.offset ?? 0);
 }
 
 // ---------------------------------------------------------------------------

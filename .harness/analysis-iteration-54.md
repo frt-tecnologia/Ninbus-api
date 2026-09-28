@@ -1,58 +1,58 @@
 # Iteration 54 Analysis
 
 **Phase**: completed
-**Date**: 2026-09-24T18:11:40.590Z
+**Date**: 2026-09-28T14:37:37.774Z
 
 ## Results
 
 ### ✅ Functional Correctness
 
-Build clean (1369 modules). Tests: 488/502 pass; the 14 failures were verified PRE-EXISTING by stashing changes and re-running — identical failures on base (environmental: shared Neon test DB auth state, nginx posture check, SSE timing, DDI). Changes in this iteration are behavior-neutral (lint-level): catch(err)→catch, isNaN→Number.isNaN (identical for parseInt numbers), template literals, type annotation on `let result`, unused import/var removal, node: protocol imports. One real bug fixed: useFetch `sync` param was documented but never used (subscribe effect now respects it). Dashboard still builds (no TS-breaking edits; only attribute/import changes).
+Todos os 7 itens do plano + I9 (bands absorvendo gaps offline — bug pré-existente exposto pelo teste de regressão online→offline→online) implementados e validados ao vivo no docker. Flake intermitente (0→22 fails entre runs) isolado: 'Setup > creates company' timeout 10.016s no Neon compartilhado + 2 dependentes em cascata — quando o setup completa, a suíte inteira passa (3 runs limpos: 59/59, 59/59, 49/49).
 
-**Evidence**: bun run build → bundled 1369 modules OK. bun run lint → exit 0. bun run test → 488 pass / 14 fail, all 14 reproduced identically on stashed base commit (devices claim/hawkbit-disabled/DELETE: superAdmin login fails on shared Neon DB → 404 cascade; nginx posture, SSE timing, DDI v2 — environmental).
+**Evidence**: Ao vivo: bands -5h→-4h fechada no offline (antes: -5h→-2h mesclando o gap); stateAtFrom=online@-2h em from=-90min; limit=2+hasMore; sweep real 60s → occurredAt==deadline (bool true). 59/59 testes no run limpo
 
 ### ✅ Code Quality
 
-All source files remain under 250 lines (no files added to src/; changes were in-place). Biome v2 organizeImports now enforced across 318 files (154 violations auto-fixed). No new inline response schemas. No logging changes.
+Semântica de timestamp centralizada em UMA função (fim das duas convenções divergentes); sweep documentado com o rationale do grace; view/limit/offset declarados no query schema com fallback no handler (Elysia Union+default é buggy).
 
-**Evidence**: git diff shows only formatting/import-sort changes plus targeted small fixes. biome check . → 0 errors. Longest new file: .github/workflows/ci.yml (infrastructure, not a module).
+**Evidence**: transitionOccurredAt função única usada pelos 2 writers; selectDistinctOn (ORM puro) para states; schemas em schemas.ts; biome clean; connections-service 311 linhas (mantém padrão do arquivo: writers+reads+counts juntos, window functions só via raw)
 
 ### ✅ Schema Organization
 
-Untouched by this iteration — schemas.ts files only received formatter/import-sort changes (verified via git diff: no semantic edits in any schemas.ts).
+Response schema atualizado no módulo (data = Union ConnectionEvent|SessionBand documentada); nenhum schema inline na rota.
 
-**Evidence**: git diff src/modules/**/schemas.ts shows formatting-only changes.
+**Evidence**: CompanyConnectionsQuerySchema (limit/offset/view) e CompanyConnectionsResponseSchema (states/hasMore/Union events|bands) em observability/schemas.ts; DeviceStateAtFromSchema novo; rota importa
 
 ### ✅ Error Handling
 
-Two-level hawkBit protection unchanged. Only edit near error paths: removed unused `catch (error: any)` binding in hawkbit-routes.ts (behavior identical — error was never referenced).
+O sweep não pune mais atrasos de poll <60s (uma só voz com o hawkBit na fronteira); writes mortos para unclaimed removidos.
 
-**Evidence**: hawkbit-routes.ts 503 branch unchanged except unused catch binding removed.
+**Evidence**: Grace 60s elimina o par espúrio; guard companyId-null evita INSERT fail silencioso; telemetria best-effort preservada; validação from>to e range>90d intactas (testes 400 pré-existentes passando)
 
 ### ✅ Test Coverage
 
-All 10 integration + unit test files intact; only dead code removed (unused tarEntryNames helper in firmware.test.ts, unused require in deployment.test.ts). 502 tests still discovered and run. Same 14 environmental failures as base — not a coverage regression.
+A regressão do I9 (bands mesclando gap) foi PEGA pelo novo teste de bands antes do fix — prova do valor da suíte. Flakes ambientais documentados (Setup timeout Neon).
 
-**Evidence**: Full run: 502 tests across 23 files, 488 pass; failures identical on base (devices.test.ts 6/6 matched, DDI matched).
+**Evidence**: 12 testes novos: paginação (página vs total), stateAtFrom, bands (regressão: banda 1 fecha no offline, banda aberta fecha em now), transitionOccurredAt (3 casos), sweep (deadline==occurredAt, grace não-varre, unclaimed sem telemetria). 59/59 no run limpo
 
 ### ✅ Config Centralization
 
-No new app config vars introduced. CI workflow generates .env.test (gitignored locally because it contains a real Neon URL) with CI-safe values pointing at the service Postgres — workflow infrastructure, not app code, so env.ts flow is preserved.
+Sem novas variáveis de ambiente; constantes de tuning co-localizadas com o código que regulam.
 
-**Evidence**: CI heredoc mirrors .env.test values; DATABASE_URL overridden by workflow env (shell env wins over --env-file in bun).
+**Evidence**: STALE_SWEEP_GRACE_SEC = constante de módulo documentada (mesma classe de REFRESH_MAX_PER_CALL); nenhum env novo necessário; defaults de paginação no schema (não env)
 
 ### ✅ Security
 
-Deploy uses GitHub Secrets exclusively (EC2_SSH_KEY/AWS keys never in code). SG port 22 opened only for the runner's /32 during deploy and revoked with if:always(). IAM user needs only Authorize/RevokeSecurityGroupIngress on one SG (documented minimal policy). PEM handled via mktemp + chmod 600 + trap cleanup + tr -d '\r'. global-bundle.pem explicitly documented as NOT needed in GitHub (server-side RDS TLS only).
+Paginação/states/bands herdam o isolamento por empresa do WHERE existente; índices pré-existentes cobrem as novas leituras.
 
-**Evidence**: ci.yml contains zero literal secrets; SG ingress limited to runner /32 tcp/22 with always-revoke; docs include minimal IAM policy scoped to one SG ARN.
+**Evidence**: companyRole viewer+ e filtro companyId no SQL de todas as queries novas (events/count/states/sessions); DISTINCT ON indexado (device+occurred); sem exposição cross-tenant (tenant-isolation test pré-existente passando)
 
 ### ✅ 🔮 Futuro (Aprendizado Contínuo)
 
-4 principles learned: p-biome-ignore-placement, p-gitattributes-lf-biome, p-biome-v2-migration, p-github-actions-ec2-ssh. New doc docs/deploy-github-actions.md documents the full pipeline and credentials setup.
+Lições estruturais capturadas para futuras window functions e raw SQL; contrato v2 documentado para o agente do frontend (como desenhar a timeline sem heurística, semântica dos timestamps, escala 5k).
 
-**Evidence**: harness_learn_principle x4 → 'Total principles: 153'. docs/deploy-github-actions.md created with secrets table + SG discovery + IAM policy.
+**Evidence**: 2 princípios: p-window-fn-filter-order (LEAD antes do filtro — bands absorvem gaps) e p-drizzle-raw-date-param (Date cru em sql`` serializa local); MESSAGE-frontend-connections.md com contrato v2 completo
 
 ## Overall Notes
 
-Branch fix/ci-biome-ec2-deploy criada (sem commit, conforme pedido). (1) Biome 1.9.4→2.5.14: devDep upgraded, config migrated (preset/assist/files.includes/css parser), 266+ files reformatted/organized, ~35 lint errors fixed properly (unused imports/vars, a11y label/svg/role fixes, node: protocol, Number.isNaN, dead test helper removed, real useFetch sync-param bug fixed). bun run lint exit 0. (2) CI: frozen lockfile, CI-generated .env.test (was gitignored → bun test --env-file failed in CI), conditional cancel-in-progress (never cancels deploy on main). (3) Deploy: deploy-ec2 job on push→main after tests; auto authorizes runner IP /32 in SG via AWS CLI, SSH rebuild runbook (down -v → prune → up --build no-BuildKit), revoke if:always, CRLF-safe PEM. Docs: docs/deploy-github-actions.md with full secrets table, SG discovery, IAM minimal policy. .gitattributes added (LF enforcement). 4 principles learned. Residual: 14 test failures are environmental/pre-existing on shared Neon test DB (verified identical on base via stash); CI's fresh postgres expected green. 6 lint warnings accepted (intentional <img> logos, 1 template literal in diagnostic script).
+TELEMETRIA ONLINE/OFFLINE CORRIGIDA (branch fix/connections-telemetry criada de release/hawkbit-api, SEM commit — 9 incongruências resolvidas: as 8 do plano + 1 nova descoberta pelos testes). Implementação: P1 occurredAt unificado via transitionOccurredAt (online=lastPollAt; offline=nextExpectedPollAt/missed deadline) usado pelos DOIS writers; P2 states (stateAtFrom) via drizzle selectDistinctOn — âncora da primeira banda; P3 paginação limit(default 2000/max 10000)+offset+hasMore, total= janela inteira (countEventsInRange); P4 migration 0024 (drizzle-kit generate --custom — nativo) normalizando vocabulário legado online/offline→connected/disconnected, idempotente, aplicada no dev+test DB; P5 sweep com STALE_SWEEP_GRACE_SEC=60 (elimina pares espúrios offline/online na fronteira do deadline) + occurredAt=deadline + guard companyId-null no telemetry; P6 view=bands com limit/offset; P7 docs/MESSAGE-frontend-connections.md. BUG ADICIONAL (I9) descoberto e corrigido pelo teste: listSessions filtrava event='online' ANTES do LEAD — bandas online absorviam gaps offline (uptime inflado); corrigido com CTE ordered (LEAD sobre TODAS transições, filtro fora). BUGS DE PROCESSO: Date cru interpolado em sql`` (serializa como string local — fix com lt() do drizzle); default em t.Union do Elysia quebra query (400 — removido, fallback no handler). VALIDAÇÃO: 59/59 testes (12 novos: paginação, states, bands com regressão do gap, transitionOccurredAt, sweep deadline/grace/guard-unclaimed) — runs intermitentes com até 22 fails são 100% o Setup timeout 10s do Neon compartilhado (cascata nos 2 testes seguintes; re-runs limpos confirmam 0 fail); build/biome/tsc limpos (45 erros pré-existentes inalterados). AO VIVO NO DOCKER: seed online@-5h/offline@-4h/online@-2h → default 3 eventos+hasMore; limit=2 página+hasMore=true; bands: -5h→-4h (FECHADA no offline, gap não mais mesclado) e -2h→now; from=-90min → total=0 + stateAtFrom=online@-2h (âncora); SWEEP REAL do container (60s): device overdue → disconnected + evento offline com occurredAt EXATAMENTE == nextExpectedPoll_at (não detecção). Dados sintéticos limpos. Sem commit (branch nova da release para análise).

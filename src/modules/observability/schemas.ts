@@ -79,6 +79,21 @@ export const CompanyConnectionsQuerySchema = t.Object({
 	from: t.Optional(t.Date({ description: 'ISO 8601. Defaults to now - 24h.' })),
 	to: t.Optional(t.Date({ description: 'ISO 8601. Defaults to now.' })),
 	deviceId: t.Optional(t.String({ format: 'uuid', description: 'Filter a single device.' })),
+	limit: t.Optional(
+		t.Integer({
+			minimum: 1,
+			maximum: 10000,
+			default: 2000,
+			description: 'Page size (events or bands). Iterate ?offset while hasMore.',
+		}),
+	),
+	offset: t.Optional(t.Integer({ minimum: 0, default: 0, description: 'Page offset.' })),
+	view: t.Optional(
+		t.Union([t.Literal('events'), t.Literal('bands')], {
+			description:
+				'events = raw transitions (client draws bands); bands = server-computed online sessions (start→end).',
+		}),
+	),
 });
 
 export const ConnectionEventSchema = t.Object({
@@ -90,10 +105,24 @@ export const ConnectionEventSchema = t.Object({
 	ipAddress: t.Union([t.String(), t.Null()]),
 });
 
+export const DeviceStateAtFromSchema = t.Object({
+	deviceId: t.String({ format: 'uuid' }),
+	/** State carried INTO the window (last event before `from`; null = no prior event). */
+	stateAtFrom: t.Union([t.Literal('online'), t.Literal('offline'), t.Null()]),
+	/** When that prior event occurred (null when stateAtFrom is null). */
+	since: t.Union([dateTimeString, t.Null()]),
+});
+
 export const CompanyConnectionsResponseSchema = t.Object({
 	range: t.Object({ from: dateTimeString, to: dateTimeString }),
-	data: t.Array(ConnectionEventSchema),
+	/** Page of events (view=events) or online bands (view=bands). */
+	data: t.Array(t.Union([ConnectionEventSchema, SessionBandSchema])),
+	/** Total rows in the window (full set — not just the page). */
 	total: t.Number(),
+	/** Per-device state at window start — anchor for the first band. */
+	states: t.Array(DeviceStateAtFromSchema),
+	/** true when more pages exist beyond the returned slice. */
+	hasMore: t.Boolean(),
 });
 
 export const SessionsResponseSchema = t.Object({

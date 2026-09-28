@@ -162,6 +162,20 @@
       "when": 1789951068059,
       "tag": "0022_firmware_manifest_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790440391298,
+      "tag": "0023_devices_company_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790602041880,
+      "tag": "0024_normalize_connection_status",
+      "breakpoints": true
     }
   ]
 }

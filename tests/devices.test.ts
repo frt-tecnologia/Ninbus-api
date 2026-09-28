@@ -1,7 +1,13 @@
 import { afterAll, describe, expect, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
-import { companies, deviceConnections } from '../src/common/db/schema';
+import { companies, deviceConnections, devices } from '../src/common/db/schema';
+import {
+	markOverdueDevicesOffline,
+	STALE_SWEEP_GRACE_SEC,
+} from '../src/modules/devices/sync-helpers';
+import { transitionOccurredAt } from '../src/modules/observability/connections-service';
 import { cleanAll } from './test-helpers';
 
 afterAll(async () => {
@@ -696,6 +702,147 @@ describe('Devices Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/devices/connections`),
 			);
 			expect(r.status).toBe(401);
+		});
+
+		// ── Pagination (?limit/?offset + hasMore + total of the whole window) ──
+		it('GET /connections paginates: page vs full-window total', async () => {
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?limit=2&offset=0`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(200);
+			const body = await r.json();
+			expect(body.data).toHaveLength(2);
+			expect(body.total).toBe(3); // whole window, not the page
+			expect(body.hasMore).toBe(true);
+
+			const last = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?limit=2&offset=2`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			const lastBody = await last.json();
+			expect(lastBody.data).toHaveLength(1);
+			expect(lastBody.hasMore).toBe(false);
+		});
+
+		// ── stateAtFrom: anchor for the first band (last event BEFORE `from`) ──
+		it('GET /connections carries per-device state at window start', async () => {
+			// Window starts at -90min: only the online@-1h is inside; the state
+			// carried INTO the window is offline (event @-2h).
+			const from = iso(-90 * 60 * 1000);
+			const to = iso(0);
+			const r = await app.handle(
+				new Request(
+					`http://localhost/api/companies/${companyId}/devices/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+					{ headers: { Cookie: ownerCookie } },
+				),
+			);
+			expect(r.status).toBe(200);
+			const body = await r.json();
+			expect(body.total).toBe(1); // just the online@-1h
+			const st = body.states.find((s: any) => s.deviceId === connDeviceId);
+			expect(st).toBeDefined();
+			expect(st.stateAtFrom).toBe('offline');
+			expect(new Date(st.since).getTime()).toBeGreaterThan(Date.now() - 2.5 * 3600_000);
+		});
+
+		// ── view=bands: server-computed online sessions ──
+		it('GET /connections view=bands returns online sessions with start→end', async () => {
+			const r = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/devices/connections?view=bands`, {
+					headers: { Cookie: ownerCookie },
+				}),
+			);
+			expect(r.status).toBe(200);
+			const body = await r.json();
+			expect(body.data).toHaveLength(2); // two online events → two bands
+			const [first, second] = body.data;
+			expect(new Date(first.end).getTime()).toBeGreaterThan(new Date(first.start).getTime());
+			// First band is closed by the offline@-2h; second is open (closed at now).
+			expect(new Date(first.end).getTime()).toBeLessThan(new Date(second.start).getTime());
+			expect(new Date(second.end).getTime()).toBeGreaterThan(Date.now() - 60_000);
+		});
+	});
+
+	describe('Connection telemetry writers (unified occurredAt + sweep)', () => {
+		it('transitionOccurredAt: online→lastPollAt, offline→missed deadline', () => {
+			const lastPoll = new Date('2026-09-26T12:00:00Z');
+			const deadline = new Date('2026-09-26T12:05:00Z');
+			expect(
+				transitionOccurredAt('online', { lastPollAt: lastPoll, nextExpectedPollAt: deadline }),
+			).toBe(lastPoll);
+			expect(
+				transitionOccurredAt('offline', { lastPollAt: lastPoll, nextExpectedPollAt: deadline }),
+			).toBe(deadline);
+			// fallbacks
+			const t = transitionOccurredAt('offline', { lastPollAt: lastPoll, nextExpectedPollAt: null });
+			expect(t).toBe(lastPoll);
+		});
+
+		it('sweep: overdue device (past grace) → offline event dated at the MISSED DEADLINE', async () => {
+			const deadline = new Date(Date.now() - 10 * 60_000); // missed 10min ago
+			const [d] = await db
+				.insert(devices)
+				.values({
+					companyId,
+					hawkbitTargetId: 'SWEEPTARGET00001',
+					name: 'Sweep Device',
+					status: 'accepted',
+					connectionStatus: 'connected',
+					nextExpectedPollAt: deadline,
+				})
+				.returning({ id: devices.id });
+			const n = await markOverdueDevicesOffline();
+			expect(n).toBeGreaterThanOrEqual(1);
+			const [row] = await db.select().from(devices).where(eq(devices.id, d!.id));
+			expect(row?.connectionStatus).toBe('disconnected');
+			const [ev] = await db
+				.select()
+				.from(deviceConnections)
+				.where(eq(deviceConnections.deviceId, d!.id));
+			expect(ev?.event).toBe('offline');
+			expect(ev?.occurredAt.getTime()).toBe(deadline.getTime()); // deadline, not detection
+		});
+
+		it('sweep: deadline inside the grace window → NOT swept (no spurious pair)', async () => {
+			const [d] = await db
+				.insert(devices)
+				.values({
+					companyId,
+					hawkbitTargetId: 'SWEEPTARGET00002',
+					name: 'Grace Device',
+					status: 'accepted',
+					connectionStatus: 'connected',
+					nextExpectedPollAt: new Date(Date.now() - 5 * 1000), // 5s late only
+				})
+				.returning({ id: devices.id });
+			await markOverdueDevicesOffline();
+			const [row] = await db.select().from(devices).where(eq(devices.id, d!.id));
+			expect(row?.connectionStatus).toBe('connected'); // grace holds
+			expect(STALE_SWEEP_GRACE_SEC).toBeGreaterThan(0);
+		});
+
+		it('sweep: unclaimed device (no company) → status flipped, NO telemetry row', async () => {
+			const [d] = await db
+				.insert(devices)
+				.values({
+					hawkbitTargetId: 'SWEEPTARGET00003',
+					name: 'Unclaimed Sweep Device',
+					status: 'unclaimed',
+					connectionStatus: 'connected',
+					nextExpectedPollAt: new Date(Date.now() - 10 * 60_000),
+				})
+				.returning({ id: devices.id });
+			await markOverdueDevicesOffline();
+			const [ev] = await db
+				.select()
+				.from(deviceConnections)
+				.where(eq(deviceConnections.deviceId, d!.id));
+			expect(ev).toBeUndefined(); // guard: telemetry requires a company
 		});
 	});
 });

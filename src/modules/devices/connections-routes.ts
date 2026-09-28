@@ -1,6 +1,11 @@
 import { env } from '@common/config/env';
 import { withAuth } from '@common/middleware/auth-guard';
-import { listConnectionEvents } from '@modules/observability/connections-service';
+import {
+	countEventsInRange,
+	listConnectionEvents,
+	listSessions,
+	listStateAtFrom,
+} from '@modules/observability/connections-service';
 import {
 	CompanyConnectionsQuerySchema,
 	CompanyConnectionsResponseSchema,
@@ -46,14 +51,40 @@ export const deviceConnectionsRoutes = withAuth(
 			};
 		}
 
-		const data = await listConnectionEvents({
+		const view = query.view ?? 'events';
+		const data =
+			view === 'bands'
+				? await listSessions({
+						companyId: params.companyId,
+						deviceId: query.deviceId,
+						from,
+						to,
+						limit: query.limit,
+						offset: query.offset,
+					})
+				: await listConnectionEvents({
+						companyId: params.companyId,
+						deviceId: query.deviceId,
+						from,
+						to,
+						limit: query.limit,
+						offset: query.offset,
+					});
+		// Bands derive 1:1 from 'online' events — same page math either view.
+		const total = await countEventsInRange(params.companyId, from, to);
+		const states = await listStateAtFrom({
 			companyId: params.companyId,
-			deviceId: query.deviceId,
 			from,
-			to,
+			deviceId: query.deviceId,
 		});
 
-		return { range: { from, to }, data, total: data.length };
+		return {
+			range: { from, to },
+			data,
+			total,
+			states,
+			hasMore: (query.offset ?? 0) + data.length < total,
+		};
 	},
 	{
 		auth: true,
@@ -64,10 +95,13 @@ export const deviceConnectionsRoutes = withAuth(
 			tags: ['Devices'],
 			summary: 'Device connection timeline (company-scoped)',
 			description:
-				'Raw online/offline transition events for the requester company devices within a time ' +
-				'window (default last 24h). Each event is a single status change with its timestamp; ' +
-				'the client computes the timeline bands from consecutive events. ' +
-				'Query params: `from`, `to` (ISO 8601, optional), `deviceId` (optional filter). ' +
+				'Raw online/offline transition events (view=events, default) or server-computed ' +
+				'online session bands (view=bands) for the requester company devices within a ' +
+				'window (default last 24h). PAGINATED (?limit default 2000/max 10000 + ?offset, ' +
+				'hasMore; total counts the whole window). `states` carries each device\u2019s state ' +
+				'AT the window start (last event before `from`) — anchor the first band on it ' +
+				'instead of guessing. Offline events date from the MISSED poll deadline ' +
+				'(nextExpectedPollAt). Query: from, to (ISO 8601), deviceId, limit, offset, view. ' +
 				'Capped at the telemetry retention window. Requires viewer role or above.',
 		},
 		response: {

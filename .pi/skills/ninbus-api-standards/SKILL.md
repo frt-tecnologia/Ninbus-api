@@ -195,6 +195,20 @@ catch (error) {
 
 GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
 
+**Connection Pass (Single Observer, Single Voice):** observador rotativo
+always-on da conexão (`connection-pass.ts` + núcleo puro em
+`connection-pass-core.ts`), independente de modo e de atividade de usuário.
+A cada tick (intervalo = `HAWKBIT_SYNC_INTERVAL_SEC`) lê K páginas de targets
+(orçamento derivado de `HAWKBIT_POLLING_TIME` — rotação completa ≤ ½ polling
+interval em qualquer escala), faz diff-before-write e transições pelo
+chokepoint único de telemetria. Órfãos (target deletado no hawkBit) só são
+julgados offline após uma rotação COMPLETA bem-sucedida. O antigo sweep de
+deadline (segundo juiz local + grace) foi DELETADO junto com
+`HAWKBIT_STALE_SWEEP_SEC`. Escrita serializada com o enrichment via
+`withConnectionWriteLock` + CAS (re-leitura de status dentro do lock) — nunca
+há eventos duplicados entre pass e enrichment. Plano:
+`docs/online-offline-root-fix-plan.md`.
+
 **GET /companies/:companyId/devices/firmware/status (50k-scale):** PAGINADO
 (`?limit` default 1000/max 5000 + `?offset`, `hasMore`; `summary` cobre a frota
 inteira) + refresh on-demand de versões stale **limitado a 100 pulls hawkBit por

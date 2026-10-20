@@ -54,6 +54,24 @@ export function getProtectedStatus(targetId: string): HawkbitUpdateStatus | null
 	return entry.status;
 }
 
+/**
+ * Serialize connection-fact writers (Connection Pass × enrichment sync). Both
+ * paths read the row, diff, write and record the transition — running them
+ * concurrently could record the SAME transition twice (duplicate events).
+ * Same-process promise chain is sufficient: both writers live in this process.
+ */
+let connectionWriteChain: Promise<unknown> = Promise.resolve();
+
+/** Run `fn` exclusively against other connection-fact writers. */
+export function withConnectionWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+	const run = connectionWriteChain.then(fn, fn);
+	connectionWriteChain = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -97,7 +115,9 @@ export function extractTargetData(target: {
 	nextExpectedPollAt: Date | null;
 	lastSeenAt: Date | null;
 } {
-	const isConnected = target.pollStatus ? !target.pollStatus.overdue : false;
+	// A never-polled target (no lastRequestAt) is NOT connected — otherwise a
+	// fresh provision reads "connected" until its first missed deadline.
+	const isConnected = !!target.pollStatus?.lastRequestAt && !target.pollStatus.overdue;
 	return {
 		connectionStatus: isConnected ? 'connected' : 'disconnected',
 		hawkbitUpdateStatus: mapUpdateStatus(target.updateStatus),
@@ -128,12 +148,16 @@ export async function syncSingleDeviceSwr(
 
 	const { hawkbitTargets } = await import('@common/hawkbit/client');
 	const staleMs = hawkbitConfig.syncStaleSec * 1000;
+	// Freshness = last time the device was SEEN polling (lastRequestAt mirror),
+	// not the row's updatedAt — the Connection Pass writes only on fact changes
+	// (diff), so updatedAt no longer advances in steady state.
 	const [device] = await db
-		.select({ updatedAt: devices.updatedAt })
+		.select({ lastSeenAt: devices.lastSeenAt, updatedAt: devices.updatedAt })
 		.from(devices)
 		.where(eq(devices.hawkbitTargetId, targetId));
 
-	if (device?.updatedAt && Date.now() - device.updatedAt.getTime() < staleMs) {
+	const freshnessRef = device?.lastSeenAt ?? device?.updatedAt;
+	if (freshnessRef && Date.now() - freshnessRef.getTime() < staleMs) {
 		const [fresh] = await db
 			.select({
 				hawkbitUpdateStatus: devices.hawkbitUpdateStatus,

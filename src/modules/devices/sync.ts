@@ -17,10 +17,10 @@ import { applyPollingTimeConfigRetried } from '@common/hawkbit/system-config';
 import { appLogger } from '@common/logger';
 import { sseEmitter } from '@common/sse';
 import { eq } from 'drizzle-orm';
+import { runConnectionPassTick } from './connection-pass';
 import { syncFirmwareVersions } from './firmware-sync';
 import { fetchAllHawkBitTargets } from './sync-fetch';
 import {
-	markOverdueDevicesOffline,
 	type SyncState,
 	syncCompanyOnDemand,
 	syncNewTargets,
@@ -44,7 +44,7 @@ const state: SyncState = {
 
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 let fastSyncTimer: ReturnType<typeof setInterval> | null = null;
-let staleTimer: ReturnType<typeof setInterval> | null = null;
+let connectionPassTimer: ReturnType<typeof setInterval> | null = null;
 let hasPendingDeployments = false;
 
 /** Fast sync interval when deployments are active (seconds). */
@@ -97,18 +97,20 @@ export const DeviceSyncEngine = {
 
 		sseEmitter.startHeartbeat();
 
-		// Independent staleness sweep — marks devices disconnected as soon as
-		// nextExpectedPollAt < now(), decoupled from the (heavier) hawkBit sync
-		// cycle. This keeps connection-status latency low (~10s) regardless of
-		// the sync interval (30s+) or hawkBit response time. The sweep is a cheap
-		// single indexed UPDATE + SSE coalescer push — runs even in on_demand mode.
-		const sweepSec = hawkbitConfig.staleSweepSec;
-		staleTimer = setInterval(() => {
-			markOverdueDevicesOffline().catch((err) => {
-				appLogger.debug('[SYNC] Stale sweep error: %s', err?.message);
+		// Connection Pass — the ALWAYS-ON base process for connection facts
+		// (replaces the old staleness sweep): rotating observer of hawkBit
+		// pollStatus for ALL devices, every mode, independent of user activity.
+		// Rotation budget derives from pollingTime/syncInterval so a full fleet
+		// rotation completes within ½ polling interval at any scale.
+		connectionPassTimer = setInterval(() => {
+			runConnectionPassTick().catch((err) => {
+				appLogger.debug('[CONN-PASS] tick error: %s', err?.message);
 			});
-		}, sweepSec * 1000);
-		appLogger.info('[SYNC] Staleness sweep started (interval: %ds)', sweepSec);
+		}, intervalSec * 1000);
+		appLogger.info(
+			'[CONN-PASS] Connection pass started (interval: %ds, rotation ≤ ½ polling interval)',
+			intervalSec,
+		);
 
 		if (mode === 'on_demand' || intervalSec <= 0) return;
 
@@ -130,9 +132,9 @@ export const DeviceSyncEngine = {
 			clearInterval(fastSyncTimer);
 			fastSyncTimer = null;
 		}
-		if (staleTimer) {
-			clearInterval(staleTimer);
-			staleTimer = null;
+		if (connectionPassTimer) {
+			clearInterval(connectionPassTimer);
+			connectionPassTimer = null;
 		}
 		hasPendingDeployments = false;
 		appLogger.info('[SYNC] Background sync stopped');
@@ -162,11 +164,6 @@ export const DeviceSyncEngine = {
 			// Firmware versions: pull DDI-reported versions for devices with an
 			// active deployment or a still-unknown version (best-effort, cheap).
 			await syncFirmwareVersions();
-
-			// Staleness sweep: self-heal orphaned/overdue devices (independent of
-			// hawkBit). Catches devices whose hawkBit target was deleted and would
-			// otherwise freeze at 'connected' forever.
-			await markOverdueDevicesOffline();
 
 			state.lastFullSyncAt = new Date();
 			state.lastDurationMs = Date.now() - startTime;

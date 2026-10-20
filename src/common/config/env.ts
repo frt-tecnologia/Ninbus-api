@@ -179,19 +179,6 @@ const EnvSchema = Type.Object({
 				'Only active companies are synced in hybrid mode. Default 300s (5 min).',
 		}),
 	),
-	HAWKBIT_STALE_SWEEP_SEC: Type.Optional(
-		Type.Number({
-			default: 10,
-			minimum: 5,
-			maximum: 60,
-			description:
-				'Independent staleness-sweep interval in seconds. Marks devices disconnected ' +
-				'as soon as nextExpectedPollAt < now(), decoupled from the heavier hawkBit sync cycle. ' +
-				'Keeps connection-status latency low (~10s) even when sync interval is 30s+. ' +
-				'Default 10s.',
-		}),
-	),
-
 	// ── hawkBit Device Polling Time (DDI) ─────────────────────
 	// pollingTime is a hawkBit RUNTIME system config (DB-backed, written only
 	// via the Management API). The API pushes HAWKBIT_POLLING_TIME into hawkBit
@@ -361,9 +348,6 @@ export function validateEnv(): Env {
 			: undefined,
 		HAWKBIT_SYNC_ACTIVE_WINDOW_SEC: process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC']
 			? Number(process.env['HAWKBIT_SYNC_ACTIVE_WINDOW_SEC'])
-			: undefined,
-		HAWKBIT_STALE_SWEEP_SEC: process.env['HAWKBIT_STALE_SWEEP_SEC']
-			? Number(process.env['HAWKBIT_STALE_SWEEP_SEC'])
 			: undefined,
 		HAWKBIT_POLLING_TIME: process.env['HAWKBIT_POLLING_TIME'],
 		ARTIFACT_MAX_SIZE_MB: process.env['ARTIFACT_MAX_SIZE_MB']

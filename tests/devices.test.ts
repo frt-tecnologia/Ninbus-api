@@ -1,12 +1,13 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
-import { companies, deviceConnections, devices } from '../src/common/db/schema';
+import { companies, deviceConnections } from '../src/common/db/schema';
 import {
-	markOverdueDevicesOffline,
-	STALE_SWEEP_GRACE_SEC,
-} from '../src/modules/devices/sync-helpers';
+	computeConnectionChanges,
+	findOrphanChanges,
+	parsePollingIntervalSec,
+	rotationBudget,
+} from '../src/modules/devices/connection-pass';
 import { transitionOccurredAt } from '../src/modules/observability/connections-service';
 import { cleanAll } from './test-helpers';
 
@@ -768,7 +769,7 @@ describe('Devices Module', () => {
 		});
 	});
 
-	describe('Connection telemetry writers (unified occurredAt + sweep)', () => {
+	describe('Connection telemetry writers (pass core + unified occurredAt)', () => {
 		it('transitionOccurredAt: online→lastPollAt, offline→missed deadline', () => {
 			const lastPoll = new Date('2026-09-26T12:00:00Z');
 			const deadline = new Date('2026-09-26T12:05:00Z');
@@ -783,66 +784,98 @@ describe('Devices Module', () => {
 			expect(t).toBe(lastPoll);
 		});
 
-		it('sweep: overdue device (past grace) → offline event dated at the MISSED DEADLINE', async () => {
-			const deadline = new Date(Date.now() - 10 * 60_000); // missed 10min ago
-			const [d] = await db
-				.insert(devices)
-				.values({
-					companyId,
-					hawkbitTargetId: 'SWEEPTARGET00001',
-					name: 'Sweep Device',
-					status: 'accepted',
-					connectionStatus: 'connected',
-					nextExpectedPollAt: deadline,
-				})
-				.returning({ id: devices.id });
-			const n = await markOverdueDevicesOffline();
-			expect(n).toBeGreaterThanOrEqual(1);
-			const [row] = await db.select().from(devices).where(eq(devices.id, d!.id));
-			expect(row?.connectionStatus).toBe('disconnected');
-			const [ev] = await db
-				.select()
-				.from(deviceConnections)
-				.where(eq(deviceConnections.deviceId, d!.id));
-			expect(ev?.event).toBe('offline');
-			expect(ev?.occurredAt.getTime()).toBe(deadline.getTime()); // deadline, not detection
+		const lastPollMs = Date.now() - 60_000;
+		const deadlineMs = Date.now() - 10_000;
+		const targetOf = (overdue: boolean, ip: string | null = '10.0.0.1') => ({
+			pollStatus: {
+				overdue,
+				lastRequestAt: lastPollMs,
+				nextExpectedRequestAt: deadlineMs,
+			},
+			ipAddress: ip,
+			updateStatus: 'in_sync',
+		});
+		const rowOf = (connectionStatus: string | null, companyId: string | null = 'c1') =>
+			({
+				id: 'd1',
+				companyId,
+				hawkbitTargetId: 'T1',
+				name: 'Dev',
+				connectionStatus,
+				ipAddress: '10.0.0.1',
+				lastPollAt: new Date(lastPollMs - 60_000),
+				nextExpectedPollAt: new Date(deadlineMs - 60_000),
+				lastSeenAt: new Date(lastPollMs - 60_000),
+			}) as any;
+
+		it('computeConnectionChanges: overdue target → offline transition dated at the MISSED DEADLINE', () => {
+			const changes = computeConnectionChanges(
+				[rowOf('connected')],
+				new Map([['T1', targetOf(true)]]),
+			);
+			expect(changes).toHaveLength(1);
+			expect(changes[0]!.patch.connectionStatus).toBe('disconnected');
+			expect(changes[0]!.transition?.event).toBe('offline');
+			expect(changes[0]!.transition?.occurredAt.getTime()).toBe(deadlineMs); // deadline, not detection
 		});
 
-		it('sweep: deadline inside the grace window → NOT swept (no spurious pair)', async () => {
-			const [d] = await db
-				.insert(devices)
-				.values({
-					companyId,
-					hawkbitTargetId: 'SWEEPTARGET00002',
-					name: 'Grace Device',
-					status: 'accepted',
-					connectionStatus: 'connected',
-					nextExpectedPollAt: new Date(Date.now() - 5 * 1000), // 5s late only
-				})
-				.returning({ id: devices.id });
-			await markOverdueDevicesOffline();
-			const [row] = await db.select().from(devices).where(eq(devices.id, d!.id));
-			expect(row?.connectionStatus).toBe('connected'); // grace holds
-			expect(STALE_SWEEP_GRACE_SEC).toBeGreaterThan(0);
+		it('computeConnectionChanges: reconnecting target → online transition dated at lastPollAt', () => {
+			const changes = computeConnectionChanges(
+				[rowOf('disconnected')],
+				new Map([['T1', targetOf(false)]]),
+			);
+			expect(changes).toHaveLength(1);
+			expect(changes[0]!.transition?.event).toBe('online');
+			expect(changes[0]!.transition?.occurredAt.getTime()).toBe(lastPollMs);
 		});
 
-		it('sweep: unclaimed device (no company) → status flipped, NO telemetry row', async () => {
-			const [d] = await db
-				.insert(devices)
-				.values({
-					hawkbitTargetId: 'SWEEPTARGET00003',
-					name: 'Unclaimed Sweep Device',
-					status: 'unclaimed',
-					connectionStatus: 'connected',
-					nextExpectedPollAt: new Date(Date.now() - 10 * 60_000),
-				})
-				.returning({ id: devices.id });
-			await markOverdueDevicesOffline();
-			const [ev] = await db
-				.select()
-				.from(deviceConnections)
-				.where(eq(deviceConnections.deviceId, d!.id));
-			expect(ev).toBeUndefined(); // guard: telemetry requires a company
+		it('computeConnectionChanges: steady state (same facts) → ZERO writes', () => {
+			const row = {
+				...rowOf('connected'),
+				lastPollAt: new Date(lastPollMs),
+				nextExpectedPollAt: new Date(deadlineMs),
+				lastSeenAt: new Date(lastPollMs),
+			};
+			const changes = computeConnectionChanges([row], new Map([['T1', targetOf(false)]]));
+			expect(changes).toHaveLength(0);
+		});
+
+		it('computeConnectionChanges: unclaimed device → patch applied but NO transition (telemetry needs company)', () => {
+			const changes = computeConnectionChanges(
+				[rowOf('connected', null)],
+				new Map([['T1', targetOf(true)]]),
+			);
+			expect(changes).toHaveLength(1);
+			expect(changes[0]!.transition).toBeNull();
+		});
+
+		it('computeConnectionChanges: target missing from the slice → skipped (orphans judged only at rotation end)', () => {
+			const changes = computeConnectionChanges([rowOf('connected')], new Map());
+			expect(changes).toHaveLength(0);
+		});
+
+		it('findOrphanChanges: connected row absent from a COMPLETE rotation → offline at its deadline', () => {
+			const changes = findOrphanChanges([rowOf('connected')], new Set(['OTHER']));
+			expect(changes).toHaveLength(1);
+			expect(changes[0]!.patch.connectionStatus).toBe('disconnected');
+			expect(changes[0]!.transition?.event).toBe('offline');
+		});
+
+		it('findOrphanChanges: target seen in the rotation → no verdict', () => {
+			expect(findOrphanChanges([rowOf('connected')], new Set(['T1']))).toHaveLength(0);
+		});
+
+		it('rotationBudget: full rotation ≤ ½ polling interval at any scale', () => {
+			expect(rotationBudget(5000, 300, 30)).toBe(2); // 10 pages / 5 slots
+			expect(rotationBudget(50_000, 300, 30)).toBe(20); // 100 pages / 5 slots
+			expect(rotationBudget(120, 300, 30)).toBe(1);
+			expect(rotationBudget(5000, 5, 30)).toBe(10); // 5s polls: 1 slot → whole fleet per tick
+		});
+
+		it('parsePollingIntervalSec: HH:MM:SS → seconds, fallback on malformed', () => {
+			expect(parsePollingIntervalSec('00:05:00')).toBe(300);
+			expect(parsePollingIntervalSec('00:00:05')).toBe(5);
+			expect(parsePollingIntervalSec('bogus')).toBe(300);
 		});
 	});
 });

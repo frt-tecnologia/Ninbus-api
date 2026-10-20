@@ -19,16 +19,12 @@ type KpiProps = {
 export function Kpi({ label, value, hint, indicator, className }: KpiProps) {
 	return (
 		<div className={cn('flex flex-col gap-2', className)}>
-			<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-				{label}
-			</div>
+			<div className="t-caps text-ink-3">{label}</div>
 			<div className="flex items-baseline gap-2">
-				<span className="font-mono text-4xl font-semibold tabular-nums leading-none text-foreground">
-					{value}
-				</span>
+				<span className="t-value text-foreground">{value}</span>
 				{indicator}
 			</div>
-			{hint && <div className="text-sm text-muted-foreground">{hint}</div>}
+			{hint && <div className="t-meta text-muted-foreground">{hint}</div>}
 		</div>
 	);
 }

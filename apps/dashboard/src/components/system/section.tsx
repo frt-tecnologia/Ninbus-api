@@ -27,12 +27,12 @@ export function Section({
 	children,
 }: SectionProps) {
 	return (
-		<section className={cn('rounded-lg border border-border bg-card', className)}>
+		<section className={cn('rounded-md bg-card shadow-e1', className)}>
 			{(title || action) && (
-				<header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+				<header className="flex items-start justify-between gap-3 px-4 pb-3 pt-4">
 					<div className="min-w-0">
-						{title && <h2 className="truncate text-sm font-semibold text-foreground">{title}</h2>}
-						{description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+						{title && <h2 className="t-title truncate text-foreground">{title}</h2>}
+						{description && <p className="t-meta mt-0.5 text-muted-foreground">{description}</p>}
 					</div>
 					{action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
 				</header>
@@ -57,12 +57,10 @@ export function SectionHeader({
 	className?: string;
 }) {
 	return (
-		<header
-			className={cn('flex items-end justify-between gap-3 border-b border-border pb-3', className)}
-		>
+		<header className={cn('flex items-end justify-between gap-3 pb-3', className)}>
 			<div className="min-w-0">
-				<h2 className="text-sm font-semibold text-foreground">{title}</h2>
-				{description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+				<h2 className="t-title text-foreground">{title}</h2>
+				{description && <p className="t-meta mt-0.5 text-muted-foreground">{description}</p>}
 			</div>
 			{action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
 		</header>

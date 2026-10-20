@@ -67,7 +67,7 @@ const SelectContent = React.forwardRef<
 			className={cn(
 				// z-[70] — portaled above Dialog overlay/content (z-[60]) so dropdowns
 				// opened inside dialogs stay clickable (overlay is fixed inset-0).
-				'relative z-[70] max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+				'relative z-[70] max-h-96 min-w-[8rem] overflow-hidden rounded-md bg-popover text-popover-foreground shadow-e2 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 				position === 'popper' && 'data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
 				className,
 			)}

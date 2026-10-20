@@ -33,15 +33,11 @@ export default function CompanyObservabilityPage() {
 			<PageHeader
 				title={company.data?.name ?? 'Carregando…'}
 				description="Observabilidade da empresa — conectividade, grupos e auditoria."
+				className="mb-0 pb-[22px]"
 				action={
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => router.push('/companies')}
-						className="h-8"
-					>
+					<Button variant="outline" size="sm" onClick={() => router.push('/companies')}>
 						<ArrowLeft className="mr-1.5 h-4 w-4" />
-						Voltar à lista
+						Voltar
 					</Button>
 				}
 			/>

@@ -18,7 +18,7 @@ const TooltipContent = React.forwardRef<
 			sideOffset={sideOffset}
 			className={cn(
 				// z-[70] — above the Dialog overlay/content (z-[60]).
-				'z-[70] overflow-hidden rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0',
+				'z-[70] overflow-hidden rounded-sm bg-ink px-3 py-1.5 text-xs text-white shadow-e2 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0',
 				className,
 			)}
 			{...props}

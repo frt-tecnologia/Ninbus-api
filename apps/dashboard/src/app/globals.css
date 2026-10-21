@@ -1,197 +1,143 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
- * FRT Design System — "ferramenta de campo profissional com alma calma".
+ * Design tokens — Ninbus dashboard, aligned with the mobile app theme.
  *
- * Essência: Apple (profundidade em camadas, tipografia com tracking negativo,
- * restrição cromática) + material natural (areia, calor, presença física).
- * NÃO é dashboard de startup. NÃO é SaaS gradiente.
+ * Brand identity = the Ninbus neon yellow-green (#E6F806) from the mobile
+ * splash screen. It is the SINGLE action accent (`--primary`). On dark it
+ * pops as a high-energy CTA color; the foreground on it is near-black
+ * (#1A1A1A) so text stays legible (mirrors onBrandYellow in the app).
  *
- * Tríade semântica FRT sobre base neutra quente:
- *   --frt-blue   → ação principal, marca, técnico
- *   --frt-green  → sucesso, conectado, íntegro
- *   --frt-red    → crítico, erro, destrutivo
- *   --accent     → ponte azul↔verde, foco, realce (busy/work-in-progress)
- * 90% da tela é neutro (areia + ink). Cores FRT são cirúrgicas.
+ * Five SIGNAL tones (`--signal-*`) convey ONLY domain state
+ * (online/offline, downloading/installed/failed). They are NOT brand colors.
  *
- * Hairlines SEMPRE via box-shadow 0.5px — nunca border sólido grosso.
- * Sombras em 3 camadas obrigatórias: hairline + micro + ambient.
+ * Dark-first: `:root, .dark` carry the dark palette; `.light` overrides.
+ * next-themes (attribute="class", defaultTheme="dark") toggles `.dark`.
  */
 
 @layer base {
-	:root {
-		/* ── Tríade semântica FRT ─────────────────────────────────── */
-		--frt-blue: 209 59% 30%; /* #1F4E79 — ação, marca, técnico */
-		--frt-blue-dark: 209 63% 22%; /* #153A5C — hover/pressed */
-		--frt-blue-soft: 210 42% 92%; /* #E4ECF4 — fundo de destaque */
-		--frt-green: 145 46% 34%; /* #2E7D4F — sucesso, conectado */
-		--frt-green-soft: 140 32% 92%; /* #E6F2EA — fundo de estado verde */
-		--frt-red: 6 61% 45%; /* #B83A2C — crítico, erro */
-		--frt-red-soft: 10 58% 93%; /* #F8E8E5 — fundo de estado vermelho */
-		--frt-info: 207 58% 41%; /* #2C6FA6 — info */
-		--frt-info-soft: 210 47% 93%; /* #E6EEF6 */
-		--accent: 185 32% 45%; /* #4E9399 — ponte azul↔verde, foco */
+	:root,
+	.dark {
+		/* ── Surfaces (dark) ──────────────────────────────────────── */
+		--background: 240 10% 4%; /* #0a0a0d */
+		--foreground: 0 0% 96%;
+		--card: 240 9% 6%;
+		--card-foreground: 0 0% 96%;
+		--popover: 240 10% 5%;
+		--popover-foreground: 0 0% 96%;
+		--muted: 240 6% 13%;
+		--muted-foreground: 240 5% 62%;
+		--secondary: 240 6% 13%;
+		--secondary-foreground: 0 0% 96%;
+		--accent: 240 6% 14%;
+		--accent-foreground: 0 0% 96%;
+		--border: 240 6% 17%;
+		--input: 240 6% 17%;
+		/* ring matches the brand neon yellow */
+		--ring: 65 96% 50%;
 
-		/* ── Base neutra quente ───────────────────────────────────── */
-		--background: 39 46% 93%; /* #F5EFE4 — areia clara */
-		--bg-2: 39 42% 89%; /* #EFE7D8 — hover de sunk */
-		--foreground: 240 4% 11%; /* #1A1A1C — ink (preto quente) */
-		--card: 0 0% 100%; /* #FFFFFF — superfícies elevadas */
-		--card-foreground: 240 4% 11%;
-		--popover: 0 0% 100%;
-		--popover-foreground: 240 4% 11%;
-		--surface-soft: 40 45% 96%; /* #FAF7F1 */
-		--surface-sunk: 40 48% 94%; /* #F7F2E8 — inputs, selects */
-		--muted: 40 48% 94%;
-		--muted-foreground: 240 3% 55%; /* ink-3 */
-		--secondary: 39 42% 89%; /* bg-2 */
-		--secondary-foreground: 240 4% 11%;
-		--accent-surface: 39 42% 89%;
-		--accent-foreground: 240 4% 11%;
-		/* hairlines ≈ rgba(26,26,28,.08/.12) blendidos na areia */
-		--border: 38 23% 86%;
-		--border-strong: 40 17% 83%;
-		--input: 38 23% 86%;
-		--ring: 185 32% 45%; /* accent */
-
-		/* ── Escala de ink ────────────────────────────────────────── */
-		--ink: 240 4% 11%;
-		--ink-2: 240 3% 29%; /* #48484A */
-		--ink-3: 240 3% 55%; /* #8A8A8E */
-		--ink-4: 240 3% 73%; /* #B8B8BC — placeholder, inativo */
-
-		/* ── Ação + crítico (shadcn) ──────────────────────────────── */
-		--primary: 209 59% 30%; /* frt-blue */
-		--primary-hover: 209 63% 22%; /* frt-blue-dark */
-		--primary-foreground: 0 0% 100%;
-		--destructive: 6 61% 45%; /* frt-red */
+		/* ── Brand action accent — Ninbus neon yellow-green (#E6F806) ── */
+		--primary: 65 96% 50%;
+		--primary-foreground: 0 0% 10%; /* #1A1A1A — legible on yellow */
+		--destructive: 0 72% 51%;
 		--destructive-foreground: 0 0% 100%;
 
-		/* ── SIGNAL tones (estado apenas) ─────────────────────────── */
-		--signal-ok: 145 46% 34%; /* frt-green */
-		--signal-busy: 185 32% 45%; /* accent — trabalho ativo */
-		--signal-fault: 6 61% 45%; /* frt-red */
-		--signal-idle: 240 3% 55%; /* ink-3 — neutro */
-		--signal-info: 207 58% 41%; /* frt-info */
+		/* ── SIGNAL tones (state only) ─────────────────────────────── */
+		--signal-ok: 142 65% 49%; /* green  */
+		--signal-busy: 38 92% 55%; /* amber  */
+		--signal-fault: 0 72% 58%; /* red    */
+		--signal-idle: 240 5% 58%; /* neutral */
+		--signal-info: 192 85% 52%; /* cyan   */
 
-		/* ── Paleta de gráficos (FRT, sem neon) ───────────────────── */
-		--chart-1: 209 59% 30%; /* frt-blue */
-		--chart-2: 145 46% 34%; /* frt-green */
-		--chart-3: 185 32% 45%; /* accent */
-		--chart-4: 207 58% 41%; /* frt-info */
-		--chart-5: 240 3% 55%; /* ink-3 */
+		/* ── BRAND chart palette (from the Ninbus logo + secondary) ── */
+		/* Used by overview charts so they read as brand, not gray. */
+		--brand-lime: 67 98% 52%; /* #e3f504 — neon lime (logo primary) */
+		--brand-violet: 254 98% 67%; /* #7c58fd — electric violet */
+		--brand-chartreuse: 73 99% 67%; /* #ccfe55 — chartreuse green */
 
-		/* ── Raios ────────────────────────────────────────────────── */
-		--r-sm: 12px; /* inputs, chips, selects */
-		--r-md: 16px; /* cards, KPIs */
-		--r-lg: 20px; /* botão hero, painéis */
-		--r-xl: 24px; /* painel principal */
-		--radius: 16px; /* compat shadcn (rounded-lg → r-lg via config) */
-
-		/* ── Sombras — 3 camadas: hairline + micro + ambient ──────── */
-		--hairline: rgba(26, 26, 28, 0.08);
-		--hairline-2: rgba(26, 26, 28, 0.12);
-		--shadow-e1:
-			0 0 0 0.5px var(--hairline-2), 0 1px 2px rgba(26, 26, 28, 0.05),
-			0 8px 24px -8px rgba(26, 26, 28, 0.1);
-		--shadow-e2:
-			0 0 0 0.5px var(--hairline-2), 0 2px 6px rgba(26, 26, 28, 0.06),
-			0 20px 48px -16px rgba(26, 26, 28, 0.16);
+		--radius: 0.5rem;
 	}
 
-	* {
-		@apply border-border;
-	}
+	.light {
+		/* ── Surfaces (light / paper) ──────────────────────────── */
+		--background: 30 12% 98%;
+		--foreground: 240 10% 8%;
+		--card: 0 0% 100%;
+		--card-foreground: 240 10% 8%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 240 10% 8%;
+		--muted: 240 6% 95%;
+		--muted-foreground: 240 4% 42%;
+		--secondary: 240 5% 94%;
+		--secondary-foreground: 240 10% 8%;
+		--accent: 240 5% 94%;
+		--accent-foreground: 240 10% 8%;
+		--border: 240 6% 88%;
+		--input: 240 6% 88%;
+		/* light ring = FRT blue */
+		--ring: 207 100% 25%;
 
-	html {
-		font-size: 16px;
-		-webkit-font-smoothing: antialiased;
-		-moz-osx-font-smoothing: grayscale;
-		text-rendering: optimizeLegibility;
-	}
+		/* ── Brand accent — FRT blue (#004881) on paper ──────────── */
+		--primary: 207 100% 25%;
+		--primary-foreground: 0 0% 100%;
+		--destructive: 0 72% 48%;
+		--destructive-foreground: 0 0% 100%;
 
-	body {
-		@apply bg-background text-foreground antialiased;
-		font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-		font-size: 15px;
-		letter-spacing: -0.005em;
-		font-variant-numeric: tabular-nums;
-		color: hsl(var(--ink));
-		caret-color: hsl(var(--frt-blue));
-	}
+		/* signals slightly deeper for legibility on paper */
+		--signal-ok: 142 60% 38%;
+		--signal-busy: 32 90% 45%;
+		--signal-fault: 0 68% 45%;
+		--signal-idle: 240 4% 45%;
+		--signal-info: 192 75% 42%;
 
-	/* ── Superfícies do navegador (selection, scrollbar) ────────── */
-	::selection {
-		background: hsl(var(--frt-blue-soft));
-		color: hsl(var(--frt-blue-dark));
-	}
-
-	* {
-		scrollbar-width: thin;
-		scrollbar-color: hsl(var(--ink-4)) transparent;
-	}
-
-	:focus-visible {
-		outline: 2px solid hsl(var(--accent));
-		outline-offset: 2px;
+		/* ── BRAND chart palette (from the Ninbus logo + secondary) ── */
+		--brand-lime: 67 92% 45%; /* #e3f504 — neon lime */
+		--brand-violet: 254 72% 60%; /* #7c58fd — electric violet */
+		--brand-chartreuse: 73 90% 55%; /* #ccfe55 — chartreuse green */
 	}
 }
 
-@layer components {
-	/* ── Escala tipográfica FRT ──────────────────────────────────── */
-	.t-hero {
-		font-size: 17px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-		line-height: 1.2;
+@layer base {
+	* {
+		@apply border-border;
 	}
-	.t-title {
-		font-size: 15px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-		line-height: 1.25;
+	/* Scale up the base type ladder slightly for better legibility — the
+	 * original density was tuned too tight (12-13px primary content). 16.5px
+	 * base scales every rem-based size proportionally without rewriting each
+	 * component. */
+	html {
+		font-size: 16.5px;
 	}
-	.t-body {
-		font-size: 15px;
-		font-weight: 400;
-		letter-spacing: -0.005em;
-		line-height: 1.5;
+	body {
+		@apply bg-background text-foreground antialiased;
+		font-feature-settings: "cv11", "ss01";
+		font-variation-settings: "opsz" 32;
+		font-family: "Poppins", sans-serif;
 	}
-	.t-value {
-		font-size: 22px;
-		font-weight: 800;
-		letter-spacing: -0.03em;
-		line-height: 1.1;
-		font-variant-numeric: tabular-nums;
+	/* Subtle top-of-page grid texture for the "console" feel. Cheap, pure CSS. */
+	body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 0;
+		background-image: radial-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px);
+		background-size: 32px 32px;
+		opacity: 0.4;
+		mask-image: linear-gradient(to bottom, black, transparent 60%);
 	}
-	.t-caps {
-		font-size: 10.5px;
-		font-weight: 700;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-	}
-	.t-meta {
-		font-size: 12.5px;
-		font-weight: 500;
-		letter-spacing: -0.005em;
-	}
-	.t-badge {
-		font-size: 11px;
-		font-weight: 700;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-	}
-	.t-mono {
-		font-family: ui-monospace, "SF Mono", Menlo, monospace;
-		font-size: 12.5px;
-		font-weight: 600;
-		letter-spacing: -0.01em;
-		font-variant-numeric: tabular-nums;
-	}
+}
 
-	/* ── Primitivas de sinal (geometria de telemetria) ───────────── */
+/*
+ * Signal geometry primitives. <Signal> renders a 0.5rem shape per `shape`:
+ * dot (filled circle), ring (outline), square, diamond (rotated square),
+ * slash (a small strike). `.live` adds a slow opacity pulse for active state
+ * (online, downloading). Kept here (not inline) so shapes stay crisp & cheap.
+ */
+@layer components {
 	.sig {
 		@apply inline-block h-2 w-2 shrink-0;
 	}

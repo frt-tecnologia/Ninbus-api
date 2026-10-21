@@ -8,6 +8,7 @@ import { registerServiceWorker } from '@/lib/pwa/use-pwa-install';
 import { Brand } from './brand';
 import { InstallAppButton } from './install-app-button';
 import { SidebarNav } from './sidebar-nav';
+import { ThemeToggle } from './theme-toggle';
 import { UniversalSearch } from './universal-search';
 import { UserMenu } from './user-menu';
 
@@ -60,15 +61,15 @@ export function AppShell({
 
 	return (
 		<div className="relative z-10 flex min-h-screen">
-			{/* Desktop rail — hairline via box-shadow (nunca border sólido) */}
-			<aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col bg-surface-soft shadow-[inset_-0.5px_0_0_var(--hairline)] md:flex">
+			{/* Desktop rail */}
+			<aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-border bg-card/50 md:flex">
 				{NavBody}
 			</aside>
 
 			{/* Mobile slide-over */}
 			<Sheet open={navOpen} onOpenChange={setNavOpen}>
 				<div className="flex min-w-0 flex-1 flex-col">
-					<header className="sticky top-0 z-30 flex h-14 items-center gap-2 bg-background/85 px-3 shadow-[inset_0_-0.5px_0_var(--hairline)] backdrop-blur md:px-6">
+					<header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-6">
 						<SheetTrigger asChild>
 							<Button
 								variant="ghost"
@@ -81,6 +82,7 @@ export function AppShell({
 						</SheetTrigger>
 						<UniversalSearch />
 						<InstallAppButton />
+						<ThemeToggle />
 						<UserMenu email={userEmail} />
 					</header>
 

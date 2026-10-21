@@ -78,7 +78,7 @@ export function ActivityChart({
 															b.value > 0
 																? b.tone
 																	? TONE_FILL[tone]
-																	: BRAND_FILL.green
+																	: BRAND_FILL.violet
 																: 'hsl(var(--muted) / 0.4)',
 													}}
 												/>

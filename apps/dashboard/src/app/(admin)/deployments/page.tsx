@@ -40,8 +40,8 @@ const SEGMENTS: Array<{
 	brand?: DonutSegment['brand'];
 	label: string;
 }> = [
-	{ key: 'pending', tone: 'idle', brand: 'green', label: 'Pendente' },
-	{ key: 'inProgress', tone: 'busy', brand: 'blue', label: 'Em andamento' },
+	{ key: 'pending', tone: 'idle', brand: 'violet', label: 'Pendente' },
+	{ key: 'inProgress', tone: 'busy', brand: 'lime', label: 'Em andamento' },
 	{ key: 'finished', tone: 'ok', label: 'Concluído' },
 	{ key: 'failed', tone: 'fault', label: 'Falha' },
 ];

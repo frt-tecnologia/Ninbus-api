@@ -41,23 +41,21 @@ export const TONE_TEXT_CLASS: Record<SignalTone, string> = {
 };
 
 // ── BRAND chart palette ───────────────────────────────────────────────
-// FRT triad (blue/green/accent) + info — surgical, no neon. Used by the
+// The three Ninbus brand colors (from the logo + secondary). Used by the
 // overview charts so they read as brand identity, not gray. Each reads its
-// CSS variable from globals.css (--chart-*).
-export type BrandColor = 'blue' | 'green' | 'accent' | 'info';
+// CSS variable so light/dark themes share one source (globals.css).
+export type BrandColor = 'lime' | 'violet' | 'chartreuse';
 
 export const BRAND_FILL: Record<BrandColor, string> = {
-	blue: 'hsl(var(--chart-1))',
-	green: 'hsl(var(--chart-2))',
-	accent: 'hsl(var(--chart-3))',
-	info: 'hsl(var(--chart-4))',
+	lime: 'hsl(var(--brand-lime))',
+	violet: 'hsl(var(--brand-violet))',
+	chartreuse: 'hsl(var(--brand-chartreuse))',
 };
 
 export const BRAND_FILL_SOFT: Record<BrandColor, string> = {
-	blue: 'hsl(var(--chart-1) / 0.3)',
-	green: 'hsl(var(--chart-2) / 0.3)',
-	accent: 'hsl(var(--chart-3) / 0.3)',
-	info: 'hsl(var(--chart-4) / 0.3)',
+	lime: 'hsl(var(--brand-lime) / 0.3)',
+	violet: 'hsl(var(--brand-violet) / 0.3)',
+	chartreuse: 'hsl(var(--brand-chartreuse) / 0.3)',
 };
 
 export interface ChartBar {

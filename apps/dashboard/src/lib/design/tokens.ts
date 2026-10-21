@@ -129,9 +129,8 @@ export const FIRMWARE_SIGNAL: Record<string, SignalToken> = {
 export const firmwareSignal = (s: string | null | undefined) => resolve(FIRMWARE_SIGNAL, s, '—');
 
 // ── Tone → CSS classes ─────────────────────────────────────────────────
-// Consumed by primitives to apply the semantic background/text WITHOUT
-// repeating the var() soup. FRT: pastel APENAS como fundo de estado, nunca
-// como texto — texto sempre na cor sólida da tríade, fundo no soft.
+// Consumed by primitives to apply the semantic background/text/border WITHOUT
+// repeating the var() soup. Keep these in sync with globals.css tokens.
 
 export const TONE_TEXT: Record<SignalTone, string> = {
 	ok: 'text-signal-ok',
@@ -142,9 +141,9 @@ export const TONE_TEXT: Record<SignalTone, string> = {
 };
 
 export const TONE_SOFT: Record<SignalTone, string> = {
-	ok: 'bg-frt-green-soft text-frt-green',
-	busy: 'bg-frt-info-soft text-frt-info',
-	fault: 'bg-frt-red-soft text-frt-red',
-	idle: 'bg-surface-soft text-ink-3',
-	info: 'bg-frt-blue-soft text-frt-blue',
+	ok: 'bg-signal-ok/10 text-signal-ok ring-signal-ok/20',
+	busy: 'bg-signal-busy/10 text-signal-busy ring-signal-busy/20',
+	fault: 'bg-signal-fault/10 text-signal-fault ring-signal-fault/20',
+	idle: 'bg-signal-idle/10 text-signal-idle ring-signal-idle/20',
+	info: 'bg-signal-info/10 text-signal-info ring-signal-info/20',
 };

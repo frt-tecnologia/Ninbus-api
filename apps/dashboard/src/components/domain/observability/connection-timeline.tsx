@@ -181,7 +181,7 @@ export function ConnectionTimeline({
 								x={4}
 								y={y + LANE_HEIGHT / 2 + 3}
 								className="fill-muted-foreground"
-								style={{ fontSize: 10, fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace" }}
+								style={{ fontSize: 9, fontFamily: 'var(--font-mono, monospace)' }}
 							>
 								{lane.name.length > 18 ? `${lane.name.slice(0, 17)}…` : lane.name}
 							</text>

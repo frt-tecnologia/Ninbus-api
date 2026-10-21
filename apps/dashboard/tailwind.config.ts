@@ -1,13 +1,13 @@
 import type { Config } from 'tailwindcss';
 
 /**
- * Tailwind theme — FRT "field tool" system.
+ * Tailwind theme — "Fleet Control Surface".
  *
- * Tokens vêm das CSS variables (globals.css). Escala de raios FRT:
- * r-sm 12 (inputs/chips) · r-md 16 (cards/KPIs) · r-lg 20 (hero/painéis) ·
- * r-xl 24 (painel principal). Sombras SEMPRE em 3 camadas (hairline + micro +
- * ambient) — nunca uma sombra só. Cores FRT são cirúrgicas: 90% da tela é
- * areia + ink.
+ * Dark-first operational UI. Tokens come from CSS variables (globals.css) so a
+ * single theme swap (next-themes `.dark`/`.light`) restyles everything. The
+ * brand action accent (`primary`) is the Ninbus neon yellow-green on dark and
+ * FRT blue on light — matching the mobile app. Five SIGNAL tones are used only
+ * for state.
  */
 const config: Config = {
 	darkMode: ['class'],
@@ -20,19 +20,17 @@ const config: Config = {
 		},
 		extend: {
 			fontFamily: {
-				sans: ['var(--font-sans)', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
-				mono: ['ui-monospace', "'SF Mono'", 'Menlo', 'monospace'],
+				sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui'],
+				mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
 			},
 			colors: {
 				border: 'hsl(var(--border))',
-				'border-strong': 'hsl(var(--border-strong))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
 				primary: {
 					DEFAULT: 'hsl(var(--primary))',
-					hover: 'hsl(var(--primary-hover))',
 					foreground: 'hsl(var(--primary-foreground))',
 				},
 				secondary: {
@@ -59,30 +57,9 @@ const config: Config = {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))',
 				},
-				// ── Base neutra quente + ink ──────────────────────────────
-				bg2: 'hsl(var(--bg-2))',
-				sunk: 'hsl(var(--surface-sunk))',
-				'surface-soft': 'hsl(var(--surface-soft))',
-				ink: {
-					DEFAULT: 'hsl(var(--ink))',
-					2: 'hsl(var(--ink-2))',
-					3: 'hsl(var(--ink-3))',
-					4: 'hsl(var(--ink-4))',
-				},
-				// ── Tríade semântica FRT (+ soft pastéis de estado) ────────
-				frt: {
-					blue: 'hsl(var(--frt-blue))',
-					'blue-dark': 'hsl(var(--frt-blue-dark))',
-					'blue-soft': 'hsl(var(--frt-blue-soft))',
-					green: 'hsl(var(--frt-green))',
-					'green-soft': 'hsl(var(--frt-green-soft))',
-					red: 'hsl(var(--frt-red))',
-					'red-soft': 'hsl(var(--frt-red-soft))',
-					info: 'hsl(var(--frt-info))',
-					'info-soft': 'hsl(var(--frt-info-soft))',
-					accent: 'hsl(var(--accent))',
-				},
-				// ── SIGNAL tones (estado apenas — via <Signal>) ────────────
+				// ── SIGNAL tones (state only) ──────────────────────────────
+				// Backed by --signal-* channels. Used exclusively to convey
+				// device/connection/deployment/phase state via <Signal>.
 				signal: {
 					ok: 'hsl(var(--signal-ok))',
 					busy: 'hsl(var(--signal-busy))',
@@ -90,26 +67,11 @@ const config: Config = {
 					idle: 'hsl(var(--signal-idle))',
 					info: 'hsl(var(--signal-info))',
 				},
-				// ── Gráficos (FRT, sem neon) ──────────────────────────────
-				brand: {
-					blue: 'hsl(var(--chart-1))',
-					green: 'hsl(var(--chart-2))',
-					accent: 'hsl(var(--chart-3))',
-					info: 'hsl(var(--chart-4))',
-					neutral: 'hsl(var(--chart-5))',
-				},
 			},
 			borderRadius: {
-				sm: '12px',
-				DEFAULT: '16px',
-				md: '16px',
-				lg: '20px',
-				xl: '24px',
-				'2xl': '24px',
-			},
-			boxShadow: {
-				e1: 'var(--shadow-e1)',
-				e2: 'var(--shadow-e2)',
+				lg: 'var(--radius)',
+				md: 'calc(var(--radius) - 2px)',
+				sm: 'calc(var(--radius) - 4px)',
 			},
 			keyframes: {
 				'pulse-signal': {

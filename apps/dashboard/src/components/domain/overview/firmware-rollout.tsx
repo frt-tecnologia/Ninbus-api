@@ -73,8 +73,8 @@ export function FirmwareRollout({
 		label: r.name,
 		href: `/companies/${r.companyId}`,
 		segments: [
-			{ value: r.updated, tone: 'ok', brand: 'blue', label: 'Atualizados' },
-			{ value: r.pending, tone: 'idle', brand: 'green', label: 'Pendentes' },
+			{ value: r.updated, tone: 'ok', brand: 'lime', label: 'Atualizados' },
+			{ value: r.pending, tone: 'idle', brand: 'violet', label: 'Pendentes' },
 		],
 	}));
 

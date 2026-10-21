@@ -34,7 +34,9 @@ export function Signal({ token, glyphOnly, size = 'md', className }: SignalProps
 				aria-hidden
 			/>
 			{!glyphOnly && (
-				<span className={cn('t-meta', size === 'sm' && 'text-[12px]')}>{token.label}</span>
+				<span className={cn('font-medium', size === 'sm' ? 'text-sm' : 'text-sm')}>
+					{token.label}
+				</span>
 			)}
 		</span>
 	);

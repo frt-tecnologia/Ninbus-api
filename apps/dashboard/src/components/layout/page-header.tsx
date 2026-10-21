@@ -18,13 +18,13 @@ export function PageHeader({ title, description, action, className }: PageHeader
 	return (
 		<div
 			className={cn(
-				'mb-6 flex flex-col gap-2 pb-[22px] sm:flex-row sm:items-end sm:justify-between',
+				'mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between',
 				className,
 			)}
 		>
 			<div className="min-w-0">
-				<h1 className="t-hero text-foreground">{title}</h1>
-				{description && <p className="t-meta mt-1 text-muted-foreground">{description}</p>}
+				<h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+				{description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
 			</div>
 			{action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
 		</div>

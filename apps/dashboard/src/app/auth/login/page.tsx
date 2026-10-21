@@ -151,7 +151,7 @@ function LoginForm() {
 				</form>
 
 				<p className="mt-6 text-center text-sm text-muted-foreground">
-					NÃ£o tem conta?{' '}
+					Não tem conta?{' '}
 					<Link
 						href={ROUTES.signUp}
 						className="font-semibold text-foreground underline-offset-4 hover:underline"

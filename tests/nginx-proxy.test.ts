@@ -24,6 +24,7 @@ const VHOSTS = read('docker/nginx/conf.d/ninbus.conf');
 const NGINX_MAIN = read('docker/nginx/nginx.conf');
 const DOCKERFILE = read('docker/nginx/Dockerfile');
 const COMPOSE = read('docker-compose.yml');
+const COMPOSE_DEV = read('docker-compose.dev.yml');
 
 describe('nginx reverse proxy — security posture', () => {
 	describe('hawkBit Management API / UI are hard-blocked on the public vhost', () => {
@@ -125,9 +126,12 @@ describe('nginx reverse proxy — security posture', () => {
 			expect(VHOSTS).toContain('/etc/letsencrypt/live/ninbus.frt.com.br/privkey.pem');
 		});
 
-		it('keeps the api port published (rollback safety until cutover)', () => {
-			// The api port is removed only in Fase 6 after the device cutover.
-			expect(COMPOSE).toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+		it('base compose does NOT publish the api port (nginx is the only ingress)', () => {
+			// Audit S2: the base compose publishes only the nginx edge (80/443/8080).
+			// Direct api/dashboard ports live in docker-compose.dev.yml (dev override).
+			expect(COMPOSE).not.toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+			expect(COMPOSE_DEV).toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+			expect(COMPOSE_DEV).toMatch(/3001:3001/);
 		});
 
 		it('removes the hawkBit public port (DDI now served by nginx)', () => {

@@ -18,6 +18,7 @@ import { hawkbitConfig } from '@common/config/hawkbit';
 import { db } from '@common/db';
 import { devices } from '@common/db/schema';
 import { hawkbitTargets } from '@common/hawkbit/client';
+import { getEffectivePollingSec } from '@common/hawkbit/system-config';
 import { appLogger } from '@common/logger';
 import { recordConnectionTransition } from '@modules/observability/connections-service';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
@@ -28,7 +29,6 @@ import {
 	findOrphanChanges,
 	ID_CHUNK,
 	PAGE_SIZE,
-	parsePollingIntervalSec,
 	rotationBudget,
 } from './connection-pass-core';
 import { withConnectionWriteLock } from './sync-core';
@@ -153,7 +153,7 @@ export async function runConnectionPassTick(): Promise<void> {
 
 		const budget = rotationBudget(
 			total,
-			parsePollingIntervalSec(hawkbitConfig.pollingTime),
+			await getEffectivePollingSec(),
 			hawkbitConfig.syncIntervalSec,
 		);
 		const slice: any[] = [...first.content];

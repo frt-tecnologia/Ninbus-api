@@ -23,24 +23,153 @@
  * DB-persisted value (or the built-in default 00:05:00).
  */
 import { hawkbitConfig } from '@common/config/hawkbit';
+import { db } from '@common/db';
+import { platformSettings } from '@common/db/schema';
 import { appLogger } from '@common/logger';
+import { eq } from 'drizzle-orm';
 import { HawkbitApiError, hawkbitRequest } from './http';
 
 // ---------------------------------------------------------------------------
 
 const DURATION_PATTERN = /^\d{2}:\d{2}:\d{2}$/;
 
+export const POLLING_SETTINGS_KEY = 'hawkbit_polling_time';
+export const POLLING_SEC_MIN = 5;
+export const POLLING_SEC_MAX = 86_400;
+
+const EFFECTIVE_CACHE_TTL_MS = 30_000;
+
+let effectiveCache: { sec: number; source: 'override' | 'env-default'; expiresAt: number } | null =
+	null;
+
+export function secondsToPollingTime(totalSec: number): string {
+	const hours = Math.floor(totalSec / 3600);
+	const minutes = Math.floor((totalSec % 3600) / 60);
+	const seconds = totalSec % 60;
+	return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
+}
+
+export function pollingTimeToSeconds(hhmmss: string): number {
+	const [hours = 0, minutes = 0, seconds = 0] = hhmmss.split(':').map(Number);
+	return hours * 3600 + minutes * 60 + seconds;
+}
+
+export function isValidPollingSec(sec: unknown): sec is number {
+	return (
+		typeof sec === 'number' &&
+		Number.isInteger(sec) &&
+		sec >= POLLING_SEC_MIN &&
+		sec <= POLLING_SEC_MAX
+	);
+}
+
+interface StoredPollingOverride {
+	sec: number;
+	updatedBy: string | null;
+	updatedAt: Date;
+}
+
+async function readStoredOverride(): Promise<StoredPollingOverride | null> {
+	const [row] = await db
+		.select({
+			value: platformSettings.value,
+			updatedBy: platformSettings.updatedBy,
+			updatedAt: platformSettings.updatedAt,
+		})
+		.from(platformSettings)
+		.where(eq(platformSettings.key, POLLING_SETTINGS_KEY));
+	if (!row) return null;
+	const sec = Number(row.value);
+	if (!isValidPollingSec(sec)) return null;
+	return { sec, updatedBy: row.updatedBy, updatedAt: row.updatedAt };
+}
+
+export interface PollingTimeState {
+	effectiveSec: number;
+	source: 'override' | 'env-default';
+	updatedBy: string | null;
+	updatedAt: Date | null;
+}
+
+export async function getPollingTimeState(): Promise<PollingTimeState> {
+	if (effectiveCache && effectiveCache.expiresAt > Date.now()) {
+		return {
+			effectiveSec: effectiveCache.sec,
+			source: effectiveCache.source,
+			updatedBy: null,
+			updatedAt: null,
+		};
+	}
+	const override = await readStoredOverride().catch(() => null);
+	const state: PollingTimeState = override
+		? {
+				effectiveSec: override.sec,
+				source: 'override',
+				updatedBy: override.updatedBy,
+				updatedAt: override.updatedAt,
+			}
+		: {
+				effectiveSec: pollingTimeToSeconds(hawkbitConfig.pollingTime),
+				source: 'env-default',
+				updatedBy: null,
+				updatedAt: null,
+			};
+	effectiveCache = {
+		sec: state.effectiveSec,
+		source: state.source,
+		expiresAt: Date.now() + EFFECTIVE_CACHE_TTL_MS,
+	};
+	return state;
+}
+
+export function clearPollingTimeCache(): void {
+	effectiveCache = null;
+}
+
+export async function getEffectivePollingSec(): Promise<number> {
+	return (await getPollingTimeState()).effectiveSec;
+}
+
+export async function setPollingTimeSec(sec: number, updatedBy: string): Promise<PollingTimeState> {
+	if (!hawkbitConfig.enabled) {
+		throw new Error('hawkBit integration is disabled (HAWKBIT_ENABLED=false)');
+	}
+	if (!isValidPollingSec(sec)) {
+		throw new Error(
+			`pollingSec must be an integer between ${POLLING_SEC_MIN} and ${POLLING_SEC_MAX}`,
+		);
+	}
+
+	await applyPollingTimeConfig(secondsToPollingTime(sec));
+
+	await db
+		.insert(platformSettings)
+		.values({ key: POLLING_SETTINGS_KEY, value: String(sec), updatedBy })
+		.onConflictDoUpdate({
+			target: platformSettings.key,
+			set: { value: String(sec), updatedBy, updatedAt: new Date() },
+		});
+	clearPollingTimeCache();
+
+	appLogger.info(
+		'[HAWKBIT-CONFIG] pollingTime override saved: %ds (by %s), pushed to hawkBit',
+		sec,
+		updatedBy,
+	);
+	return getPollingTimeState();
+}
+
 /**
  * Push the .env-declared polling time into hawkBit (single attempt).
  * Throws on network/HTTP error so the retried wrapper can back off.
  */
-export async function applyPollingTimeConfig(): Promise<void> {
+export async function applyPollingTimeConfig(pollingTimeToApply?: string): Promise<void> {
 	if (!hawkbitConfig.enabled) {
 		appLogger.debug('[HAWKBIT-CONFIG] hawkBit disabled — skipping polling-time apply');
 		return;
 	}
 
-	const pollingTime = hawkbitConfig.pollingTime;
+	const pollingTime = pollingTimeToApply ?? secondsToPollingTime(await getEffectivePollingSec());
 	if (!DURATION_PATTERN.test(pollingTime)) {
 		appLogger.error(
 			'[HAWKBIT-CONFIG] Invalid HAWKBIT_POLLING_TIME="%s" (expected HH:MM:SS)',
@@ -84,7 +213,7 @@ export async function applyPollingTimeConfigRetried(): Promise<void> {
 			// won't help — bail out with an actionable message.
 			if (err instanceof HawkbitApiError && err.status === 400) {
 				appLogger.error(
-					`[HAWKBIT-CONFIG] hawkBit rejected pollingTime=${hawkbitConfig.pollingTime} (HTTP 400): ${err?.message ?? err}. ` +
+					`[HAWKBIT-CONFIG] hawkBit rejected the pollingTime config (HTTP 400): ${err?.message ?? err}. ` +
 						'If below 30s, lower the hawkBit container floor HAWKBIT_MIN_POLLING_TIME ' +
 						'(Spring hawkbit.controller.min-polling-time) in docker-compose and restart hawkBit.',
 				);

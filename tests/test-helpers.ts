@@ -30,6 +30,7 @@ export async function cleanTestDatabase(): Promise<void> {
 		companies,
 		categories,
 		activity_log,
+		platform_settings,
 		posts,
 		session,
 		account,

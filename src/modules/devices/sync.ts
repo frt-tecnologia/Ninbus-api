@@ -76,11 +76,11 @@ export const DeviceSyncEngine = {
 			return;
 		}
 
-		// Push .env-declared polling time into hawkBit's runtime system config.
-		// hawkBit does NOT read pollingTime/minPollingTime as Spring properties —
-		// they are DB-backed and writable only via the Management API. This lets
-		// production control device polling purely from .env. Fire-and-forget +
-		// retried (hawkBit takes up to 180s to boot). Non-blocking.
+		// Push the effective polling time into hawkBit's runtime system config:
+		// a super-admin override from platform_settings wins; the .env value is the
+		// bootstrap default. hawkBit does NOT read pollingTime/minPollingTime as
+		// Spring properties — they are DB-backed and writable only via the
+		// Management API. Fire-and-forget + retried (hawkBit takes up to 180s to boot).
 		applyPollingTimeConfigRetried().catch((err) => {
 			appLogger.error('[SYNC] Polling-time config apply failed: %s', err?.message);
 		});

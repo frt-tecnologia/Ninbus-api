@@ -30,9 +30,9 @@ valores atuais). É knob do hawkBit, não nosso; documentado no SKILL.md.
 passando com 2.7–3.8s; retestes pontuais verdes; 1 fail era o teste da era TLS
 exigindo a porta 8081 — atualizado para a postura S2). tsc/biome limpos nos
 arquivos tocados. Build bun OK. Migration 0026 aplicada em dev+test (prod no
-deploy, processo dos 3 bancos). nginx local não sobe por cert ausente —
-limitação documentada; drill feito via shim direto; validação nginx real fica
-no servidor (a mudança é substituição de valor em diretiva válida).
+deploy, processo dos 3 bancos). nginx local: resolvido pós-drill com cert
+autoassinado no mesmo path (`scripts/gen-local-certs.sh`, seção 14 do doc do
+nginx) — drill anterior feito via shim direto.
 
 ---
 

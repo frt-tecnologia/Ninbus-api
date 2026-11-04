@@ -540,7 +540,8 @@ com fidelidade total — cert autoassinado NO MESMO PATH que o nginx espera:
 ```bash
 bash scripts/gen-local-certs.sh   # gera certbot/conf/live/ninbus.frt.com.br/{fullchain,privkey}.pem
                                   # SANs: ninbus/api/hb + localhost + 127.0.0.1 — idempotente, gitignored
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# .env local precisa de: COMPOSE_PATH_SEPARATOR=: e COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+docker compose up -d
 ```
 
 - **Sem hosts file**: `https://localhost` (API, default_server) e

@@ -417,7 +417,7 @@ Novas variáveis devem ser adicionadas em: (1) `env.ts` schema, (2) `.env.exampl
 
 ```bash
 bash scripts/gen-local-certs.sh                                                    # 1× — sem isso o nginx crash-loopa (cert Let's Encrypt só existe no EC2)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build      # local SEMPRE com o dev override
+docker compose up -d --build                                                       # COMPOSE_FILE no .env dev faz o merge
 ```
 
 | Acesso | URL |
@@ -428,6 +428,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build    
 
 **Regras:**
 - Compose BASE é prod-safe — publica só nginx 80/443/8080; NUNCA adicionar portas de api/dashboard nele (só no `docker-compose.dev.yml`).
+- Dev: `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml` + `COMPOSE_PATH_SEPARATOR=:` no `.env` LOCAL (gitignored) — `docker compose up` puro mergeia o override. `.env` de prod NÃO define (ausência = postura prod).
 - Certs locais: `certbot/conf/live/ninbus.frt.com.br/` (autoassinado, gitignored, mesmo path do servidor real).
 - Hosts entries p/ fidelidade total: `127.0.0.1 ninbus.frt.com.br api.ninbus.frt.com.br hb.ninbus.frt.com.br`.
 - Healthcheck do nginx: `:80/health` responde 200 DIRETO (não redirecionar — quebra o probe → container unhealthy).

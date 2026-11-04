@@ -52,7 +52,11 @@ Auth · Admin (factory) · Companies (+ designations) · Categories (+ membros) 
 
 1. **`auth: true`** — qualquer usuário logado
 2. **`superAdmin: true`** — emails em `SUPER_ADMIN_EMAILS` env var (não DB)
-3. **`companyRole: 'viewer'`** — RBAC: owner(4) > admin(3) > operator(2) > viewer(1)
+3. **`companyRole: 'manager'`** — hierarquia: owner(4) > manager(3) > operator(2) > observer(1)
+4. **`requireCapability: 'members.manage'`** — por capability, com override por empresa
+   (`company_role_policies`, editável só por super admin; docs/rbac-roles-and-permissions.md)
+
+Nomes legados `admin`/`viewer` são normalizados para `manager`/`observer` na entrada.
 
 Rotas sem `:companyId` NUNCA usam `companyRole`. Rotas `/api/admin/*` e `/api/devices/*`
 (factory provisioning) usam `superAdmin: true`.
@@ -194,6 +198,17 @@ catch (error) {
 | hybrid | active companies | single device (cache 60s) | **produção 50k+** |
 
 GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
+
+**Polling global editável em runtime:** `GET/PUT /api/admin/polling`
+(superAdmin, plataforma). O domínio vive em `system-config.ts`: resolução
+`platform_settings['hawkbit_polling_time']` (segundos) ?? `HAWKBIT_POLLING_TIME`
+(.env = default de bootstrap apenas); escrita empurra ao hawkBit ANTES de
+persistir (hawkBit fora = 503, nada gravado); restart re-empurra o override.
+hawkBit 1.0.3 NÃO tem polling por target (verificado nos binários). O budget
+do Connection Pass usa o polling EFETIVO (`getEffectivePollingSec`). Detecção
+de offline = deadline (lastPoll+pollingTime) + `pollingOverdueTime` do tenant
+(00:05:00) + 1 tick; `occurredAt` sempre backdated ao deadline. Plano:
+`docs/polling-management-and-security-fixes-plan.md`.
 
 **Connection Pass (Single Observer, Single Voice):** observador rotativo
 always-on da conexão (`connection-pass.ts` + núcleo puro em

@@ -8,19 +8,15 @@ const globalCache = new LRUCache<string, number[]>({
 	ttl: env.RATE_LIMIT_WINDOW_MS ?? 60000,
 });
 
-// Auth cache
 const authCache = new LRUCache<string, number[]>({
 	max: 1000,
 	ttl: env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60000,
 });
 
-const getClientIP = (req: Request): string => {
-	return (
-		req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-		req.headers.get('x-real-ip') ||
-		'127.0.0.1'
-	);
-};
+export function getClientIP(req: Request): string {
+	const edgeAppendedIp = req.headers.get('x-forwarded-for')?.split(',').pop()?.trim();
+	return edgeAppendedIp || req.headers.get('x-real-ip')?.trim() || 'unknown';
+}
 
 export const createRateLimiter = (options: {
 	max: number;
@@ -29,8 +25,6 @@ export const createRateLimiter = (options: {
 	skip?: (req: Request) => boolean;
 }) => {
 	return new Elysia().onRequest(({ request, set }) => {
-		// Skip if rate limiting is disabled
-		if (!env.ENABLE_RATE_LIMITER) return;
 		if (options.skip?.(request)) return;
 
 		const ip = getClientIP(request);
@@ -57,19 +51,24 @@ export const createRateLimiter = (options: {
 	});
 };
 
+const limiterDisabled = () => !env.ENABLE_RATE_LIMITER;
+
+const skipsAuthAndHealth = (req: Request) => {
+	if (req.method === 'OPTIONS') return true;
+	const path = new URL(req.url).pathname;
+	return path === '/health' || path.startsWith('/api/auth');
+};
+
 export const globalRateLimit = createRateLimiter({
 	max: env.RATE_LIMIT_MAX ?? 150,
 	windowMs: env.RATE_LIMIT_WINDOW_MS ?? 60000,
 	cache: globalCache,
-	skip: (req) => {
-		if (req.method === 'OPTIONS') return true;
-		const path = new URL(req.url).pathname;
-		return path === '/health' || path.startsWith('/api/auth');
-	},
+	skip: (req) => limiterDisabled() || skipsAuthAndHealth(req),
 });
 
 export const authRateLimit = createRateLimiter({
 	max: env.AUTH_RATE_LIMIT_MAX ?? 20,
 	windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60000,
 	cache: authCache,
+	skip: limiterDisabled,
 });

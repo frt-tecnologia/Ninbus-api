@@ -267,6 +267,25 @@ export async function runStartupMigrations(databaseUrl?: string) {
 				}
 			}
 
+			if (/^0025_/.test(entry.tag)) {
+				const managerRole = await client`SELECT e.enumlabel FROM pg_enum e
+					JOIN pg_type t ON t.oid = e.enumtypid
+					WHERE t.typname = 'company_role' AND e.enumlabel = 'manager'`;
+				if (managerRole.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+
+			if (/^0026_/.test(entry.tag)) {
+				const platformSettingsTable = await client`SELECT tablename FROM pg_tables
+					WHERE schemaname = 'public' AND tablename = 'platform_settings'`;
+				if (platformSettingsTable.length > 0) {
+					appLogger.info('[MIGRATION] ✓ Already applied: %s', entry.tag);
+					continue;
+				}
+			}
+
 			// Apply the migration
 			appLogger.info('[MIGRATION] Applying: %s', entry.tag);
 			const sql = fs.readFileSync(sqlFile, 'utf8');

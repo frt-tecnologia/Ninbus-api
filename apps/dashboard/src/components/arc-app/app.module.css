@@ -981,8 +981,8 @@
 @media (max-width: 640px) {
 	/* On phones the row tap opens the Surface; actions live there, full-size. */
 	.rowActions {
-        display: flex;
-    }
+		display: flex;
+	}
 }
 
 /* RBAC permission matrix — one Panel per role, rows per capability. */
@@ -1205,27 +1205,105 @@
 }
 
 /* Shared app compositions must shrink inside cards and overlays as well as pages. */
-.panelHead { flex-wrap: wrap; }
-.panelHead > div, .permissionMeta { min-width: 0; overflow-wrap: anywhere; }
-.permissionRow { flex-wrap: wrap; }
-.permissionControls { flex-wrap: wrap; margin-left: auto; max-width: 100%; }
-.permissionsGrid > *, .formStack > *, .detailBody > *, .twoCols > *,
-.chartGrid > *, .lowerGrid > *, .rolloutSummary > * { min-width: 0; max-width: 100%; }
-.twoCols { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
-.detailBody dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: right; }
-.detailBody dl > div { flex-wrap: wrap; }
-.searchFilterBar { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-4); min-width: 0; }
-.searchFilterBar > :first-child { flex: 1 1 220px; min-width: 0; }
-.searchFilterBar > :nth-child(2) { flex: 2 1 320px; min-width: 0; max-width: 100%; }
-.confirmRecord { overflow-wrap: anywhere; font-size: var(--text-sm); }
+.panelHead {
+	flex-wrap: wrap;
+}
+.panelHead > div,
+.permissionMeta {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.permissionRow {
+	flex-wrap: wrap;
+}
+.permissionControls {
+	flex-wrap: wrap;
+	margin-left: auto;
+	max-width: 100%;
+}
+.permissionsGrid > *,
+.formStack > *,
+.detailBody > *,
+.twoCols > *,
+.chartGrid > *,
+.lowerGrid > *,
+.rolloutSummary > * {
+	min-width: 0;
+	max-width: 100%;
+}
+.twoCols {
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+}
+.detailBody dd {
+	min-width: 0;
+	margin: 0;
+	overflow-wrap: anywhere;
+	text-align: right;
+}
+.detailBody dl > div {
+	flex-wrap: wrap;
+}
+.searchFilterBar {
+	display: flex;
+	align-items: end;
+	flex-wrap: wrap;
+	gap: var(--space-4);
+	min-width: 0;
+}
+.searchFilterBar > :first-child {
+	flex: 1 1 220px;
+	min-width: 0;
+}
+.searchFilterBar > :nth-child(2) {
+	flex: 2 1 320px;
+	min-width: 0;
+	max-width: 100%;
+}
+.confirmRecord {
+	overflow-wrap: anywhere;
+	font-size: var(--text-sm);
+}
 @media (max-width: 640px) {
- .searchFilterBar > :nth-child(2) { flex-basis: 100%; }
- .panel { padding: var(--space-4); }
- .pagination { flex-wrap: wrap; }
+	.searchFilterBar > :nth-child(2) {
+		flex-basis: 100%;
+	}
+	.panel {
+		padding: var(--space-4);
+	}
+	.pagination {
+		flex-wrap: wrap;
+	}
 }
 
-.rowActionButton { width: 44px; height: 44px; flex-shrink: 0; }
+.rowActionButton {
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+}
 
-.periodControl { display: grid; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.periodControl {
+	display: grid;
+	gap: var(--space-2);
+	min-width: 0;
+	max-width: 100%;
+}
 
-.fabGroup { flex-wrap: wrap; }
+.fabGroup {
+	flex-wrap: wrap;
+}
+
+.companyBack {
+	color: var(--text-primary);
+	font-weight: 500;
+	margin-bottom: var(--space-1);
+}
+.companyBack span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.subItem {
+	padding-left: calc(var(--space-3) + 26px);
+	min-height: 40px;
+	font-size: var(--text-sm);
+}

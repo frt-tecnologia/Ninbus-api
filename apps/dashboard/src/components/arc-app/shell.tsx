@@ -9,6 +9,7 @@
  */
 import {
 	Activity,
+	ArrowLeft,
 	Building2,
 	ChevronRight,
 	Cpu,
@@ -20,7 +21,7 @@ import {
 	Users,
 } from 'lucide-react';
 import Image from 'next/image';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 import { Button } from '@/components/arc/button/button';
@@ -28,6 +29,7 @@ import { CommandPalette } from '@/components/arc/command-palette/command-palette
 import { Dialog, DialogContent } from '@/components/arc/dialog/dialog';
 import { IconMorph } from '@/components/arc/icon-morph/icon-morph';
 import { Tooltip } from '@/components/arc/tooltip/tooltip';
+import { COMPANY_SECTIONS, type CompanySectionId } from '@/components/arc-app/company-tabs';
 import { LiveBadge } from '@/components/arc-app/live-badge';
 import { useAllDeployments } from '@/hooks/use-all-deployments';
 import { useFetch } from '@/hooks/useFetch';
@@ -39,6 +41,8 @@ import {
 	userService,
 } from '@/lib/api';
 import { categoryService } from '@/lib/api/categories';
+import { qk } from '@/lib/cache/keys';
+import { useQuery } from '@/lib/cache/use-query';
 import { usePwaInstall } from '@/lib/pwa/use-pwa-install';
 import s from './app.module.css';
 import { roleLabel, Surface, stamp } from './primitives';
@@ -245,6 +249,46 @@ export function ArcShell({
 		nav.find((n) => pathname.startsWith(`${n.path}/`)) ??
 		null;
 
+	const searchParams = useSearchParams();
+	const companyMatch = /^\/companies\/([^/]+)/.exec(pathname);
+	const companyContextId = companyMatch?.[1] ?? null;
+	const activeSection = (searchParams.get('section') ?? 'devices') as CompanySectionId;
+	const companyContext = useQuery(
+		companyContextId ? qk.company(companyContextId) : 'company:context:none',
+		React.useCallback(
+			() => (companyContextId ? companyService.get(companyContextId) : Promise.resolve(null)),
+			[companyContextId],
+		),
+	);
+	const companyContextName = (companyContext.data as { name?: string } | null)?.name ?? 'Empresa';
+
+	const companySectionItems = companyContextId ? (
+		<nav aria-label={`Seções de ${companyContextName}`}>
+			<button
+				type="button"
+				className={`${s.navItem} ${s.companyBack}`}
+				onClick={() => go('/companies')}
+			>
+				<ArrowLeft size={18} />
+				<span>{companyContextName}</span>
+			</button>
+			{COMPANY_SECTIONS.map((sectionItem) => {
+				const selected = sectionItem.id === activeSection;
+				return (
+					<button
+						type="button"
+						key={sectionItem.id}
+						onClick={() => router.push(`/companies/${companyContextId}?section=${sectionItem.id}`)}
+						className={`${s.navItem} ${s.subItem} ${selected ? s.selected : ''}`}
+						aria-current={selected ? 'page' : undefined}
+					>
+						<span>{sectionItem.label}</span>
+					</button>
+				);
+			})}
+		</nav>
+	) : null;
+
 	function go(path: string) {
 		router.push(path);
 		setMobile(false);
@@ -317,6 +361,7 @@ export function ArcShell({
 					<span>Buscar na plataforma</span>
 					<kbd>⌘K</kbd>
 				</button>
+				{companySectionItems}
 				{navItems}
 				<div className={s.sidebarBottom}>
 					<div className={s.demoNote}>
@@ -368,6 +413,7 @@ export function ArcShell({
 			</div>
 
 			<Surface open={mobile} onClose={() => setMobile(false)} title="Navegação">
+				{companySectionItems}
 				{navItems}
 				<Button
 					variant="secondary"

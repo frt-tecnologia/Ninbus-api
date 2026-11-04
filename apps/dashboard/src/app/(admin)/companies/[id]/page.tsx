@@ -6,13 +6,14 @@
  * tab host and the detail Surfaces (drawer on desktop, bottom sheet ≤640px).
  */
 
-import { ArrowLeft } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import {
 	CompanyFormHost,
 	type CompanyFormKind,
-	CompanyTabs,
+	CompanySectionHost,
+	type CompanySectionId,
+	companySectionLabel,
 	DeviceQuick,
 	useCompanyDevices,
 	useCompanyGroups,
@@ -36,6 +37,8 @@ export default function CompanyDetailPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
 	const companyId = params.id;
+	const searchParams = useSearchParams();
+	const section = (searchParams.get('section') ?? 'devices') as CompanySectionId;
 
 	const company = useQuery(
 		qk.company(companyId),
@@ -75,30 +78,22 @@ export default function CompanyDetailPage() {
 			<PageHead
 				title={c?.name ?? 'Carregando…'}
 				description="Observabilidade, frota, membros e diretrizes da empresa."
-				crumbs={[{ label: 'Empresas', href: '/companies' }, { label: c?.name ?? '…' }]}
-				actions={
-					<Button variant="secondary" onClick={() => router.push('/companies')}>
-						<ArrowLeft size={16} />
-						Empresas
-					</Button>
-				}
+				crumbs={[
+					{ label: 'Empresas', href: '/companies' },
+					{ label: c?.name ?? '…' },
+					{ label: companySectionLabel(section) },
+				]}
 			/>
-			<CompanyTabs
+			<CompanySectionHost
 				companyId={companyId}
-				deviceCount={deviceList.length}
-				groupCount={groups.data?.data?.length}
+				section={section}
 				onForm={setForm}
 				onDevice={setDeviceDetail}
 				onMember={setMemberDetail}
 			/>
 
 			{/* Member role drawer — role select + removal (hold) */}
-			<Surface
-				open={!!memberDetail}
-				onClose={() => setMemberDetail(null)}
-				title="Gerenciar acesso"
-
-			>
+			<Surface open={!!memberDetail} onClose={() => setMemberDetail(null)} title="Gerenciar acesso">
 				{member && (
 					<MemberRole
 						companyId={companyId}
@@ -113,7 +108,6 @@ export default function CompanyDetailPage() {
 				open={!!form}
 				onClose={() => setForm(null)}
 				title={form ? FORM_TITLE[form] : 'Novo registro'}
-
 			>
 				{form && (
 					<CompanyFormHost companyId={companyId} kind={form} onClose={() => setForm(null)} />

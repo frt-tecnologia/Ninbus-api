@@ -7,6 +7,7 @@ import * as React from 'react';
 import { ActivityHeatmap } from '@/components/arc/activity-heatmap/activity-heatmap';
 import s from '@/components/arc-app/app.module.css';
 import { Guard, PageHead } from '@/components/arc-app/page-head';
+import { PollingMenu } from '@/components/arc-app/polling-menu';
 import { Collection, inPeriod, Panel, type Period, stamp } from '@/components/arc-app/primitives';
 import { companyService, observabilityService } from '@/lib/api';
 import { qk } from '@/lib/cache/keys';
@@ -56,6 +57,7 @@ export default function AuditPage() {
 				description="Rastreabilidade de alterações com data, hora e contexto."
 			/>
 			<Guard loading={activity.loading} error={activity.error} onRetry={activity.refetch}>
+				<PollingMenu />
 				<Panel
 					title="Atividade por dia"
 					description="Selecione um dia para filtrar o histórico abaixo"
@@ -82,8 +84,8 @@ export default function AuditPage() {
 						company: companyList.find((c) => c.id === e.companyId)?.name ?? '—',
 					}))}
 					dateKey="createdAt"
-                    period={period}
-                    onPeriodChange={setPeriod}
+					period={period}
+					onPeriodChange={setPeriod}
 					dateMeaning="Período aplica-se a quando o evento ocorreu"
 					fields={[
 						{ id: 'company', label: 'Empresa', options: companyList.map((c) => c.name) },

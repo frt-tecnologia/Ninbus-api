@@ -1,5 +1,6 @@
 'use client';
 
+import { CalendarClock } from 'lucide-react';
 import * as React from 'react';
 import {
 	type DateRange,
@@ -67,6 +68,36 @@ export function PeriodPills({
 				onApply={(from, to) => onChange({ kind: 'custom', from, to })}
 			/>
 		</section>
+	);
+}
+
+export function PeriodFilter({
+	period,
+	onChange,
+	label,
+}: {
+	period: Period | null;
+	onChange: (period: Period | null) => void;
+	label?: string;
+}) {
+	const [open, setOpen] = React.useState(false);
+	return (
+		<div className={s.inline}>
+			<Button variant="secondary" onClick={() => setOpen(true)}>
+				<CalendarClock size={16} />
+				{period ? (label ?? 'Período aplicado') : 'Filtrar por data e hora'}
+			</Button>
+			{period && (
+				<Button variant="ghost" onClick={() => onChange(null)}>
+					Limpar período
+				</Button>
+			)}
+			<PeriodDialog
+				open={open}
+				onClose={() => setOpen(false)}
+				onApply={(from, to) => onChange({ kind: 'custom', from, to })}
+			/>
+		</div>
 	);
 }
 

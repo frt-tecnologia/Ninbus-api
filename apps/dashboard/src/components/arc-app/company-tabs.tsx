@@ -10,7 +10,6 @@ import {
 import * as React from 'react';
 import { InlineEdit } from '@/components/arc/inline-edit/inline-edit';
 import { LineChart } from '@/components/arc/line-chart/line-chart';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/arc/tabs/tabs';
 import { Timeline, type TimelineEvent } from '@/components/arc/timeline/timeline';
 import {
 	AssignForm,
@@ -92,65 +91,61 @@ function useReleases() {
 
 // ── Tabs shell ─────────────────────────────────────────────────────────
 
-export function CompanyTabs({
+export const COMPANY_SECTIONS = [
+	{ id: 'devices', label: 'Dispositivos' },
+	{ id: 'members', label: 'Membros e convites' },
+	{ id: 'groups', label: 'Grupos' },
+	{ id: 'settings', label: 'Configurações' },
+	{ id: 'permissions', label: 'Permissões' },
+	{ id: 'connectivity', label: 'Conexão' },
+	{ id: 'activity', label: 'Atividade' },
+] as const;
+
+export type CompanySectionId = (typeof COMPANY_SECTIONS)[number]['id'];
+
+export function companySectionLabel(section: string): string {
+	return COMPANY_SECTIONS.find((s) => s.id === section)?.label ?? 'Dispositivos';
+}
+
+export function CompanySectionHost({
 	companyId,
-	deviceCount,
-	groupCount,
+	section,
 	onForm,
 	onDevice,
 	onMember,
 	children,
 }: {
 	companyId: string;
-	deviceCount?: number;
-	groupCount?: number;
+	section: CompanySectionId;
 	onForm: (kind: CompanyFormKind) => void;
 	onDevice: (deviceId: string) => void;
 	onMember: (membershipId: string) => void;
 	children?: React.ReactNode;
 }) {
-	return (
-		<Tabs defaultValue="devices">
-			<TabsList aria-label="Gestão da empresa">
-				<TabsTrigger value="devices">
-					Dispositivos{deviceCount !== undefined ? ` (${deviceCount})` : ''}
-				</TabsTrigger>
-				<TabsTrigger value="members">Membros</TabsTrigger>
-				<TabsTrigger value="groups">
-					Grupos{groupCount !== undefined ? ` (${groupCount})` : ''}
-				</TabsTrigger>
-				<TabsTrigger value="settings">Configurações</TabsTrigger>
-				<TabsTrigger value="permissions">Permissões</TabsTrigger>
-				<TabsTrigger value="connectivity">Conectividade</TabsTrigger>
-				<TabsTrigger value="activity">Atividade</TabsTrigger>
-			</TabsList>
-			<TabsContent value="devices">
-				<DevicesTab companyId={companyId} onForm={onForm} onDevice={onDevice} />
-			</TabsContent>
-			<TabsContent value="members">
-				<MembersTab companyId={companyId} onMember={onMember} onForm={onForm} />
-			</TabsContent>
-			<TabsContent value="groups">
-				<GroupsTab companyId={companyId} onForm={onForm} />
-			</TabsContent>
-			<TabsContent value="settings">
-				<SettingsTab companyId={companyId} />
-			</TabsContent>
-			<TabsContent value="permissions">
-				<PermissionsTab companyId={companyId} />
-			</TabsContent>
-			<TabsContent value="connectivity">
-				<ConnectivityTab companyId={companyId} />
-			</TabsContent>
-			<TabsContent value="activity">
-				<ActivityTab companyId={companyId} />
-			</TabsContent>
-			{children}
-		</Tabs>
-	);
+	switch (section) {
+		case 'members':
+			return (
+				<>
+					<MembersTab companyId={companyId} onMember={onMember} onForm={onForm} />
+					{children}
+				</>
+			);
+		case 'groups':
+			return <GroupsTab companyId={companyId} onForm={onForm} />;
+		case 'settings':
+			return <SettingsTab companyId={companyId} />;
+		case 'permissions':
+			return <PermissionsTab companyId={companyId} />;
+		case 'connectivity':
+			return <ConnectivityTab companyId={companyId} />;
+		case 'activity':
+			return <ActivityTab companyId={companyId} />;
+		default:
+			return <DevicesTab companyId={companyId} onForm={onForm} onDevice={onDevice} />;
+	}
 }
 
-// ── Devices ────────────────────────────────────────────────────────────
+// ── Devices ─────────────────────────────────────────────────────────────
 
 function DevicesTab({
 	companyId,
@@ -355,7 +350,6 @@ function GroupsTab({
 	return (
 		<Panel
 			title="Grupos da empresa"
-
 			action={
 				<Button variant="secondary" onClick={() => onForm('group')}>
 					Criar grupo
@@ -548,7 +542,9 @@ function PermissionsTab({ companyId }: { companyId: string }) {
 
 	return (
 		<div className={s.formStack}>
-			<p className={s.footnote}>Padrão usa as permissões do cargo. Permitir e negar valem para esta empresa.</p>
+			<p className={s.footnote}>
+				Padrão usa as permissões do cargo. Permitir e negar valem para esta empresa.
+			</p>
 			<div className={s.permissionsGrid}>
 				{ROLE_ORDER.map((role) => {
 					const policy = byRole.get(role);

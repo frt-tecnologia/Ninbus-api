@@ -126,6 +126,13 @@ describe('nginx reverse proxy — security posture', () => {
 	});
 
 	describe('TLS termination (cutover completed)', () => {
+		it('answers the Dockerfile health probe on :80 without redirecting it', () => {
+			// The healthcheck hits http://127.0.0.1/health — the 80→443 catch-all
+			// turned that into a 301 and the container sat permanently 'unhealthy'
+			// (masked by the restart policy). /health must answer 200 directly.
+			expect(VHOSTS).toMatch(/location = \/health \{[^}]*return 200/);
+		});
+
 		it('terminates TLS on :443 with Let\u2019s Encrypt certs', () => {
 			// The transitional phase is over: nginx now actively serves HTTPS with
 			// the certbot-issued certificates for the public host.

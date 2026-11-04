@@ -554,13 +554,3 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 - **Produção intocada**: o script nunca roda lá (certs reais já existem no path).
 - O vhost hb escuta `:80` **e** `:8080` (Opção C — firmware legado por IP:porta;
   restaurado em 2026-11-04 após a Fase 6 tê-lo removido por engano).
-
-
-- ❌ Não criar/editar `docker-compose.yml`, `Dockerfile`, `env.ts`, `.env*`.
-- ❌ Não criar os arquivos do Nginx.
-- ❌ Não fazer commit, nem reiniciar/rebuildar containers.
-- ❌ Não tocar no firmware.
-
-Após sua aprovação, executo fase a fase começando pela **Fase 1 + 3**, validando em
-`:80` com `curl` **antes** de qualquer cutover de device (Opção C — zero dispositivo
-tocado). A **Fase 0 (TI)** é bloqueante e precisa ser alinhada primeiro.

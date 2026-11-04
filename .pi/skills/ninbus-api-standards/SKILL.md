@@ -412,3 +412,25 @@ bun test --env-file=.env.test
 Ver `.env.example` para lista completa. Fonte única: `src/common/config/env.ts` (TypeBox validated).
 
 Novas variáveis devem ser adicionadas em: (1) `env.ts` schema, (2) `.env.example`, (3) `.env.test` simultaneamente.
+
+## Docker Local (dev)
+
+```bash
+bash scripts/gen-local-certs.sh                                                    # 1× — sem isso o nginx crash-loopa (cert Let's Encrypt só existe no EC2)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build      # local SEMPRE com o dev override
+```
+
+| Acesso | URL |
+|---|---|
+| API (TLS via nginx) | `https://localhost` |
+| Dashboard | `http://localhost:3001` (direto) · `https://localhost/console` (via nginx) |
+| DDI (devices) | `http://localhost:8080/<tenant>/controller/v1/<id>` (vhost hb escuta :80 E :8080) |
+
+**Regras:**
+- Compose BASE é prod-safe — publica só nginx 80/443/8080; NUNCA adicionar portas de api/dashboard nele (só no `docker-compose.dev.yml`).
+- Certs locais: `certbot/conf/live/ninbus.frt.com.br/` (autoassinado, gitignored, mesmo path do servidor real).
+- Hosts entries p/ fidelidade total: `127.0.0.1 ninbus.frt.com.br api.ninbus.frt.com.br hb.ninbus.frt.com.br`.
+- Healthcheck do nginx: `:80/health` responde 200 DIRETO (não redirecionar — quebra o probe → container unhealthy).
+- Aviso do navegador: `certutil -addstore -f Root certbot/conf/live/ninbus.frt.com.br/fullchain.pem`.
+
+Detalhes: `docs/nginx-reverse-proxy-plan.md` §14.

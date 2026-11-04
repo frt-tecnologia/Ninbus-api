@@ -55,21 +55,26 @@ bun run db:push               # sincroniza schema Drizzle
 bun run dev                    # → http://localhost:8081
 ```
 
-### Docker (API + hawkBit)
+### Docker (stack completa: nginx + API + hawkBit + dashboard)
 
 ```bash
-docker compose build
-docker compose up -d
+bash scripts/gen-local-certs.sh    # 1× só — cert autoassinado no path do nginx (sem ele o nginx crasha)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 docker compose logs -f api
 ```
 
-| Serviço | Porta | Descrição |
-|---------|-------|-----------|
-| `nginx` | 80 / 443 / 8080 | Proxy reverso (name-based vhost) — único ponto público |
-| `api` | 8081 | Ninbus API |
-| `hawkbit` | 8080 | hawkBit 1.0.3 (custom build com S3 extension + CDN) |
+| Acesso | URL |
+|---|---|
+| API via nginx (TLS, como prod) | `https://localhost` |
+| Dashboard via nginx | `https://localhost/console` *(com hosts entry: `https://ninbus.frt.com.br/console`)* |
+| Dashboard direto (dev) | `http://localhost:3001` |
+| DDI dos devices | `http://localhost:8080/<tenant>/controller/v1/<id>` ou `http://hb.ninbus.frt.com.br` |
 
-> `docker compose` lê `.env` por padrão. Use `--env-file .env.docker` para overrides Docker.
+- **Fidelidade máxima (opcional):** `hosts` → `127.0.0.1 ninbus.frt.com.br api.ninbus.frt.com.br hb.ninbus.frt.com.br` — os 3 vhosts como em produção.
+- **Aviso de cert (autoassinado):** aceitar no navegador, ou `certutil -addstore -f Root certbot/conf/live/ninbus.frt.com.br/fullchain.pem`.
+- **Postura:** o compose base é prod-safe (publica só 80/443/8080); as portas 8081/3001 vêm SOMENTE do `docker-compose.dev.yml`. No servidor: `docker compose up` puro.
+
+> `docker compose` lê `.env` por padrão. Detalhes do nginx: `docs/nginx-reverse-proxy-plan.md` §14.
 
 ---
 

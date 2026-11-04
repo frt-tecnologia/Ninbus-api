@@ -19,7 +19,9 @@ import type { ApiError } from '@/types/domain';
  * so the UI hooks (useFetch/useMutation) read a stable `.message`.
  */
 
-const PREFIX_URL = '/console/api';
+/** Same-origin API prefix (basePath '/console' + '/api') — shared by the SSE client. */
+export const API_PREFIX = '/console/api';
+const PREFIX_URL = API_PREFIX;
 
 const api = ky.create({
 	prefix: PREFIX_URL,

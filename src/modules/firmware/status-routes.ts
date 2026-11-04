@@ -33,7 +33,7 @@ export const firmwareStatusRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
 				limit: t.Optional(

@@ -395,6 +395,7 @@ export default function OverviewPage() {
 						label="Atualizações"
 						onOpenRow={(r) => router.push(`/deployments?detail=${r.id}&company=${r.companyId}`)}
 						dateKey="createdAt"
+                        showPeriodFilter={false}
 						period={period}
 						onPeriodChange={setPeriod}
 						fields={[

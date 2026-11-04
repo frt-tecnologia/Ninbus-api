@@ -47,7 +47,7 @@ export const categoryMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),

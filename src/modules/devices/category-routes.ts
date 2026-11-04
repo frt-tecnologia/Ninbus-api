@@ -28,7 +28,7 @@ export const deviceCategoryRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deviceParams,
 			detail: { tags: ['Devices'], summary: 'List device categories' },
 		},

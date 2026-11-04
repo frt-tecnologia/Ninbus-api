@@ -10,7 +10,7 @@ import { http } from './http';
  *  PUT    /api/companies/:id/members/:userId         → change role
  *  DELETE /api/companies/:id/members/:userId         → remove member
  */
-export type CompanyRole = 'owner' | 'admin' | 'operator' | 'viewer';
+export type CompanyRole = 'owner' | 'manager' | 'operator' | 'observer';
 
 export interface AddMemberInput {
 	email: string;

@@ -93,7 +93,7 @@ export const deviceHawkbitRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),
@@ -131,7 +131,7 @@ export const deviceHawkbitRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deviceId: t.String({ format: 'uuid' }),

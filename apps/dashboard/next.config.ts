@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
 	basePath: '/console',
 	output: 'standalone',
 	reactStrictMode: true,
+	// SSE streams must reach the browser UNCOMPRESSED: Next's gzip layer
+	// buffers `text/event-stream` responses, so EventSource opens but never
+	// receives a frame (curl works because it doesn't send Accept-Encoding).
+	// Production compression belongs to the nginx edge, not the app server.
+	compress: false,
 	// The dashboard never talks to the API directly from the browser (cross-origin
 	// cookie). All API calls go through the Route Handler proxy at /api/[...path].
 	// No rewrites needed — the proxy handles forwarding to http://api:8081.

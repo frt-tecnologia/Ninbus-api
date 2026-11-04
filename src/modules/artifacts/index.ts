@@ -111,7 +111,7 @@ export const artifactsModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			detail: {
 				tags: ['Artifacts'],

@@ -58,7 +58,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: companyParams,
 			detail: { tags: ['Devices'], summary: 'List company devices' },
 			response: {
@@ -146,7 +146,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deviceParams,
 			detail: { tags: ['Devices'], summary: 'Get device details' },
 			response: {
@@ -245,7 +245,7 @@ export const devicesModule = withAuth(new Elysia({ prefix: '/api/companies/:comp
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: deviceParams,
 			detail: {
 				tags: ['Devices'],

@@ -30,7 +30,7 @@ export const designationRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 			}),
@@ -73,7 +73,7 @@ export const designationRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 				designationId: t.String({ format: 'uuid', description: 'Designation ID to revoke' }),

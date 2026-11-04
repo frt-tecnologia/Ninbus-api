@@ -115,7 +115,7 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			detail: {
 				tags: ['Companies'],
@@ -153,7 +153,7 @@ export const companiesModule = withAuth(new Elysia({ prefix: '/api/companies' })
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			body: UpdateCompanyBodySchema,
 			detail: {

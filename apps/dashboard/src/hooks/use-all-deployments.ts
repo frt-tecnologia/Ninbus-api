@@ -1,74 +1,58 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import * as React from 'react';
 import { deploymentService } from '@/lib/api';
-import { subscribeData } from '@/lib/data-events';
+import { qk } from '@/lib/cache/keys';
+import { useQuery } from '@/lib/cache/use-query';
 import type { EnrichedDeployment } from '@/types/domain';
 
 /**
- * Fetch every company's deployments in parallel (tolerant of per-company
- * failures), tag each with its companyId, and expose both a flat list and a
- * companyId→deployments map. Shared by the overview and deployments pages so
- * the data is fetched ONCE per page, not N times.
+ * Every company's deployments in one aggregate query.
  *
- * Re-runs only when the company-id set changes (stable key), plus an explicit
- * `refetch` for the retry button. Returns `byCompany` for per-company charts
- * and `deployments` for cross-company views.
+ * Cached under `deployments:all:<companyIds>` — the same resource prefix as
+ * the per-company keys — so SSE `deployment.*` events and local mutations
+ * invalidate it, and overview/deployments/devices screens share one request.
+ * Tolerant of per-company failures (allSettled); re-runs only when the
+ * company-id set changes.
  */
 export function useAllDeployments(companies: Array<{ id: string }>) {
-	const [deployments, setDeployments] = useState<EnrichedDeployment[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [nonce, setNonce] = useState(0);
-	const key = companies.map((c) => c.id).join(',');
-	const refetch = useCallback(() => setNonce((n) => n + 1), []);
-
-	// Reactivity: subscribe to the global data-mutation bus so this hook refetches
-	// whenever any dialog/inline action mutates data (create/delete deployment,
-	// member changes, etc.). useFetch does this by default; this custom hook
-	// must do the same or the deployments + overview pages go stale on actions.
-	useEffect(() => subscribeData(() => setNonce((n) => n + 1)), []);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `companies` is intentionally captured — the effect re-runs only when the stable company-id key or the mutation-bus nonce changes, avoiding refetch loops on every render.
-	useEffect(() => {
-		if (!companies.length) {
-			setDeployments([]);
-			setLoading(false);
-			return;
-		}
-		let active = true;
-		setLoading(true);
-		setError(null);
-		(async () => {
-			try {
-				const results = await Promise.allSettled(
+	const key = qk.allDeployments(companies.map((c) => c.id).sort());
+	const query = useQuery(
+		key,
+		React.useCallback(
+			() =>
+				Promise.allSettled(
 					companies.map((c) => deploymentService.list(c.id).then((r) => ({ c, r }))),
-				);
-				if (!active) return;
-				const out: EnrichedDeployment[] = [];
-				let failed = 0;
-				for (const res of results) {
-					if (res.status !== 'fulfilled') {
-						failed++;
-						continue;
+				).then((results) => {
+					const out: EnrichedDeployment[] = [];
+					let failed = 0;
+					for (const res of results) {
+						if (res.status === 'rejected') {
+							failed++;
+							continue;
+						}
+						for (const d of res.value.r.data) out.push({ ...d, companyId: res.value.c.id });
 					}
-					for (const d of res.value.r.data) out.push({ ...d, companyId: res.value.c.id });
-				}
-				setDeployments(out);
-				setError(failed === results.length ? 'Não foi possível carregar deployments.' : null);
-			} catch {
-				if (active) setError('Erro inesperado ao carregar deployments.');
-			} finally {
-				if (active) setLoading(false);
-			}
-		})();
-		return () => {
-			active = false;
-		};
-	}, [key, nonce]);
+					if (failed === results.length && results.length > 0) {
+						throw new Error('Não foi possível carregar deployments.');
+					}
+					return out;
+				}),
+			// `key` encodes the company-id set; when companies load/change, the key
+			// changes and this callback is rebuilt with the fresh `companies`.
+			[key],
+		),
+	);
 
-	const byCompany = groupByCompany(deployments);
-	return { deployments, byCompany, loading, error, refetch };
+	const deployments = query.data ?? [];
+	const byCompany = React.useMemo(() => groupByCompany(deployments), [deployments]);
+	return {
+		deployments,
+		byCompany,
+		loading: query.loading,
+		error: query.error,
+		refetch: query.refetch,
+	};
 }
 
 function groupByCompany(deps: EnrichedDeployment[]): Record<string, EnrichedDeployment[]> {

@@ -242,7 +242,7 @@ describe('Companies Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ email: `future-${Date.now()}@example.com`, role: 'viewer' }),
+					body: JSON.stringify({ email: `future-${Date.now()}@example.com`, role: 'observer' }),
 				}),
 			);
 			expect(response.status).toBe(201);
@@ -255,7 +255,7 @@ describe('Companies Module', () => {
 				new Request(`http://localhost/api/companies/${companyId}/members`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
-					body: JSON.stringify({ email: 'bad-email', role: 'viewer' }),
+					body: JSON.stringify({ email: 'bad-email', role: 'observer' }),
 				}),
 			);
 			expect(response.status).toBe(400);
@@ -268,6 +268,59 @@ describe('Companies Module', () => {
 				}),
 			);
 			expect(response.status).toBe(403);
+		});
+	});
+
+	describe('Role hierarchy (RBAC v2)', () => {
+		it('observer is blocked on operator-required routes (403)', async () => {
+			// Regression: hierarchy map must use the new role names — with the old
+			// map, unknown roles resolved to `undefined` and every check passed.
+			const observerEmail = `observer-${Date.now()}@example.com`;
+			const observerCookie = await signUpAndIn(observerEmail, 'Observer Member');
+			const add = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ email: observerEmail, role: 'observer' }),
+				}),
+			);
+			expect(add.status).toBe(201);
+
+			const blocked = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/categories`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: observerCookie },
+					body: JSON.stringify({ name: 'RBAC Drill', type: 'custom' }),
+				}),
+			);
+			expect(blocked.status).toBe(403);
+
+			const allowed = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/categories`, {
+					headers: { Cookie: observerCookie },
+				}),
+			);
+			expect(allowed.status).toBe(200);
+		});
+
+		it('manager passes where observer is blocked', async () => {
+			const managerEmail = `manager-${Date.now()}@example.com`;
+			const managerCookie = await signUpAndIn(managerEmail, 'Manager Member');
+			await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/members`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+					body: JSON.stringify({ email: managerEmail, role: 'manager' }),
+				}),
+			);
+			const response = await app.handle(
+				new Request(`http://localhost/api/companies/${companyId}/categories`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Cookie: managerCookie },
+					body: JSON.stringify({ name: 'RBAC Manager', type: 'custom' }),
+				}),
+			);
+			expect(response.status).toBe(201);
 		});
 	});
 

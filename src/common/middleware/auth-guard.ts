@@ -1,20 +1,24 @@
+import {
+	CAPABILITIES,
+	type Capability,
+	type CompanyRole,
+	hasCapability,
+	normalizeRole,
+} from '@common/auth/capabilities';
 import { auth } from '@common/config/auth';
 import { env } from '@common/config/env';
 import { db } from '@common/db';
-import { companies, companyMembers } from '@common/db/schema';
+import { companies, companyMembers, companyRolePolicies } from '@common/db/schema';
 import { serializeSignedCookie } from 'better-call';
 import { and, eq } from 'drizzle-orm';
 import type { Elysia } from 'elysia';
 
-/**
- * Role hierarchy for company-scoped RBAC.
- * owner (4) > admin (3) > operator (2) > viewer (1)
- */
+/** Role hierarchy for company-scoped RBAC (RBAC v2): owner > manager > operator > observer. */
 const ROLE_HIERARCHY: Record<string, number> = {
 	owner: 4,
-	admin: 3,
+	manager: 3,
 	operator: 2,
-	viewer: 1,
+	observer: 1,
 } as const;
 
 type CompanyRole = keyof typeof ROLE_HIERARCHY;
@@ -113,6 +117,82 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 				};
 			},
 			/**
+			 * Capability check — RBAC v2. Resolves the caller's role in
+			 * :companyId, merges factory defaults with the company's override
+			 * policy (company_role_policies, super-admin edited) and requires
+			 * the given capability. Super admins bypass.
+			 *
+			 * Usage: { auth: true, requireCapability: 'devices.delete' }
+			 */
+			requireCapability(capability: string) {
+				if (!capability) return;
+
+				return {
+					resolve: async ({ user, params }: any) => {
+						if (!user || !params?.companyId) {
+							return { companyPermissions: undefined };
+						}
+						if (isSuperAdmin(user.email)) {
+							return { companyPermissions: new Set(CAPABILITIES) };
+						}
+						const [row] = await db
+							.select({ role: companyMembers.role })
+							.from(companyMembers)
+							.where(
+								and(
+									eq(companyMembers.companyId, params.companyId),
+									eq(companyMembers.userId, user.id),
+								),
+							);
+						if (!row) return { companyPermissions: undefined };
+
+						const role = normalizeRole(row.role) ?? 'observer';
+						const [policy] = await db
+							.select({ overrides: companyRolePolicies.overrides })
+							.from(companyRolePolicies)
+							.where(
+								and(
+									eq(companyRolePolicies.companyId, params.companyId),
+									eq(companyRolePolicies.role, row.role),
+								),
+							);
+
+						return {
+							companyPermissions: hasCapability(
+								role,
+								capability as Capability,
+								policy?.overrides ?? null,
+							)
+								? new Set(CAPABILITIES)
+								: null,
+							companyRole: row.role as string,
+						};
+					},
+					beforeHandle: async ({ user, params, set, companyPermissions }: any) => {
+						if (!user) {
+							set.status = 401;
+							return { error: 'Unauthorized', message: 'Authentication required' };
+						}
+						if (!params?.companyId) {
+							set.status = 400;
+							return { error: 'Bad Request', message: 'Company ID is required' };
+						}
+						if (companyPermissions === undefined) {
+							set.status = 403;
+							return { error: 'Forbidden', message: 'You are not a member of this company' };
+						}
+						if (companyPermissions === null) {
+							set.status = 403;
+							return {
+								error: 'Forbidden',
+								message: `Missing capability: '${capability}'`,
+							};
+						}
+					},
+				};
+			},
+
+			/**
 			 * Company-scoped role check.
 			 * Requires `auth: true` to be set alongside this.
 			 * Checks `params.companyId` for membership and role level.
@@ -203,8 +283,10 @@ export function withAuth<T extends Elysia<any, any, any, any, any, any, any>>(ap
 
 						if (!derivedRole) return;
 
-						const userLevel = ROLE_HIERARCHY[derivedRole as CompanyRole] ?? 0;
-						const requiredLevel = ROLE_HIERARCHY[minimumRole as CompanyRole] ?? 0;
+						const role = normalizeRole(derivedRole) ?? 'observer';
+						const minimum = normalizeRole(minimumRole) ?? minimumRole;
+						const userLevel = ROLE_HIERARCHY[role];
+						const requiredLevel = ROLE_HIERARCHY[minimum] ?? 0;
 
 						if (userLevel < requiredLevel) {
 							set.status = 403;

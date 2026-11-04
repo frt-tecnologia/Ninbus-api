@@ -49,14 +49,14 @@ export const addMemberSchema = t.Object(
 	{
 		userId: t.String({ minLength: 1, description: 'User ID to add as member' }),
 		role: t.Union(
-			[t.Literal('owner'), t.Literal('admin'), t.Literal('operator'), t.Literal('viewer')],
+			[t.Literal('owner'), t.Literal('manager'), t.Literal('operator'), t.Literal('observer')],
 			{ description: 'Role for the new member' },
 		),
 	},
 	{
 		default: {
 			userId: 'user-id-exemplo-uuid',
-			role: 'admin',
+			role: 'manager',
 		},
 	},
 );
@@ -64,7 +64,7 @@ export const addMemberSchema = t.Object(
 export const updateMemberRoleSchema = t.Object(
 	{
 		role: t.Union(
-			[t.Literal('owner'), t.Literal('admin'), t.Literal('operator'), t.Literal('viewer')],
+			[t.Literal('owner'), t.Literal('manager'), t.Literal('operator'), t.Literal('observer')],
 			{ description: 'New role for the member' },
 		),
 	},
@@ -84,7 +84,7 @@ export const designateMemberSchema = t.Object(
 	{
 		email: t.String({ format: 'email', description: 'Email of the user to designate' }),
 		role: t.Union(
-			[t.Literal('owner'), t.Literal('admin'), t.Literal('operator'), t.Literal('viewer')],
+			[t.Literal('owner'), t.Literal('manager'), t.Literal('operator'), t.Literal('observer')],
 			{ description: 'Role to assign (or update if already a member)' },
 		),
 	},

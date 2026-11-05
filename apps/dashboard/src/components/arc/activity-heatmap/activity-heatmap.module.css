@@ -84,7 +84,7 @@
 .canvas {
 	--gap: 3px;
 	--label: 30px;
-	--cell: clamp(9px, calc((100cqi - var(--label) - var(--gap) * 53) / 53), 15px);
+	--cell: clamp(9px, calc((100cqi - var(--label) - var(--gap) * var(--weeks)) / var(--weeks)), 15px);
 	--step: calc(var(--cell) + var(--gap));
 	direction: ltr;
 	display: grid;

@@ -54,6 +54,7 @@ export interface FilterToolbarProps {
 	onClearAll?: () => void;
 	children?: ReactNode;
 	label?: string;
+	variant?: 'panel' | 'bare';
 	/** Adds an Add filter trigger that morphs into a two step field and value menu. */
 	addFilter?: {
 		fields: FilterField[];
@@ -883,6 +884,7 @@ export function FilterToolbar({
 	children,
 	label = 'Active filters',
 	addFilter,
+	variant = 'panel',
 }: FilterToolbarProps) {
 	const reduced = useReducedMotion() ?? false;
 	const root = useRef<HTMLDivElement>(null),
@@ -956,7 +958,12 @@ export function FilterToolbar({
 		? text
 		: { ...text, transition: { ...enter, delay: motionTokens.duration.instant * 0.75 } };
 	return (
-		<div ref={root} className={styles.toolbar} role="group" aria-label={label}>
+		<div
+			ref={root}
+			className={variant === 'bare' ? `${styles.toolbar} ${styles.bare}` : styles.toolbar}
+			role="group"
+			aria-label={label}
+		>
 			<motion.div className={styles.frame} style={{ height: frameHeight }}>
 				<div ref={list} className={styles.chips}>
 					<AnimatePresence initial={false}>

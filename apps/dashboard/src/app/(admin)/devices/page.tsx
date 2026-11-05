@@ -138,20 +138,6 @@ export default function DevicesPage() {
 				}
 			/>
 			<Guard loading={devices.loading} error={devices.error} onRetry={devices.refetch}>
-				<section className={s.fabGroup} aria-label="Vinculação de dispositivos">
-					<Button
-						variant={selection.length ? 'primary' : 'secondary'}
-						disabled={!selection.length}
-						onClick={() => setForm({ kind: 'assign', context: { deviceIds: selection } })}
-					>
-						Vincular selecionados ({selection.length})
-					</Button>
-					<Tooltip content="Procure dispositivos sem empresa para vincular. Também é possível pela empresa ou no detalhe do dispositivo.">
-						<Button variant="secondary" onClick={() => setForm({ kind: 'assign' })}>
-							Buscar para vincular
-						</Button>
-					</Tooltip>
-				</section>
 				<Collection
 					label="Dispositivos"
 					rows={rows}
@@ -160,6 +146,22 @@ export default function DevicesPage() {
 					selectable
 					selected={selection}
 					onSelectionChange={setSelection}
+					extra={
+						<div className={s.filterActions}>
+							<Button
+								variant={selection.length ? 'primary' : 'secondary'}
+								disabled={!selection.length}
+								onClick={() => setForm({ kind: 'assign', context: { deviceIds: selection } })}
+							>
+								Vincular selecionados ({selection.length})
+							</Button>
+							<Tooltip content="Procure dispositivos sem empresa para vincular. Também é possível pela empresa ou no detalhe do dispositivo.">
+								<Button variant="secondary" onClick={() => setForm({ kind: 'assign' })}>
+									Buscar para vincular
+								</Button>
+							</Tooltip>
+						</div>
+					}
 					dateKey="lastSeenAt"
 					dateMeaning="Período aplica-se à última comunicação (poll)"
 					defaultSortKey="lastSeenAt"
@@ -219,7 +221,6 @@ export default function DevicesPage() {
 				open={!!form}
 				onClose={() => setForm(null)}
 				title={form?.kind === 'register' ? 'Registrar dispositivo' : 'Vincular dispositivos'}
-
 			>
 				{form?.kind === 'register' && (
 					<RegisterForm

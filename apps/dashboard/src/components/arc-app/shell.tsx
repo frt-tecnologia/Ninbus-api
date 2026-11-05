@@ -2,14 +2,13 @@
 /**
  * ArcShell — the reference's application frame, on real routes and data.
  *
- * Fixed 232px sidebar (brand, workspace, ⌘K search, nav, profile) + topbar
+ * Fixed 232px sidebar (brand, ⌘K search, nav, profile) + topbar
  * (breadcrumb, snapshot, theme toggle). Mobile: nav lives in a bottom sheet.
  * The ⌘K command palette indexes REAL entities (companies, devices, users,
  * invites, groups, releases, deployments) from the existing services.
  */
 import {
 	Activity,
-	ArrowLeft,
 	Building2,
 	ChevronRight,
 	Cpu,
@@ -21,7 +20,7 @@ import {
 	Users,
 } from 'lucide-react';
 import Image from 'next/image';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 import { Button } from '@/components/arc/button/button';
@@ -29,7 +28,6 @@ import { CommandPalette } from '@/components/arc/command-palette/command-palette
 import { Dialog, DialogContent } from '@/components/arc/dialog/dialog';
 import { IconMorph } from '@/components/arc/icon-morph/icon-morph';
 import { Tooltip } from '@/components/arc/tooltip/tooltip';
-import { COMPANY_SECTIONS, type CompanySectionId } from '@/components/arc-app/company-tabs';
 import { LiveBadge } from '@/components/arc-app/live-badge';
 import { useAllDeployments } from '@/hooks/use-all-deployments';
 import { useFetch } from '@/hooks/useFetch';
@@ -249,46 +247,6 @@ export function ArcShell({
 		nav.find((n) => pathname.startsWith(`${n.path}/`)) ??
 		null;
 
-	const searchParams = useSearchParams();
-	const companyMatch = /^\/companies\/([^/]+)/.exec(pathname);
-	const companyContextId = companyMatch?.[1] ?? null;
-	const activeSection = (searchParams.get('section') ?? 'devices') as CompanySectionId;
-	const companyContext = useQuery(
-		companyContextId ? qk.company(companyContextId) : 'company:context:none',
-		React.useCallback(
-			() => (companyContextId ? companyService.get(companyContextId) : Promise.resolve(null)),
-			[companyContextId],
-		),
-	);
-	const companyContextName = (companyContext.data as { name?: string } | null)?.name ?? 'Empresa';
-
-	const companySectionItems = companyContextId ? (
-		<nav aria-label={`Seções de ${companyContextName}`}>
-			<button
-				type="button"
-				className={`${s.navItem} ${s.companyBack}`}
-				onClick={() => go('/companies')}
-			>
-				<ArrowLeft size={18} />
-				<span>{companyContextName}</span>
-			</button>
-			{COMPANY_SECTIONS.map((sectionItem) => {
-				const selected = sectionItem.id === activeSection;
-				return (
-					<button
-						type="button"
-						key={sectionItem.id}
-						onClick={() => router.push(`/companies/${companyContextId}?section=${sectionItem.id}`)}
-						className={`${s.navItem} ${s.subItem} ${selected ? s.selected : ''}`}
-						aria-current={selected ? 'page' : undefined}
-					>
-						<span>{sectionItem.label}</span>
-					</button>
-				);
-			})}
-		</nav>
-	) : null;
-
 	function go(path: string) {
 		router.push(path);
 		setMobile(false);
@@ -321,23 +279,25 @@ export function ArcShell({
 		<span className={s.brandSignature}>
 			<Image
 				src="/console/brand/ninbus-logo.png"
-				alt="Ninbus"
-				width={120}
-				height={56}
+				alt=""
+				width={40}
+				height={40}
 				priority
 				unoptimized
 				className={s.brandNinbus}
 			/>
+			<span className={s.brandName}>Ninbus</span>
 			<span className={s.brandDivider} aria-hidden="true" />
 			<Image
 				src="/console/brand/frt-logo.png"
-				alt="FRT"
-				width={44}
-				height={44}
+				alt=""
+				width={28}
+				height={28}
 				priority
 				unoptimized
 				className={s.brandFrt}
 			/>
+			<span className={s.brandCo}>FRT</span>
 		</span>
 	);
 
@@ -352,16 +312,11 @@ export function ArcShell({
 				>
 					{brandSignature}
 				</button>
-				<div className={s.workspace}>
-					<span>Console de administração</span>
-					<span className={s.muted}>Super admin</span>
-				</div>
 				<button type="button" className={s.searchButton} onClick={() => setSearch(true)}>
 					<Search size={17} />
 					<span>Buscar na plataforma</span>
 					<kbd>⌘K</kbd>
 				</button>
-				{companySectionItems}
 				{navItems}
 				<div className={s.sidebarBottom}>
 					<div className={s.demoNote}>
@@ -413,7 +368,6 @@ export function ArcShell({
 			</div>
 
 			<Surface open={mobile} onClose={() => setMobile(false)} title="Navegação">
-				{companySectionItems}
 				{navItems}
 				<Button
 					variant="secondary"

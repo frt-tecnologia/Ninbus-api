@@ -15,8 +15,16 @@ import { useQuery } from '@/lib/cache/use-query';
 
 export default function AuditPage() {
 	const activity = useQuery(
-		qk.adminActivity,
-		React.useCallback(() => observabilityService.activity({ limit: 200 }), []),
+		'activity:heat:audit-1y',
+		React.useCallback(
+			() =>
+				observabilityService.activity({
+					limit: 200,
+					from: new Date(Date.now() - 365 * 86_400_000),
+					to: new Date(),
+				}),
+			[],
+		),
 	);
 	const companies = useQuery(
 		qk.adminCompanies,
@@ -38,8 +46,8 @@ export default function AuditPage() {
 					heatDay),
 	);
 
-	const days = Array.from({ length: 90 }, (_, i) => {
-		const date = new Date(Date.now() - (89 - i) * 86_400_000).toISOString().slice(0, 10);
+	const days = Array.from({ length: 365 }, (_, i) => {
+		const date = new Date(Date.now() - (364 - i) * 86_400_000).toISOString().slice(0, 10);
 		return {
 			date,
 			count: events.filter(
@@ -65,7 +73,7 @@ export default function AuditPage() {
 					<ActivityHeatmap
 						days={days}
 						label="Eventos por dia"
-						period="últimos 90 dias"
+						period="no último ano"
 						unit={{ one: 'evento', other: 'eventos' }}
 						selectedDate={heatDay}
 						onSelectDate={(v) => setHeatDay(v === heatDay ? null : v)}

@@ -65,12 +65,12 @@ export function useOverview() {
 		React.useCallback(() => observabilityService.activity({ limit: 6 }), []),
 	);
 	const heat = useQuery(
-		'activity:heat:30d',
+		'activity:heat:1y',
 		React.useCallback(
 			() =>
 				observabilityService.activity({
 					limit: 200,
-					from: new Date(Date.now() - 30 * 86_400_000),
+					from: new Date(Date.now() - 365 * 86_400_000),
 					to: new Date(),
 				}),
 			[],

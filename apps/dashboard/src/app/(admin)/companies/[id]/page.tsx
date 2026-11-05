@@ -8,7 +8,9 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import SegmentedControl from '@/components/arc/segmented-control/segmented-control';
 import {
+	COMPANY_SECTIONS,
 	CompanyFormHost,
 	type CompanyFormKind,
 	CompanySectionHost,
@@ -83,6 +85,12 @@ export default function CompanyDetailPage() {
 					{ label: c?.name ?? '…' },
 					{ label: companySectionLabel(section) },
 				]}
+			/>
+			<SegmentedControl
+				label="Seções da empresa"
+				value={section}
+				options={COMPANY_SECTIONS.map((sec) => ({ value: sec.id, label: sec.short }))}
+				onValueChange={(next) => router.replace(`/companies/${companyId}?section=${next}`)}
 			/>
 			<CompanySectionHost
 				companyId={companyId}

@@ -1002,11 +1002,11 @@
 }
 
 .permissionRow {
-	display: flex;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
-	justify-content: space-between;
 	gap: 12px;
-	padding: 10px 0;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--border);
 }
 
@@ -1019,6 +1019,13 @@
 	flex-direction: column;
 	gap: 2px;
 	font-size: var(--text-sm);
+	min-width: 0;
+}
+
+.permissionMeta > span:first-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .permissionOn {
@@ -1032,19 +1039,19 @@
 }
 
 .permissionControls {
-	display: flex;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(76px, 1fr));
 	gap: 6px;
 	flex-shrink: 0;
 }
 
 @media (max-width: 640px) {
 	.permissionRow {
-		flex-direction: column;
-		align-items: stretch;
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.permissionControls {
-		justify-content: flex-end;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
 
@@ -1094,13 +1101,27 @@
 }
 
 .brandNinbus {
-	height: 30px;
+	height: 40px;
 	width: auto;
 }
 
 .brandFrt {
-	height: 24px;
+	height: 28px;
 	width: auto;
+}
+
+.brandName {
+	font-family: var(--font-display);
+	font-size: var(--text-xl);
+	font-weight: 500;
+	line-height: 1;
+}
+
+.brandCo {
+	font-size: var(--text-sm);
+	font-weight: 500;
+	color: var(--text-secondary);
+	line-height: 1;
 }
 
 .brandDivider {
@@ -1180,22 +1201,6 @@
 }
 
 /* Floating button group — discreet tray, never covering pagination (§12). */
-.fabGroup {
-	position: sticky;
-	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-	display: flex;
-	gap: var(--space-2, 8px);
-	justify-content: center;
-	padding: var(--space-2, 8px) var(--space-3, 12px);
-	border: 1px solid var(--border);
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--background) 82%, transparent);
-	backdrop-filter: blur(8px);
-	margin: var(--space-4, 16px) auto var(--space-2, 8px);
-	width: fit-content;
-	max-width: 100%;
-	z-index: 5;
-}
 
 @media (max-width: 640px) {
 	.fabGroup {
@@ -1251,20 +1256,25 @@
 	min-width: 0;
 }
 .searchFilterBar > :first-child {
-	flex: 1 1 220px;
+	flex: 1 1 260px;
 	min-width: 0;
 }
-.searchFilterBar > :nth-child(2) {
-	flex: 2 1 320px;
-	min-width: 0;
-	max-width: 100%;
+.searchFilterBar > :last-child {
+	flex-shrink: 0;
+	flex-basis: 100%;
+}
+
+.filterActions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
 }
 .confirmRecord {
 	overflow-wrap: anywhere;
 	font-size: var(--text-sm);
 }
 @media (max-width: 640px) {
-	.searchFilterBar > :nth-child(2) {
+	.filterActions {
 		flex-basis: 100%;
 	}
 	.panel {

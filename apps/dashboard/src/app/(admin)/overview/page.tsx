@@ -282,7 +282,7 @@ export default function OverviewPage() {
 				</Panel>
 				<Panel
 					title="Atividade recente"
-					description="Eventos de auditoria agregados por dia (últimos 30 dias). Selecione um dia para ver os eventos."
+					description="Eventos de auditoria agregados por dia no último ano. Selecione um dia para ver os eventos."
 					action={
 						<Button variant="ghost" onClick={() => router.push('/audit')}>
 							Ver histórico
@@ -296,7 +296,7 @@ export default function OverviewPage() {
 							<ActivityHeatmap
 								days={overview.activity.heatDays}
 								label="Atividade por dia"
-								period="nos últimos 30 dias"
+								period="no último ano"
 								unit={{ one: 'evento', other: 'eventos' }}
 								locale="pt-BR"
 								selectedDate={overview.activity.heatDay}

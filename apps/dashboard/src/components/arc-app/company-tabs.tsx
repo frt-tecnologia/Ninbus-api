@@ -48,7 +48,9 @@ import { useLive } from '@/lib/sse/use-live';
 import { periodKey as periodKeyOf, resolvePeriod } from '@/lib/time/period';
 import type { Device } from '@/types/domain';
 import s from './app.module.css';
+import { Guard } from './page-head';
 import { PeriodPills } from './period-controls';
+import type { AnyRow } from './primitives';
 
 export type CompanyFormKind = 'assign' | 'register' | 'group' | 'member' | 'atualização';
 
@@ -92,13 +94,13 @@ function useReleases() {
 // ── Tabs shell ─────────────────────────────────────────────────────────
 
 export const COMPANY_SECTIONS = [
-	{ id: 'devices', label: 'Dispositivos' },
-	{ id: 'members', label: 'Membros e convites' },
-	{ id: 'groups', label: 'Grupos' },
-	{ id: 'settings', label: 'Configurações' },
-	{ id: 'permissions', label: 'Permissões' },
-	{ id: 'connectivity', label: 'Conexão' },
-	{ id: 'activity', label: 'Atividade' },
+	{ id: 'devices', label: 'Dispositivos', short: 'Dispositivos' },
+	{ id: 'members', label: 'Membros e convites', short: 'Membros' },
+	{ id: 'groups', label: 'Grupos', short: 'Grupos' },
+	{ id: 'settings', label: 'Configurações', short: 'Config.' },
+	{ id: 'permissions', label: 'Permissões', short: 'Permissões' },
+	{ id: 'connectivity', label: 'Conexão', short: 'Conexão' },
+	{ id: 'activity', label: 'Atividade', short: 'Atividade' },
 ] as const;
 
 export type CompanySectionId = (typeof COMPANY_SECTIONS)[number]['id'];
@@ -137,7 +139,7 @@ export function CompanySectionHost({
 		case 'permissions':
 			return <PermissionsTab companyId={companyId} />;
 		case 'connectivity':
-			return <ConnectivityTab companyId={companyId} />;
+			return <ConnectivityTab companyId={companyId} onDevice={onDevice} />;
 		case 'activity':
 			return <ActivityTab companyId={companyId} />;
 		default:
@@ -603,8 +605,15 @@ function PermissionsTab({ companyId }: { companyId: string }) {
 }
 // ── Connectivity + Activity ────────────────────────────────────────────
 
-function ConnectivityTab({ companyId }: { companyId: string }) {
+function ConnectivityTab({
+	companyId,
+	onDevice,
+}: {
+	companyId: string;
+	onDevice: (deviceId: string) => void;
+}) {
 	useLive({ kind: 'company', companyId });
+	const devices = useCompanyDevices(companyId);
 	const [period, setPeriod] = React.useState<Period | null>({ kind: 'relative', preset: '24h' });
 	const range = React.useMemo(() => {
 		if (period) return resolvePeriod(period);
@@ -613,20 +622,6 @@ function ConnectivityTab({ companyId }: { companyId: string }) {
 	const fromMs = range.from.getTime();
 	const toMs = range.to.getTime();
 	const rangeKey = `${fromMs}-${toMs}`;
-	const sessions = useQuery(
-		qk.companyConnections(companyId, rangeKey),
-		React.useCallback(
-			() =>
-				observabilityService.connections({
-					companyId,
-					from: new Date(fromMs),
-					to: new Date(toMs),
-					view: 'session',
-				}),
-			[companyId, fromMs, toMs],
-		),
-	);
-	// Connected devices over time — aggregated real counts (§14).
 	const aggregate = useQuery(
 		qk.companyConnections(companyId, `agg-${rangeKey}`),
 		React.useCallback(
@@ -653,13 +648,22 @@ function ConnectivityTab({ companyId }: { companyId: string }) {
 		values: { online: b.onlineCount },
 	}));
 
+	const rows = (devices.data?.data ?? []).map((d) => ({
+		id: d.id,
+		name: d.name,
+		serial: d.serialNumber,
+		connection: d.connectionStatus,
+		lastSeenAt: d.lastSeenAt,
+		ipAddress: d.ipAddress ?? null,
+	}));
+
 	return (
 		<div className={s.formStack}>
-			<PeriodPills value={period} onChange={setPeriod} />
 			<Panel
 				title="Dispositivos conectados ao longo do tempo"
 				description="Quantidade de dispositivos conectados por intervalo, contada dos eventos de conexão reais."
 			>
+				<PeriodPills value={period} onChange={setPeriod} />
 				{aggregate.loading && !aggregate.data ? (
 					<p className={s.muted}>Carregando série…</p>
 				) : aggChart.length ? (
@@ -678,17 +682,32 @@ function ConnectivityTab({ companyId }: { companyId: string }) {
 				)}
 			</Panel>
 			<Panel
-				title="Sessões online por dispositivo"
-				description="Cada faixa é um período conectado, inferido dos contatos com o serviço de atualizações."
+				title="Frota da empresa"
+				description="Estado de conexão atual de cada dispositivo, com último contato recebido"
 			>
-				<ConnectivityLanes
-					sessions={
-						sessions.data?.view === 'session' ? ((sessions.data.data as SessionBand[]) ?? []) : []
-					}
-					from={range.from.getTime()}
-					to={range.to.getTime()}
-					loading={sessions.loading}
-				/>
+				<Guard
+					loading={devices.loading && !devices.data}
+					empty={!rows.length}
+					emptyTitle="Nenhum dispositivo"
+				>
+					<Collection
+						rows={rows}
+						columns={connectivityColumns(onDevice)}
+						label="Dispositivos da empresa"
+						onOpenRow={(r) => onDevice(String(r.id))}
+						showPeriodFilter={false}
+						fields={[
+							{
+								id: 'connection',
+								label: 'Conexão',
+								options: [
+									{ value: 'connected', label: 'Conectado' },
+									{ value: 'disconnected', label: 'Inativo' },
+								],
+							},
+						]}
+					/>
+				</Guard>
 			</Panel>
 			<Button
 				variant="secondary"
@@ -701,6 +720,32 @@ function ConnectivityTab({ companyId }: { companyId: string }) {
 			</Button>
 		</div>
 	);
+}
+
+function connectivityColumns(onDevice: (deviceId: string) => void) {
+	return [
+		{
+			key: 'name',
+			label: 'Dispositivo',
+			render: (_: unknown, r: AnyRow) => (
+				<button type="button" className={s.link} onClick={() => onDevice(String(r.id))}>
+					{String(r.name)}
+					<span className={`${s.cellSub} ${s.mono}`}>{String(r.serial)}</span>
+				</button>
+			),
+		},
+		{
+			key: 'connection',
+			label: 'Conexão',
+			render: (v: unknown) => <Status value={String(v)} />,
+		},
+		{
+			key: 'lastSeenAt',
+			label: 'Último contato',
+			render: (v: unknown) => (v ? stamp(String(v)) : 'Sem contato'),
+		},
+		{ key: 'ipAddress', label: 'IP' },
+	];
 }
 
 function ActivityTab({ companyId }: { companyId: string }) {

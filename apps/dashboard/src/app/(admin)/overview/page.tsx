@@ -303,6 +303,7 @@ export default function OverviewPage() {
 								onSelectDate={(d) =>
 									overview.activity.setHeatDay(d === overview.activity.heatDay ? null : d)
 								}
+								className="arc-w-full"
 							/>
 							{overview.activity.heatDay ? (
 								<div className={s.formStack}>

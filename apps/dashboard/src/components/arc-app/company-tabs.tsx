@@ -48,6 +48,7 @@ import { useLive } from '@/lib/sse/use-live';
 import { periodKey as periodKeyOf, resolvePeriod } from '@/lib/time/period';
 import type { Device } from '@/types/domain';
 import s from './app.module.css';
+import { ConnectionHistorySection } from './connection-history-section';
 import { Guard } from './page-head';
 import { PeriodPills } from './period-controls';
 import type { AnyRow } from './primitives';
@@ -158,73 +159,104 @@ function DevicesTab({
 	onForm: (kind: CompanyFormKind) => void;
 	onDevice: (deviceId: string) => void;
 }) {
+	useLive({ kind: 'company', companyId });
 	const devices = useCompanyDevices(companyId);
 	const list = devices.data?.data ?? [];
+	const [period, setPeriod] = React.useState<Period | null>(null);
 
 	return (
-		<Panel
-			title="Frota da empresa"
-			description="Gerencie os dispositivos vinculados a esta empresa."
-			action={
-				<div className={s.inline}>
-					<Button variant="secondary" onClick={() => onForm('assign')}>
-						Vincular dispositivos
-					</Button>
-					<Button variant="ghost" onClick={() => onForm('register')}>
-						Registrar dispositivo
-					</Button>
-				</div>
-			}
-		>
-			<Collection
-				label="Dispositivos da empresa"
-				rows={list.map((d) => ({ ...d }))}
-				onOpenRow={(r) => onDevice(String(r.id))}
-				fields={[
-					{
-						id: 'connectionStatus',
-						label: 'Conexão',
-						options: ['connected', 'disconnected', 'unknown'],
-					},
-					{
-						id: 'status',
-						label: 'Cadastro',
-						options: ['accepted', 'pending', 'rejected', 'disabled'],
-					},
-				]}
-				dateKey="lastSeenAt"
-				dateMeaning="Período aplica-se à última comunicação (poll)"
-				defaultSortKey="lastSeenAt"
-				defaultSortDir="desc"
-				columns={[
-					{
-						key: 'name',
-						label: 'Dispositivo',
-						render: (_, r) => (
-							<button type="button" className={s.link} onClick={() => onDevice(String(r.id))}>
-								{String(r.name)}
-								<span className={`${s.cellSub} ${s.mono}`}>
-									{String(r.serialDisplay ?? r.serialNumber ?? '')}
-								</span>
-							</button>
-						),
-					},
-					{
-						key: 'connectionStatus',
-						label: 'Conexão',
-						render: (v) => <Status value={String(v)} />,
-					},
-					{ key: 'status', label: 'Cadastro', render: (v) => <Status value={String(v)} /> },
-					{ key: 'firmwareVersion', label: 'Firmware' },
-					{
-						key: 'lastSeenAt',
-						label: 'Última comunicação',
-						render: (v) => (v ? stamp(String(v)) : 'sem contato'),
-					},
-				]}
+		<div className={s.formStack}>
+			<Panel
+				title="Frota da empresa"
+				description="Gerencie os dispositivos vinculados a esta empresa."
+				action={
+					<div className={s.inline}>
+						<Button variant="secondary" onClick={() => onForm('assign')}>
+							Vincular dispositivos
+						</Button>
+						<Button variant="ghost" onClick={() => onForm('register')}>
+							Registrar dispositivo
+						</Button>
+					</div>
+				}
+			>
+				<Collection
+					label="Dispositivos da empresa"
+					rows={list.map((d) => ({ ...d }))}
+					onOpenRow={(r) => onDevice(String(r.id))}
+					period={period}
+					onPeriodChange={setPeriod}
+					fields={[
+						{
+							id: 'connectionStatus',
+							label: 'Conexão',
+							options: ['connected', 'disconnected', 'unknown'],
+						},
+						{
+							id: 'status',
+							label: 'Cadastro',
+							options: ['accepted', 'pending', 'rejected', 'disabled'],
+						},
+					]}
+					dateKey="lastSeenAt"
+					dateMeaning="Período aplica-se à última comunicação (poll)"
+					defaultSortKey="lastSeenAt"
+					defaultSortDir="desc"
+					columns={[
+						{
+							key: 'name',
+							label: 'Dispositivo',
+							render: (_, r) => (
+								<button type="button" className={s.link} onClick={() => onDevice(String(r.id))}>
+									{String(r.name)}
+									<span className={`${s.cellSub} ${s.mono}`}>
+										{String(r.serialDisplay ?? r.serialNumber ?? '')}
+									</span>
+								</button>
+							),
+						},
+						{
+							key: 'connectionStatus',
+							label: 'Conexão',
+							render: (v) => <Status value={String(v)} />,
+						},
+						{ key: 'status', label: 'Cadastro', render: (v) => <Status value={String(v)} /> },
+						{ key: 'firmwareVersion', label: 'Firmware' },
+						{
+							key: 'lastSeenAt',
+							label: 'Última comunicação',
+							render: (v) => (v ? stamp(String(v)) : 'sem contato'),
+						},
+					]}
+				/>
+			</Panel>
+			<ConnectionHistorySection
+				companies={[]}
+				devices={list}
+				initialPeriod={period}
+				onManageDevice={(device) => onDevice(device.id)}
 			/>
-		</Panel>
+		</div>
 	);
+}
+
+function toEvents(
+	rows: Array<{
+		id: number;
+		createdAt: string;
+		actorEmail: string | null;
+		action: string;
+		entityLabel: string | null;
+		entityType: string;
+	}>,
+): TimelineEvent[] {
+	return rows.map((e) => ({
+		id: String(e.id),
+		at: e.createdAt,
+		actor: e.actorEmail ?? undefined,
+		title: `${e.action}${e.entityLabel ? ` · ${e.entityLabel}` : ''}`,
+		meta: e.entityType,
+	}));
 }
 
 // ── Members + invites ──────────────────────────────────────────────────
@@ -881,107 +913,4 @@ export function DeviceQuick({
 			</Button>
 		</div>
 	);
-}
-
-/** Connectivity lanes — the reference's lane/track/session CSS, real bands. */
-export function ConnectivityLanes({
-	sessions,
-	from,
-	to,
-	loading,
-}: {
-	sessions: SessionBand[];
-	from: number;
-	to: number;
-	loading?: boolean;
-}) {
-	const lanes = React.useMemo(() => {
-		const order: string[] = [];
-		const map = new Map<string, { deviceId: string; name: string; bands: SessionBand[] }>();
-		for (const b of sessions) {
-			let lane = map.get(b.deviceId);
-			if (!lane) {
-				lane = { deviceId: b.deviceId, name: b.deviceName ?? b.deviceId, bands: [] };
-				map.set(b.deviceId, lane);
-				order.push(b.deviceId);
-			}
-			lane.bands.push(b);
-		}
-		return order.map((id) => map.get(id)!);
-	}, [sessions]);
-
-	const span = Math.max(1, to - from);
-	const ticks = Array.from({ length: 5 }, (_, i) => new Date(from + (span * i) / 4));
-
-	if (loading) return <p className={s.muted}>Carregando sessões…</p>;
-	if (!lanes.length)
-		return (
-			<Alert tone="info" title="Nenhuma sessão no período">
-				Dispositivos conectados aparecem aqui conforme polam o servidor (intervalo de 5 min).
-			</Alert>
-		);
-
-	return (
-		<div className={s.lanes}>
-			<div className={s.laneAxis}>
-				<div />
-				<div>
-					{ticks.map((t, i) => (
-						<span key={i}>
-							{t.toLocaleTimeString('pt-BR', {
-								timeZone: 'America/Recife',
-								hour: '2-digit',
-								minute: '2-digit',
-							})}
-						</span>
-					))}
-				</div>
-			</div>
-			{lanes.map((lane) => (
-				<div className={s.lane} key={lane.deviceId}>
-					<span className={s.cellSub}>{lane.name}</span>
-					<div className={s.track}>
-						{lane.bands.map((b, i) => {
-							const start = Math.max(
-								0,
-								Math.min(100, ((new Date(b.start).getTime() - from) / span) * 100),
-							);
-							const end = Math.max(
-								0,
-								Math.min(100, ((new Date(b.end).getTime() - from) / span) * 100),
-							);
-							const width = Math.max(0.75, end - start);
-							return (
-								<span
-									key={i}
-									className={s.session}
-									style={{ left: `${start}%`, width: `${width}%` }}
-									title={`${new Date(b.start).toLocaleString('pt-BR', { timeZone: 'America/Recife' })} → ${new Date(b.end).toLocaleString('pt-BR', { timeZone: 'America/Recife' })}`}
-								/>
-							);
-						})}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-}
-
-function toEvents(
-	rows: Array<{
-		id: number;
-		createdAt: string;
-		actorEmail: string | null;
-		action: string;
-		entityLabel: string | null;
-		entityType: string;
-	}>,
-): TimelineEvent[] {
-	return rows.map((e) => ({
-		id: String(e.id),
-		at: e.createdAt,
-		actor: e.actorEmail ?? undefined,
-		title: `${e.action}${e.entityLabel ? ` · ${e.entityLabel}` : ''}`,
-		meta: e.entityType,
-	}));
 }

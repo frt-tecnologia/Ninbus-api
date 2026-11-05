@@ -275,44 +275,55 @@ export default function DeploymentsPage() {
 								</Button>
 							</div>
 						)}
-						<Collection
-							label="Atualizações"
-							rows={rows.filter((r) => !chartStatus || r.status === chartStatus)}
-							columns={columns}
-							onOpenRow={(r) => openRollout(String(r.companyId ?? ''), String(r.id))}
-							dateKey="createdAt"
-							dateMeaning="Período aplica-se à criação da atualização"
-                            period={period}
-                            onPeriodChange={setPeriod}
-							fields={[
-								{ id: 'company', label: 'Empresa', options: companyList.map((c) => c.name) },
-								{
-									id: 'status',
-									label: 'Estado',
-									options: STATES.map((v) => ({ value: v, label: STATE_LABEL[v] })),
-								},
-							]}
-						/>
+						{/* Rolagem horizontal no mobile: wrapper permite o scroll e o
+						    min-width interno evita que as colunas sejam espremidas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Atualizações"
+									rows={rows.filter((r) => !chartStatus || r.status === chartStatus)}
+									columns={columns}
+									onOpenRow={(r) => openRollout(String(r.companyId ?? ''), String(r.id))}
+									dateKey="createdAt"
+									dateMeaning="Período aplica-se à criação da atualização"
+									period={period}
+									onPeriodChange={setPeriod}
+									fields={[
+										{ id: 'company', label: 'Empresa', options: companyList.map((c) => c.name) },
+										{
+											id: 'status',
+											label: 'Estado',
+											options: STATES.map((v) => ({ value: v, label: STATE_LABEL[v] })),
+										},
+									]}
+								/>
+							</div>
+						</div>
 					</Guard>
 				</TabsContent>
 
 				<TabsContent value="firmware">
 					<Guard loading={releases.loading} error={releases.error} onRetry={releases.refetch}>
-						<Collection
-							label="Releases e arquivos NFX"
-							rows={releaseList.map((r) => ({ ...r }))}
-							columns={releaseColumns}
-							onOpenRow={(r) => setReleaseDetail(String(r.id))}
-							dateKey="createdAt"
-							fields={[
-								{
-									id: 'artifactType',
-									label: 'Tipo',
-									options: kindOptions.map((k) => ({ value: k.value, label: k.label })),
-								},
-								{ id: 'status', label: 'Estado', options: ['published', 'draft'] },
-							]}
-						/>
+						{/* Rolagem horizontal no mobile — mesmo padrão da aba Atualizações. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Releases e arquivos NFX"
+									rows={releaseList.map((r) => ({ ...r }))}
+									columns={releaseColumns}
+									onOpenRow={(r) => setReleaseDetail(String(r.id))}
+									dateKey="createdAt"
+									fields={[
+										{
+											id: 'artifactType',
+											label: 'Tipo',
+											options: kindOptions.map((k) => ({ value: k.value, label: k.label })),
+										},
+										{ id: 'status', label: 'Estado', options: ['published', 'draft'] },
+									]}
+								/>
+							</div>
+						</div>
 					</Guard>
 				</TabsContent>
 			</Tabs>

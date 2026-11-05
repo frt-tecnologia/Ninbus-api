@@ -138,59 +138,65 @@ export default function DevicesPage() {
 				}
 			/>
 			<Guard loading={devices.loading} error={devices.error} onRetry={devices.refetch}>
-				<Collection
-					label="Dispositivos"
-					rows={rows}
-					columns={columns}
-					onOpenRow={(r) => setDetail(String(r.id))}
-					selectable
-					selected={selection}
-					onSelectionChange={setSelection}
-					extra={
-						<div className={s.filterActions}>
-							<Button
-								variant={selection.length ? 'primary' : 'secondary'}
-								disabled={!selection.length}
-								onClick={() => setForm({ kind: 'assign', context: { deviceIds: selection } })}
-							>
-								Vincular selecionados ({selection.length})
-							</Button>
-							<Tooltip content="Procure dispositivos sem empresa para vincular. Também é possível pela empresa ou no detalhe do dispositivo.">
-								<Button variant="secondary" onClick={() => setForm({ kind: 'assign' })}>
-									Buscar para vincular
-								</Button>
-							</Tooltip>
-						</div>
-					}
-					dateKey="lastSeenAt"
-					dateMeaning="Período aplica-se à última comunicação (poll)"
-					defaultSortKey="lastSeenAt"
-					defaultSortDir="desc"
-					fields={[
-						{
-							id: 'company',
-							label: 'Empresa',
-							options: ['Sem empresa', ...companyList.map((c) => c.name)],
-						},
-						{
-							id: 'connectionStatus',
-							label: 'Conexão',
-							options: ['connected', 'disconnected', 'unknown'],
-						},
-						{
-							id: 'status',
-							label: 'Cadastro',
-							options: ['accepted', 'pending', 'rejected', 'disabled'],
-						},
-						{
-							id: 'firmwareVersion',
-							label: 'Firmware',
-							options: [
-								...new Set(deviceList.map((d) => d.firmwareVersion).filter(Boolean)),
-							] as string[],
-						},
-					]}
-				/>
+				<div className="w-full overflow-x-auto">
+					<div className="min-w-[900px]">
+						<Collection
+							label="Dispositivos"
+							rows={rows}
+							columns={columns}
+							onOpenRow={(r) => setDetail(String(r.id))}
+							selectable
+							selected={selection}
+							onSelectionChange={setSelection}
+							extra={
+								<div className={s.filterActions}>
+									<Button
+										variant={selection.length ? 'primary' : 'secondary'}
+										disabled={!selection.length}
+										onClick={() =>
+											setForm({ kind: 'assign', context: { deviceIds: selection } })
+										}
+									>
+										Vincular selecionados ({selection.length})
+									</Button>
+									<Tooltip content="Procure dispositivos sem empresa para vincular. Também é possível pela empresa ou no detalhe do dispositivo.">
+										<Button variant="secondary" onClick={() => setForm({ kind: 'assign' })}>
+											Buscar para vincular
+										</Button>
+									</Tooltip>
+								</div>
+							}
+							dateKey="lastSeenAt"
+							dateMeaning="Período aplica-se à última comunicação (poll)"
+							defaultSortKey="lastSeenAt"
+							defaultSortDir="desc"
+							fields={[
+								{
+									id: 'company',
+									label: 'Empresa',
+									options: ['Sem empresa', ...companyList.map((c) => c.name)],
+								},
+								{
+									id: 'connectionStatus',
+									label: 'Conexão',
+									options: ['connected', 'disconnected', 'unknown'],
+								},
+								{
+									id: 'status',
+									label: 'Cadastro',
+									options: ['accepted', 'pending', 'rejected', 'disabled'],
+								},
+								{
+									id: 'firmwareVersion',
+									label: 'Firmware',
+									options: [
+										...new Set(deviceList.map((d) => d.firmwareVersion).filter(Boolean)),
+									] as string[],
+								},
+							]}
+						/>
+					</div>
+				</div>
 				<p className={s.footnote}>
 					O filtro de data e hora consulta o último poll recebido, sem confundir cadastro com
 					conectividade.

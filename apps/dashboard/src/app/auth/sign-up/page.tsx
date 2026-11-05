@@ -28,6 +28,7 @@ export default function SignUpPage() {
 
 	async function submit(e: FormEvent) {
 		e.preventDefault();
+		if (loading) return;
 		setLoading(true);
 		setError(null);
 
@@ -49,56 +50,84 @@ export default function SignUpPage() {
 	}
 
 	return (
-		<div className={s.auth}>
-			<div className={s.authBrand}>
-				<Image
-					src="/console/brand/ninbus-logo.png"
-					alt="Ninbus"
-					width={92}
-					height={42}
-					priority
-					unoptimized
-				/>
+		// Shell de viewport: centraliza a coluna e só permite rolagem se o
+		// conteúdo realmente não couber (ex.: teclado aberto no mobile).
+		// min-h-dvh evita o "salto" da 100vh no Safari/Chrome mobile.
+		<div className="min-h-dvh w-full flex items-center justify-center px-4 py-8 sm:py-12">
+			<div className={s.auth}>
+				{/* Logo preta → precisa de um "chip" claro para aparecer em
+				    qualquer tema, no estilo de ícone de app. */}
+				<div className="flex justify-center">
+					<div className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5">
+						<Image
+							src="/console/brand/ninbus-logo.png"
+							alt="Ninbus"
+							width={92}
+							height={42}
+							priority
+							unoptimized
+							className="h-auto w-[92px]"
+						/>
+					</div>
+				</div>
+
+				<h1 className="mt-6">Criar conta</h1>
+				<p className={s.muted}>O acesso ao console exige convite ou aprovação prévia.</p>
+
+				<form
+					className={s.formStack}
+					onSubmit={submit}
+					autoComplete="on"
+					aria-busy={loading}
+				>
+					<Input
+						label="Nome"
+						required
+						value={name}
+						onChange={(e) => setName(e.target.value)}
+						autoComplete="name"
+						autoFocus
+					/>
+					<Input
+						label="E-mail"
+						type="email"
+						required
+						inputMode="email"
+						autoCapitalize="none"
+						spellCheck={false}
+						value={email}
+						onChange={(e) => setEmail(e.target.value)}
+						autoComplete="email"
+					/>
+					<PasswordField
+						label="Senha"
+						required
+						minLength={8}
+						value={password}
+						onChange={(e) => setPassword(e.target.value)}
+						autoComplete="new-password"
+						description="Mínimo de 8 caracteres."
+						messages={{ showPassword: 'Mostrar senha', hidePassword: 'Ocultar senha' }}
+					/>
+
+					{/* Região viva: o leitor de tela anuncia o erro assim que ele
+					    aparece, sem precisar mover o foco. */}
+					<div role="alert" aria-live="polite" aria-atomic="true">
+						{error && <Alert tone="danger" title={error} />}
+					</div>
+
+					<Button type="submit" loading={loading} disabled={loading}>
+						Criar conta
+					</Button>
+				</form>
+
+				<p className={s.muted}>
+					Já tem conta?{' '}
+					<Link href={ROUTES.login} className={s.link}>
+						Entrar
+					</Link>
+				</p>
 			</div>
-			<h1>Criar conta</h1>
-			<p className={s.muted}>O acesso ao console exige convite ou aprovação prévia.</p>
-			<form className={s.formStack} onSubmit={submit}>
-				<Input
-					label="Nome"
-					required
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					autoComplete="name"
-				/>
-				<Input
-					label="E-mail"
-					type="email"
-					required
-					value={email}
-					onChange={(e) => setEmail(e.target.value)}
-					autoComplete="email"
-				/>
-				<PasswordField
-					label="Senha"
-					required
-					minLength={8}
-					value={password}
-					onChange={(e) => setPassword(e.target.value)}
-					autoComplete="new-password"
-					description="Mínimo de 8 caracteres."
-					messages={{ showPassword: 'Mostrar senha', hidePassword: 'Ocultar senha' }}
-				/>
-				<Button type="submit" loading={loading}>
-					Criar conta
-				</Button>
-				{error && <Alert tone="danger" title={error} />}
-			</form>
-			<p className={s.muted}>
-				Já tem conta?{' '}
-				<Link href={ROUTES.login} className={s.link}>
-					Entrar
-				</Link>
-			</p>
 		</div>
 	);
 }

@@ -75,66 +75,77 @@ export default function UsersPage() {
 						</TabsTrigger>
 					</TabsList>
 					<TabsContent value="accounts">
-						<Collection
-							label="Pessoas"
-							rows={userList.map((x) => ({ ...x }))}
-							onOpenRow={(r) => setDetail(String(r.id))}
-							fields={[
-								{ id: 'companyCount', label: 'Empresas', options: ['0', '1', '2', '3+'] },
-								{ id: 'isSuperAdmin', label: 'Acesso', options: ['true', 'false'] },
-							]}
-							columns={[
-								{
-									key: 'name',
-									label: 'Pessoa',
-									render: (_, r) => (
-										<button type="button" className={s.link} onClick={() => setDetail(r.id)}>
-											{r.name || r.email}
-											<span className={s.cellSub}>{r.email}</span>
-										</button>
-									),
-								},
-								{ key: 'companyCount', label: 'Empresas' },
-								{
-									key: 'isSuperAdmin',
-									label: 'Acesso',
-									render: (v) =>
-										v ? <Status value="active" /> : <span className={s.muted}>Empresa</span>,
-								},
-								{ key: 'createdAt', label: 'Criada em', render: (v) => stamp(String(v)) },
-							]}
-						/>
+						{/* Rolagem horizontal no mobile: wrapper permite o scroll e o
+						    min-width interno evita que as colunas sejam espremidas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Pessoas"
+									rows={userList.map((x) => ({ ...x }))}
+									onOpenRow={(r) => setDetail(String(r.id))}
+									fields={[
+										{ id: 'companyCount', label: 'Empresas', options: ['0', '1', '2', '3+'] },
+										{ id: 'isSuperAdmin', label: 'Acesso', options: ['true', 'false'] },
+									]}
+									columns={[
+										{
+											key: 'name',
+											label: 'Pessoa',
+											render: (_, r) => (
+												<button type="button" className={s.link} onClick={() => setDetail(r.id)}>
+													{r.name || r.email}
+													<span className={s.cellSub}>{r.email}</span>
+												</button>
+											),
+										},
+										{ key: 'companyCount', label: 'Empresas' },
+										{
+											key: 'isSuperAdmin',
+											label: 'Acesso',
+											render: (v) =>
+												v ? <Status value="active" /> : <span className={s.muted}>Empresa</span>,
+										},
+										{ key: 'createdAt', label: 'Criada em', render: (v) => stamp(String(v)) },
+									]}
+								/>
+							</div>
+						</div>
 					</TabsContent>
 					<TabsContent value="invites">
-						<Collection
-							label="Convites"
-							rows={inviteList.map((i) => ({ ...i, role: i.role }))}
-							onOpenRow={(r) => setInvite(String(r.id))}
-							dateKey="createdAt"
-							fields={[
-								{ id: 'companyName', label: 'Empresa', options: companyList.map((c) => c.name) },
-								{ id: 'role', label: 'Papel', options: roleOptions.map((r) => r.value) },
-							]}
-							columns={[
-								{
-									key: 'email',
-									label: 'E-mail',
-									render: (_, r) => (
-										<button type="button" className={s.link} onClick={() => setInvite(r.id)}>
-											{r.email}
-										</button>
-									),
-								},
-								{ key: 'companyName', label: 'Empresa' },
-								{ key: 'role', label: 'Papel', render: (v) => roleLabel(String(v)) },
-								{
-									key: 'claimedAt',
-									label: 'Estado',
-									render: (v) => <Status value={v ? 'accepted' : 'pending'} />,
-								},
-								{ key: 'createdAt', label: 'Registrado em', render: (v) => stamp(String(v)) },
-							]}
-						/>
+						{/* Rolagem horizontal no mobile — mesmo padrão da aba Contas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Convites"
+									rows={inviteList.map((i) => ({ ...i, role: i.role }))}
+									onOpenRow={(r) => setInvite(String(r.id))}
+									dateKey="createdAt"
+									fields={[
+										{ id: 'companyName', label: 'Empresa', options: companyList.map((c) => c.name) },
+										{ id: 'role', label: 'Papel', options: roleOptions.map((r) => r.value) },
+									]}
+									columns={[
+										{
+											key: 'email',
+											label: 'E-mail',
+											render: (_, r) => (
+												<button type="button" className={s.link} onClick={() => setInvite(r.id)}>
+													{r.email}
+												</button>
+											),
+										},
+										{ key: 'companyName', label: 'Empresa' },
+										{ key: 'role', label: 'Papel', render: (v) => roleLabel(String(v)) },
+										{
+											key: 'claimedAt',
+											label: 'Estado',
+											render: (v) => <Status value={v ? 'accepted' : 'pending'} />,
+										},
+										{ key: 'createdAt', label: 'Registrado em', render: (v) => stamp(String(v)) },
+									]}
+								/>
+							</div>
+						</div>
 					</TabsContent>
 				</Tabs>
 			</Guard>

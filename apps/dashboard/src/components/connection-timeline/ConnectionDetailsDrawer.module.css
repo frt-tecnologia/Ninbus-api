@@ -1,0 +1,107 @@
+.content {
+	display: grid;
+	gap: 24px;
+	min-width: 0;
+}
+.identity {
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+.summary {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+}
+.summary > div {
+	display: grid;
+	gap: 8px;
+	min-width: 0;
+}
+.summary span {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--text-xs);
+	color: var(--text-secondary);
+	flex-wrap: wrap;
+}
+.summary strong {
+	font-size: var(--text-lg);
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+.online,
+.offline,
+.unknown {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex: 0 0 7px;
+}
+.online {
+	background: var(--success);
+}
+.offline {
+	background: var(--danger);
+}
+.unknown {
+	background: var(--text-muted);
+}
+.intervals {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+.intervals li {
+	display: flex;
+	align-items: start;
+	gap: 10px;
+	padding: 14px 0;
+	border-top: 1px solid var(--border);
+	font-size: var(--text-xs);
+	line-height: 1.6;
+	font-variant-numeric: tabular-nums;
+}
+.intervals li > i {
+	margin-top: 6px;
+}
+.intervals strong {
+	font-weight: 500;
+}
+.intervals li > div {
+	min-width: 0;
+}
+.intervals li > div > span {
+	display: block;
+	color: var(--text-muted);
+	margin-top: 4px;
+	overflow-wrap: anywhere;
+}
+.intervals small {
+	margin-left: auto;
+	color: var(--text-secondary);
+	font-size: var(--text-xs);
+	white-space: nowrap;
+}
+.selected {
+	background: var(--surface-muted);
+}
+.actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	padding-top: 8px;
+}
+@media (max-width: 500px) {
+	.summary {
+		gap: 8px;
+	}
+	.summary strong {
+		font-size: var(--text-base);
+	}
+	.intervals li {
+		gap: 8px;
+	}
+}

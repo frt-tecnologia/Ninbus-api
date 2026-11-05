@@ -18,28 +18,39 @@ export const dynamic = 'force-dynamic';
 
 export default function ResetPasswordPage() {
 	return (
-		<Suspense fallback={<div className={s.auth} aria-busy="true" />}>
+		<Suspense fallback={<div className="min-h-dvh" aria-busy="true" />}>
 			<ResetForm />
 		</Suspense>
 	);
 }
 
 function ResetShell({ children }: { children: ReactNode }) {
+	// Shell de viewport: centraliza a coluna e só permite rolagem se o
+	// conteúdo realmente não couber (ex.: teclado aberto no mobile).
+	// min-h-dvh evita o "salto" da 100vh no Safari/Chrome mobile.
 	return (
-		<div className={s.auth}>
-			<div className={s.authBrand}>
-				<Image
-					src="/console/brand/ninbus-logo.png"
-					alt="Ninbus"
-					width={92}
-					height={42}
-					priority
-					unoptimized
-				/>
+		<div className="min-h-dvh w-full flex items-center justify-center px-4 py-8 sm:py-12">
+			<div className={s.auth}>
+				{/* Logo preta → precisa de um "chip" claro para aparecer em
+				    qualquer tema, no estilo de ícone de app. */}
+				<div className="flex justify-center">
+					<div className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5">
+						<Image
+							src="/console/brand/ninbus-logo.png"
+							alt="Ninbus"
+							width={92}
+							height={42}
+							priority
+							unoptimized
+							className="h-auto w-[92px]"
+						/>
+					</div>
+				</div>
+
+				<h1 className="mt-6">Redefinir senha</h1>
+				<p className={s.muted}>Use o link recebido por e-mail.</p>
+				{children}
 			</div>
-			<h1>Redefinir senha</h1>
-			<p className={s.muted}>Use o link recebido por e-mail.</p>
-			{children}
 		</div>
 	);
 }
@@ -57,6 +68,7 @@ function ResetForm() {
 
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
+		if (loading) return;
 		setError(null);
 
 		if (!token) {
@@ -90,7 +102,10 @@ function ResetForm() {
 	if (done) {
 		return (
 			<ResetShell>
-				<Alert tone="success" title="Senha alterada. Você já pode entrar." />
+				{/* role=status anuncia a confirmação para o leitor de tela. */}
+				<div role="status" aria-live="polite" aria-atomic="true">
+					<Alert tone="success" title="Senha alterada. Você já pode entrar." />
+				</div>
 				<Button onClick={() => router.push(`${ROUTES.login}?t=${Date.now()}`)}>
 					Ir para o login
 				</Button>
@@ -100,7 +115,12 @@ function ResetForm() {
 
 	return (
 		<ResetShell>
-			<form onSubmit={handleSubmit} className={s.formStack}>
+			<form
+				onSubmit={handleSubmit}
+				className={s.formStack}
+				autoComplete="on"
+				aria-busy={loading}
+			>
 				<PasswordField
 					label="Nova senha"
 					required
@@ -108,6 +128,7 @@ function ResetForm() {
 					value={password}
 					onChange={(e) => setPassword(e.target.value)}
 					autoComplete="new-password"
+					autoFocus
 					messages={{ showPassword: 'Mostrar senha', hidePassword: 'Ocultar senha' }}
 				/>
 				<PasswordField
@@ -119,10 +140,17 @@ function ResetForm() {
 					autoComplete="new-password"
 					messages={{ showPassword: 'Mostrar senha', hidePassword: 'Ocultar senha' }}
 				/>
-				{error && <Alert tone="danger" title={error} />}
-				<Button type="submit" loading={loading}>
+
+				{/* Região viva: o leitor de tela anuncia o erro assim que ele
+				    aparece, sem precisar mover o foco. */}
+				<div role="alert" aria-live="polite" aria-atomic="true">
+					{error && <Alert tone="danger" title={error} />}
+				</div>
+
+				<Button type="submit" loading={loading} disabled={loading}>
 					Alterar senha
 				</Button>
+
 				<Link href={ROUTES.login} className={s.link}>
 					Voltar ao login
 				</Link>

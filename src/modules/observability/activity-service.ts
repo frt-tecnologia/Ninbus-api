@@ -10,7 +10,7 @@ import { db } from '@common/db';
 import { activityLog } from '@common/db/schema';
 import type { ActivityAction, ActivityEntity } from '@common/db/schema/observability';
 import { appLogger } from '@common/logger';
-import { and, desc, eq, gte, lt, lte, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, type SQL, sql } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -133,4 +133,50 @@ export async function listActivity(
 	const hasMore = rows.length > limit;
 	const page = hasMore ? rows.slice(0, limit) : rows;
 	return { rows: page as ActivityLogRow[], hasMore };
+}
+
+// ---------------------------------------------------------------------------
+// Heat map — per-day counts computed server-side (GROUP BY)
+// ---------------------------------------------------------------------------
+
+export interface ActivityHeatBucket {
+	bucket: string;
+	count: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Activity volume per calendar day (Sao Paulo) for the heat map. The client
+ * used to rebuild this from a raw 200-event sample — wrong at any scale and a
+ * heavy response. One GROUP BY here answers a whole year for any volume.
+ */
+export async function heatActivity(opts: { from: Date; to: Date }): Promise<ActivityHeatBucket[]> {
+	const rows = await db.execute(sql`
+		SELECT to_char(created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS bucket,
+			COUNT(*)::int AS count
+		FROM activity_log
+		WHERE created_at >= ${opts.from} AND created_at <= ${opts.to}
+		GROUP BY bucket
+		ORDER BY bucket ASC
+	`);
+	return rows as unknown as ActivityHeatBucket[];
+}
+
+/** Zero-filled day series in [from, to] — ready for the heat map component. */
+export function fillActivityHeat(
+	buckets: readonly ActivityHeatBucket[],
+	from: Date,
+	to: Date,
+): { date: string; count: number }[] {
+	const byDay = new Map(buckets.map((b) => [b.bucket, b.count]));
+	const first = new Date(
+		`${new Date(from.getTime() - DAY_MS).toISOString().slice(0, 10)}T12:00:00Z`,
+	);
+	const days: { date: string; count: number }[] = [];
+	for (let cursor = first; cursor <= to; cursor = new Date(cursor.getTime() + DAY_MS)) {
+		const date = cursor.toISOString().slice(0, 10);
+		days.push({ date, count: byDay.get(date) ?? 0 });
+	}
+	return days;
 }

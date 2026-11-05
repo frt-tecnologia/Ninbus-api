@@ -55,14 +55,18 @@ export default function CompaniesPage() {
 				}
 			/>
 			<Guard loading={companies.loading} error={companies.error} onRetry={companies.refetch}>
-				<Collection
-					label="Empresas"
-					rows={companies.data?.data ?? []}
-					onOpenRow={(r) => router.push(`/companies/${r.id}`)}
-					columns={columns}
-					dateKey="createdAt"
-					fields={[{ id: 'status', label: 'Estado', options: ['active', 'suspended'] }]}
-				/>
+				<div className="w-full overflow-x-auto">
+					<div className="min-w-[900px]">
+						<Collection
+							label="Empresas"
+							rows={companies.data?.data ?? []}
+							onOpenRow={(r) => router.push(`/companies/${r.id}`)}
+							columns={columns}
+							dateKey="createdAt"
+							fields={[{ id: 'status', label: 'Estado', options: ['active', 'suspended'] }]}
+						/>
+					</div>
+				</div>
 			</Guard>
 			<Surface
 				open={form}

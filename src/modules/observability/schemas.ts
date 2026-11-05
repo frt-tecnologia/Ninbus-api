@@ -196,3 +196,21 @@ export const StatsQuerySchema = t.Object({
 	from: t.Optional(t.Date()),
 	to: t.Optional(t.Date()),
 });
+
+// ── Activity heat map (per-day counts) ─────────────────────────────────
+
+export const ActivityHeatResponseSchema = t.Object({
+	from: t.Date(),
+	to: t.Date(),
+	data: t.Array(
+		t.Object({
+			bucket: t.String(),
+			count: t.Number(),
+		}),
+	),
+});
+
+export const ActivityHeatQuerySchema = t.Object({
+	from: t.Optional(t.Date()),
+	to: t.Optional(t.Date()),
+});

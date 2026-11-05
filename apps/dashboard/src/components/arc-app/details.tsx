@@ -12,7 +12,6 @@ import { Progress } from '@/components/arc/progress/progress';
 import { RadioGroup } from '@/components/arc/radio-group/radio-group';
 import { Timeline, type TimelineEvent } from '@/components/arc/timeline/timeline';
 import { Tooltip } from '@/components/arc/tooltip/tooltip';
-import type { SessionBand } from '@/lib/api';
 import {
 	ApiClientError,
 	categoryService,
@@ -34,7 +33,7 @@ import type {
 	User,
 } from '@/types/domain';
 import s from './app.module.css';
-import { ConnectivityLanes } from './company-tabs';
+import { ConnectionHistorySection } from './connection-history-section';
 import {
 	Alert,
 	type AnyRow,
@@ -146,23 +145,6 @@ export function DeviceDetails({
 
 	const deviceDeployments = deployments.filter((d) => d.targetIds?.includes(device.id));
 
-	// Connection history — real transition events (7d session bands).
-	const historyFrom = React.useMemo(() => Date.now() - 7 * 86_400_000, []);
-	const history = useFetch(
-		React.useCallback(
-			() =>
-				observabilityService.connections({
-					deviceId: device.id,
-					from: new Date(historyFrom),
-					to: new Date(),
-					view: 'session',
-				}),
-			[device.id, historyFrom],
-		),
-		[device.id, historyFrom],
-		false,
-	);
-
 	async function saveName(v: string) {
 		if (!device.companyId) throw new Error('Dispositivo sem empresa.');
 		await deviceService.update(device.companyId, device.id, { name: v.trim() });
@@ -198,28 +180,14 @@ export function DeviceDetails({
 			</dl>
 
 			<div className={s.formStack}>
-				<h3>Histórico de conexão (7 dias)</h3>
-				{history.loading ? (
-					<p className={s.muted}>Carregando histórico…</p>
-				) : history.data?.view === 'session' ? (
-					(history.data.data as SessionBand[]).length ? (
-						<ConnectivityLanes
-							sessions={(history.data.data as SessionBand[]) ?? []}
-							from={historyFrom}
-							to={Date.now()}
-						/>
-					) : (
-						<p className={s.muted}>
-							Sem eventos de conexão registrados nesse período — cada faixa é um período conectado,
-							inferido dos contatos com o serviço de atualizações.
-						</p>
-					)
-				) : (
-					<p className={s.muted}>
-						Sem cobertura histórica para este dispositivo ainda; a coleta começa com o primeiro
-						evento de conexão.
-					</p>
-				)}
+				<h3>Histórico de conexão</h3>
+				<ConnectionHistorySection
+					companies={company ? [company] : []}
+					devices={[device]}
+					initialPeriod={{ kind: 'relative', preset: '7d' }}
+					deviceId={device.id}
+					onManageDevice={undefined}
+				/>
 			</div>
 
 			{!device.hawkbitTargetId && device.companyId && (

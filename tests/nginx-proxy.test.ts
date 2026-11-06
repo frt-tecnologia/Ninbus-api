@@ -52,7 +52,8 @@ describe('nginx reverse proxy — security posture', () => {
 			// Fase 6 dropped `listen 8080` while the compose still publishes
 			// 8080:8080 "existing firmware keeps working" — legacy devices polling
 			// IP:8080 got connection refused. Both ports serve the same vhost.
-			const hbBlock = VHOSTS.split('server {').find((b) => b.includes('server_name hb.ninbus.frt.com.br')) ?? '';
+			const hbBlock =
+				VHOSTS.split('server {').find((b) => b.includes('server_name hb.ninbus.frt.com.br')) ?? '';
 			expect(hbBlock).toContain('listen 80;');
 			expect(hbBlock).toContain('listen 8080;');
 		});

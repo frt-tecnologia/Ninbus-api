@@ -74,12 +74,7 @@ export default function SignUpPage() {
 				<h1 className="mt-6">Criar conta</h1>
 				<p className={s.muted}>O acesso ao console exige convite ou aprovação prévia.</p>
 
-				<form
-					className={s.formStack}
-					onSubmit={submit}
-					autoComplete="on"
-					aria-busy={loading}
-				>
+				<form className={s.formStack} onSubmit={submit} autoComplete="on" aria-busy={loading}>
 					<Input
 						label="Nome"
 						required

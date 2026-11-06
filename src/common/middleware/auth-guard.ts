@@ -1,7 +1,6 @@
 import {
 	CAPABILITIES,
 	type Capability,
-	type CompanyRole,
 	hasCapability,
 	normalizeRole,
 } from '@common/auth/capabilities';
@@ -20,8 +19,6 @@ const ROLE_HIERARCHY: Record<string, number> = {
 	operator: 2,
 	observer: 1,
 } as const;
-
-type CompanyRole = keyof typeof ROLE_HIERARCHY;
 
 /**
  * Checks if a user email is in the SUPER_ADMIN_EMAILS env list.

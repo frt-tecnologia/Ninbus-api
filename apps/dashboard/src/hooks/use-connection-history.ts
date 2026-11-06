@@ -61,22 +61,24 @@ export function useConnectionHistory({
 	const [error, setError] = React.useState<string | null>(null);
 	const [attempt, setAttempt] = React.useState(0);
 
-	const companyIds = React.useMemo(
-		() => [...new Set(devices.map((d) => d.companyId).filter((id): id is string => !!id))],
+	const companiesKey = React.useMemo(
+		() =>
+			[...new Set(devices.map((d) => d.companyId).filter((id): id is string => !!id))].join(','),
 		[devices],
 	);
-	const companiesKey = companyIds.join(',');
 	const from = range[0];
 	const to = range[1];
 	const hasDevices = devices.length > 0;
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry nonce (not read) — re-running the fetch IS the retry; companyIds derives from companiesKey inside
 	React.useEffect(() => {
 		const controller = new AbortController();
 		let stale = false;
+		const companyIds = companiesKey ? companiesKey.split(',') : [];
 		setLoading(true);
 		setError(null);
 
-		if (!hasDevices || !companyIds.length) {
+		if (!hasDevices || companyIds.length === 0) {
 			setSnapshot({ range: [from, to], events: [], states: [] });
 			setLoading(false);
 			return () => {

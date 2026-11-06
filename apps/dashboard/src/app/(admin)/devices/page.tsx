@@ -153,9 +153,7 @@ export default function DevicesPage() {
 									<Button
 										variant={selection.length ? 'primary' : 'secondary'}
 										disabled={!selection.length}
-										onClick={() =>
-											setForm({ kind: 'assign', context: { deviceIds: selection } })
-										}
+										onClick={() => setForm({ kind: 'assign', context: { deviceIds: selection } })}
 									>
 										Vincular selecionados ({selection.length})
 									</Button>

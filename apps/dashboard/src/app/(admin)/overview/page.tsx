@@ -2,11 +2,7 @@
 
 import { ArrowUpRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import * as React from 'react';
-import {
-	type ActivityDay,
-	ActivityHeatmap,
-} from '@/components/arc/activity-heatmap/activity-heatmap';
+import { ActivityHeatmap } from '@/components/arc/activity-heatmap/activity-heatmap';
 import { DonutChart } from '@/components/arc/donut-chart/donut-chart';
 import { LineChart } from '@/components/arc/line-chart/line-chart';
 import { MetricCard } from '@/components/arc/metric-card/metric-card';

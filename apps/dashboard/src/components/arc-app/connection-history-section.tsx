@@ -21,7 +21,7 @@ import {
 	type TimelineRecord,
 } from '@/components/connection-timeline';
 import { useConnectionHistory } from '@/hooks/use-connection-history';
-import { type Period, periodKey, resolvePeriod } from '@/lib/time/period';
+import { type Period, resolvePeriod } from '@/lib/time/period';
 import { SearchFilterBar } from './search-filter-bar';
 
 const STATUS_OPTIONS = [
@@ -49,14 +49,13 @@ export function ConnectionHistorySection({
 	const [query, setQuery] = React.useState('');
 	const [filters, setFilters] = React.useState<FilterChip[]>([]);
 	const period = localPeriod === undefined ? initialPeriod : localPeriod;
-	const periodKeyValue = period ? periodKey(period) : 'none';
 
 	const range = React.useMemo<[number, number]>(() => {
 		const window = period ? resolvePeriod(period) : null;
 		const to = window?.to.getTime() ?? Date.now();
 		const from = window?.from.getTime() ?? to - 24 * 3_600_000;
 		return [from, to];
-	}, [periodKeyValue]);
+	}, [period]);
 
 	const history = useConnectionHistory({ companies, devices, range, deviceId });
 

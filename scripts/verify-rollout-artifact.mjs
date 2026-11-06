@@ -34,7 +34,7 @@ if (!USER || !PASS || !CONTROLLER || ACTIONS.length === 0) {
 	console.error('Need HAWKBIT_USERNAME, HAWKBIT_PASSWORD, CONTROLLER, ACTIONS (csv).');
 	process.exit(1);
 }
-const auth = 'Basic ' + Buffer.from(`${USER}:${PASS}`).toString('base64');
+const auth = `Basic ${Buffer.from(`${USER}:${PASS}`).toString('base64')}`;
 const api = async (path) => {
 	const res = await fetch(`${BASE}${path}`, { headers: { authorization: auth } });
 	if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);

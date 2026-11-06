@@ -115,12 +115,7 @@ function ResetForm() {
 
 	return (
 		<ResetShell>
-			<form
-				onSubmit={handleSubmit}
-				className={s.formStack}
-				autoComplete="on"
-				aria-busy={loading}
-			>
+			<form onSubmit={handleSubmit} className={s.formStack} autoComplete="on" aria-busy={loading}>
 				<PasswordField
 					label="Nova senha"
 					required

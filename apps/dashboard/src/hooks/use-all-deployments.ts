@@ -38,9 +38,9 @@ export function useAllDeployments(companies: Array<{ id: string }>) {
 					}
 					return out;
 				}),
-			// `key` encodes the company-id set; when companies load/change, the key
-			// changes and this callback is rebuilt with the fresh `companies`.
-			[key],
+			// The callback closes over the fresh `companies`; refetches are gated
+			// by the query `key` (company-id set), not by fetcher identity.
+			[companies],
 		),
 	);
 

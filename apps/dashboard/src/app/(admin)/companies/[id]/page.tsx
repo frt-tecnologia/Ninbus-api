@@ -18,11 +18,10 @@ import {
 	companySectionLabel,
 	DeviceQuick,
 	useCompanyDevices,
-	useCompanyGroups,
 } from '@/components/arc-app/company-tabs';
 import { MemberRole } from '@/components/arc-app/details';
 import { PageHead } from '@/components/arc-app/page-head';
-import { Alert, Button, Surface } from '@/components/arc-app/primitives';
+import { Alert, Surface } from '@/components/arc-app/primitives';
 import { companyService } from '@/lib/api';
 import { qk } from '@/lib/cache/keys';
 import { useQuery } from '@/lib/cache/use-query';
@@ -49,7 +48,6 @@ export default function CompanyDetailPage() {
 	// Tab counters — shared cache keys with the tabs themselves, so the
 	// header never triggers extra requests beyond what the tabs already did.
 	const devices = useCompanyDevices(companyId);
-	const groups = useCompanyGroups(companyId);
 	const deviceList = devices.data?.data ?? [];
 
 	const [form, setForm] = React.useState<CompanyFormKind | null>(null);

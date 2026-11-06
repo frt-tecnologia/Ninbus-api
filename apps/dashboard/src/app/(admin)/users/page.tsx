@@ -121,7 +121,11 @@ export default function UsersPage() {
 									onOpenRow={(r) => setInvite(String(r.id))}
 									dateKey="createdAt"
 									fields={[
-										{ id: 'companyName', label: 'Empresa', options: companyList.map((c) => c.name) },
+										{
+											id: 'companyName',
+											label: 'Empresa',
+											options: companyList.map((c) => c.name),
+										},
 										{ id: 'role', label: 'Papel', options: roleOptions.map((r) => r.value) },
 									]}
 									columns={[

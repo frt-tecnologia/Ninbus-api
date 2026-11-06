@@ -77,12 +77,7 @@ function LoginForm() {
 				<h1 className="mt-6">Acesse sua frota</h1>
 				<p className={s.muted}>Console de administração OTA</p>
 
-				<form
-					className={s.formStack}
-					onSubmit={submit}
-					autoComplete="on"
-					aria-busy={loading}
-				>
+				<form className={s.formStack} onSubmit={submit} autoComplete="on" aria-busy={loading}>
 					<Input
 						label="E-mail"
 						type="email"

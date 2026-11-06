@@ -1,14 +1,6 @@
 'use client';
 
-import {
-	ArrowUpRight,
-	ChevronDown,
-	ChevronLeft,
-	ChevronRight,
-	Minus,
-	Plus,
-	RotateCcw,
-} from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
 import {
 	type CSSProperties,
 	type PointerEvent,
@@ -82,6 +74,7 @@ export function ConnectionTimeline<T extends TimelineDevice>({
 		setView([range[0], range[1]]);
 		setHover(null);
 	}, [range[0], range[1]]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: deps are reset triggers — the values are intentionally not read; page/hover must reset when range or rows change
 	useEffect(() => {
 		setPage(0);
 		setHover(null);
@@ -288,6 +281,7 @@ export function ConnectionTimeline<T extends TimelineDevice>({
 					</div>
 				)}
 				{!small && (
+					// biome-ignore lint/a11y/useSemanticElements: interactive resize handle (ARIA APG window-splitter pattern), not a content separator
 					<div
 						className={s.nameResize}
 						onPointerDown={startResize}

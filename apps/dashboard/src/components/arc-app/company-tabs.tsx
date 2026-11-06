@@ -30,7 +30,7 @@ import {
 	stamp,
 } from '@/components/arc-app/primitives';
 import { rowActionsColumn } from '@/components/arc-app/row-actions';
-import type { AggregateBucket, RolePolicy, SessionBand } from '@/lib/api';
+import type { AggregateBucket, RolePolicy } from '@/lib/api';
 import {
 	categoryService,
 	companyService,

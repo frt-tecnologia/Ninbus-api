@@ -68,12 +68,7 @@ export default function CompaniesPage() {
 					</div>
 				</div>
 			</Guard>
-			<Surface
-				open={form}
-				onClose={() => setForm(false)}
-				title="Criar empresa"
-
-			>
+			<Surface open={form} onClose={() => setForm(false)} title="Criar empresa">
 				<CompanyForm done={() => setForm(false)} />
 			</Surface>
 		</>

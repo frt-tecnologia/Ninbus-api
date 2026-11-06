@@ -39,8 +39,6 @@ import {
 	userService,
 } from '@/lib/api';
 import { categoryService } from '@/lib/api/categories';
-import { qk } from '@/lib/cache/keys';
-import { useQuery } from '@/lib/cache/use-query';
 import { usePwaInstall } from '@/lib/pwa/use-pwa-install';
 import s from './app.module.css';
 import { roleLabel, Surface, stamp } from './primitives';

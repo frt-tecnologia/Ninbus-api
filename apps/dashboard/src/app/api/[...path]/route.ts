@@ -99,14 +99,31 @@ async function handler(req: NextRequest, context: { params: Promise<{ path: stri
 		const v = upstreamRes.headers.get(name);
 		if (v) resHeaders.set(name, v);
 	}
+	// SSE streams: the API (Elysia) can emit `text/event-stream, text/plain`
+	// (its default body type appended next to the route's). EventSource
+	// requires the EXACT media type and fails otherwise — normalize to the
+	// stream type the route declared first.
+	const ct = resHeaders.get('content-type');
+	if (ct?.includes('text/event-stream')) resHeaders.set('content-type', 'text/event-stream');
 	// set-cookie must be handled explicitly (it can be multi-valued).
 	const setCookies = upstreamRes.headers.getSetCookie?.();
 	if (setCookies && setCookies.length > 0) {
 		for (const c of setCookies) resHeaders.append('set-cookie', c);
 	}
 
-	const resBody = await upstreamRes.arrayBuffer();
-	return new NextResponse(resBody, {
+	// STREAM the body through, never buffer it. Buffering breaks SSE (the
+	// /api/sse/* streams would never open — the browser sees an endless
+	// "connecting" loop) and delays large firmware downloads for no gain.
+	// A ReadableStream passthrough relays the exact upstream bytes verbatim.
+	if (upstreamRes.body) {
+		// Tell any intermediary (nginx) not to buffer event streams.
+		resHeaders.set('x-accel-buffering', 'no');
+		return new NextResponse(upstreamRes.body, {
+			status: upstreamRes.status,
+			headers: resHeaders,
+		});
+	}
+	return new NextResponse(null, {
 		status: upstreamRes.status,
 		headers: resHeaders,
 	});

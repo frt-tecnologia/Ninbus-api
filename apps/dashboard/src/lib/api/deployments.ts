@@ -1,4 +1,5 @@
 import type {
+	ActionResponse,
 	DetailResponse,
 	EnrichedDeployment,
 	ListResponse,
@@ -23,6 +24,11 @@ export const deploymentService = {
 		opts?: { offset?: number; limit?: number },
 	): Promise<ListResponse<EnrichedDeployment>> {
 		return http.get<ListResponse<EnrichedDeployment>>(`/companies/${companyId}/deployments`, opts);
+	},
+
+	/** DELETE /companies/:companyId/deployments/:deploymentId — removes a rollout (admin role). */
+	async remove(companyId: string, deploymentId: string | number): Promise<ActionResponse> {
+		return http.delete<ActionResponse>(`/companies/${companyId}/deployments/${deploymentId}`);
 	},
 
 	/** Per-target status for a deployment (which devices updated / failed). */

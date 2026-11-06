@@ -34,7 +34,7 @@ export const sseTestModule = withAuth(new Elysia({ prefix: '/api/sse' }))
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 			}),
@@ -148,7 +148,7 @@ export const sseTestModule = withAuth(new Elysia({ prefix: '/api/sse' }))
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 			}),

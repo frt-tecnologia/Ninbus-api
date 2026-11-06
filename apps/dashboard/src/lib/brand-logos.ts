@@ -12,6 +12,6 @@
  * optimizer in a standalone Docker image behind nginx is unnecessary overhead.
  */
 export const BRAND_LOGOS = {
-	ninbus: 'https://da19p053f3dc1.cloudfront.net/IMAGES/ninbus-logo.png',
+	ninbus: 'https://da19p053f3dc1.cloudfront.net/IMAGES/ninbus-logo-nuvem.png',
 	frt: 'https://da19p053f3dc1.cloudfront.net/IMAGES/only-logo-frt.png',
 } as const;

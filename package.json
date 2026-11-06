@@ -64,9 +64,6 @@
 		"@types/bun": "^1.3.6",
 		"drizzle-kit": "^0.31.8"
 	},
-	"overrides": {
-		"@sinclair/typebox": "0.34.0"
-	},
 	"engines": {
 		"bun": ">=1.1.0"
 	},

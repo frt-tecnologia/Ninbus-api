@@ -1,57 +1,143 @@
 'use client';
-
-import { ArrowLeft } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
-import { useCallback } from 'react';
-import { CompanyObservability } from '@/components/domain/observability/company-observability';
-import { PageHeader } from '@/components/layout/page-header';
-import { Button } from '@/components/ui/button';
-import { useFetch } from '@/hooks/useFetch';
-import { companyService } from '@/lib/api';
-
 /**
- * Company observability page — the "select a company → see its connectivity,
- * groups, and logs" view requested by the spec. Renders the three-section
- * <CompanyObservability> container for the selected company.
- *
- * The flat company LIST remains available at /companies; clicking a company
- * name navigates here. A back button returns to the list.
+ * Company detail — thin composition. All data + CRUD live in the tab
+ * components (`company-tabs.tsx`), each owning its queries (lazy: a tab
+ * only fetches when visited). This page owns the shell pieces: header,
+ * tab host and the detail Surfaces (drawer on desktop, bottom sheet ≤640px).
  */
-export default function CompanyObservabilityPage() {
+
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import * as React from 'react';
+import SegmentedControl from '@/components/arc/segmented-control/segmented-control';
+import {
+	COMPANY_SECTIONS,
+	CompanyFormHost,
+	type CompanyFormKind,
+	CompanySectionHost,
+	type CompanySectionId,
+	companySectionLabel,
+	DeviceQuick,
+	useCompanyDevices,
+	useCompanyGroups,
+} from '@/components/arc-app/company-tabs';
+import { MemberRole } from '@/components/arc-app/details';
+import { PageHead } from '@/components/arc-app/page-head';
+import { Alert, Button, Surface } from '@/components/arc-app/primitives';
+import { companyService } from '@/lib/api';
+import { qk } from '@/lib/cache/keys';
+import { useQuery } from '@/lib/cache/use-query';
+
+const FORM_TITLE: Record<CompanyFormKind, string> = {
+	assign: 'Vincular dispositivos',
+	register: 'Registrar dispositivo',
+	group: 'Criar grupo',
+	member: 'Adicionar pessoa ou convite',
+	atualização: 'Preparar deploy',
+};
+
+export default function CompanyDetailPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
 	const companyId = params.id;
+	const searchParams = useSearchParams();
+	const section = (searchParams.get('section') ?? 'devices') as CompanySectionId;
 
-	const company = useFetch(
-		useCallback(() => companyService.get(companyId), [companyId]),
-		[companyId],
-		false,
+	const company = useQuery(
+		qk.company(companyId),
+		React.useCallback(() => companyService.get(companyId), [companyId]),
 	);
+	// Tab counters — shared cache keys with the tabs themselves, so the
+	// header never triggers extra requests beyond what the tabs already did.
+	const devices = useCompanyDevices(companyId);
+	const groups = useCompanyGroups(companyId);
+	const deviceList = devices.data?.data ?? [];
+
+	const [form, setForm] = React.useState<CompanyFormKind | null>(null);
+	const [memberDetail, setMemberDetail] = React.useState<string | null>(null);
+	const [deviceDetail, setDeviceDetail] = React.useState<string | null>(null);
+
+	const c = company.data;
+	const members = useQuery(
+		qk.companyMembers(companyId),
+		React.useCallback(
+			() => import('@/lib/api').then((m) => m.memberService.list(companyId)),
+			[companyId],
+		),
+	);
+	const member = (members.data?.data ?? []).find((m) => m.id === memberDetail) ?? null;
+	const device = deviceList.find((d) => d.id === deviceDetail) ?? null;
+
+	if (company.error)
+		return (
+			<>
+				<PageHead title="Empresa" />
+				<Alert tone="danger" title="Empresa não encontrada ou você não tem acesso." />
+			</>
+		);
 
 	return (
 		<>
-			<PageHeader
-				title={company.data?.name ?? 'Carregando…'}
-				description="Observabilidade da empresa — conectividade, grupos e auditoria."
-				action={
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => router.push('/companies')}
-						className="h-8"
-					>
-						<ArrowLeft className="mr-1.5 h-4 w-4" />
-						Voltar à lista
-					</Button>
-				}
+			<PageHead
+				title={c?.name ?? 'Carregando…'}
+				description="Observabilidade, frota, membros e diretrizes da empresa."
+				crumbs={[
+					{ label: 'Empresas', href: '/companies' },
+					{ label: c?.name ?? '…' },
+					{ label: companySectionLabel(section) },
+				]}
 			/>
-			{company.error ? (
-				<p className="py-12 text-center text-sm text-muted-foreground">
-					Empresa não encontrada ou você não tem acesso.
-				</p>
-			) : (
-				<CompanyObservability companyId={companyId} />
-			)}
+			<SegmentedControl
+				label="Seções da empresa"
+				value={section}
+				options={COMPANY_SECTIONS.map((sec) => ({ value: sec.id, label: sec.short }))}
+				onValueChange={(next) => router.replace(`/companies/${companyId}?section=${next}`)}
+			/>
+			<CompanySectionHost
+				companyId={companyId}
+				section={section}
+				onForm={setForm}
+				onDevice={setDeviceDetail}
+				onMember={setMemberDetail}
+			/>
+
+			{/* Member role drawer — role select + removal (hold) */}
+			<Surface open={!!memberDetail} onClose={() => setMemberDetail(null)} title="Gerenciar acesso">
+				{member && (
+					<MemberRole
+						companyId={companyId}
+						membership={member}
+						done={() => setMemberDetail(null)}
+					/>
+				)}
+			</Surface>
+
+			{/* Create/edit forms — support lists load only while open */}
+			<Surface
+				open={!!form}
+				onClose={() => setForm(null)}
+				title={form ? FORM_TITLE[form] : 'Novo registro'}
+			>
+				{form && (
+					<CompanyFormHost companyId={companyId} kind={form} onClose={() => setForm(null)} />
+				)}
+			</Surface>
+
+			{/* Device quick drawer — rename in place + deploy */}
+			<Surface
+				open={!!deviceDetail}
+				onClose={() => setDeviceDetail(null)}
+				title={device?.name ?? 'Dispositivo'}
+				description={device?.serialDisplay ?? device?.serialNumber ?? ''}
+			>
+				{device && (
+					<DeviceQuick
+						device={device}
+						companyId={companyId}
+						onOpenFull={() => router.push(`/devices?detail=${device.id}`)}
+						onDeploy={() => setForm('atualização')}
+					/>
+				)}
+			</Surface>
 		</>
 	);
 }

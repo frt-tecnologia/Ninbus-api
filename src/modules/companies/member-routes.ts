@@ -38,7 +38,7 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			detail: {
 				tags: ['Companies'],
@@ -84,7 +84,7 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({ companyId: t.String({ format: 'uuid', description: 'Company ID' }) }),
 			body: designateMemberSchema,
 			detail: {
@@ -132,7 +132,7 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 				userId: t.String({ description: 'User ID to update' }),
@@ -176,7 +176,7 @@ export const companyMemberRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid', description: 'Company ID' }),
 				userId: t.String({ description: 'User ID to remove' }),

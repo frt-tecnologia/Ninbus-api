@@ -1,128 +1,188 @@
 'use client';
-
-import { useCallback, useMemo, useState } from 'react';
-import { DesignationTable } from '@/components/domain/companies/designation-table';
-import { InviteUserDialog } from '@/components/domain/users/invite-user-dialog';
-import { UserTable } from '@/components/domain/users/user-table';
-import { PageHeader } from '@/components/layout/page-header';
-import { SearchField, Section, Toolbar } from '@/components/system';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFetch } from '@/hooks/useFetch';
-import { designationService, userService } from '@/lib/api';
-
-type GroupFilter = 'all' | 'with-company' | 'no-company' | 'superadmin';
-
-const GROUP_LABELS: Record<GroupFilter, string> = {
-	all: 'Todos',
-	'with-company': 'Com empresa',
-	'no-company': 'Sem empresa',
-	superadmin: 'Super admins',
-};
-
 /**
- * Users page — enriched: search + filters (group) + tabs separating
- * registered accounts from pending invitations (which activate on sign-up).
- *
- * Reativity: a single useFetch per data source; filtering is client-side
- * (memoized) so it stays instant. The global data-event bus refreshes tables
- * after any mutation (designation cancel, etc.) automatically.
+ * Users — tabs Contas × Convites (designations), group filter, search, and
+ * the user detail drawer (?detail=) with the person's real audit trail.
+ * Invites drawer (?invite=) with cancel. All REAL.
  */
+import { Plus } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import * as React from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/arc/tabs/tabs';
+import s from '@/components/arc-app/app.module.css';
+import { InviteDetails, UserDetails } from '@/components/arc-app/details';
+import { MemberForm } from '@/components/arc-app/forms';
+import { Guard, PageHead } from '@/components/arc-app/page-head';
+import {
+	Button,
+	Collection,
+	roleLabel,
+	roleOptions,
+	Status,
+	Surface,
+	stamp,
+} from '@/components/arc-app/primitives';
+import { companyService, designationService, userService } from '@/lib/api';
+import { qk } from '@/lib/cache/keys';
+import { useQuery } from '@/lib/cache/use-query';
+
 export default function UsersPage() {
-	const users = useFetch(useCallback(() => userService.list(), []));
-	const designations = useFetch(useCallback(() => designationService.listPending(), []));
+	const router = useRouter();
+	const search = useSearchParams();
+	const users = useQuery(
+		qk.adminUsers,
+		React.useCallback(() => userService.list(), []),
+	);
+	const designations = useQuery(
+		qk.adminInvites,
+		React.useCallback(() => designationService.listPending(), []),
+	);
+	const companies = useQuery(
+		qk.adminCompanies,
+		React.useCallback(() => companyService.list(), []),
+		{ sync: false },
+	);
 
-	const [search, setSearch] = useState('');
-	const [group, setGroup] = useState<GroupFilter>('all');
+	const [detail, setDetail] = React.useState<string | null>(search.get('detail'));
+	const [invite, setInvite] = React.useState<string | null>(search.get('invite'));
+	const [form, setForm] = React.useState(false);
 
-	// Apply group filter (company-count based). Search is delegated to the
-	// UserTable's DataTable (now wired to actually filter).
-	const filtered = useMemo(() => {
-		const list = users.data?.data ?? [];
-		return list.filter((u) => {
-			if (group === 'with-company') return u.companyCount > 0 && !u.isSuperAdmin;
-			if (group === 'no-company') return u.companyCount === 0 && !u.isSuperAdmin;
-			if (group === 'superadmin') return u.isSuperAdmin;
-			return true;
-		});
-	}, [users.data, group]);
-
-	const pendingCount = designations.data?.data.filter((d) => !d.claimedAt).length ?? 0;
+	const userList = users.data?.data ?? [];
+	const inviteList = designations.data?.data ?? [];
+	const companyList = companies.data?.data ?? [];
+	const user = userList.find((u) => u.id === detail) ?? null;
+	const invitation = inviteList.find((i) => i.id === invite) ?? null;
 
 	return (
 		<>
-			<PageHeader
+			<PageHead
 				title="Usuários"
-				description="Contas da plataforma, convites pendentes e vínculos com empresas."
-				action={<InviteUserDialog />}
+				description="Pessoas, papéis e convites organizados por empresa."
+				actions={
+					<Button onClick={() => setForm(true)}>
+						<Plus size={17} />
+						Adicionar pessoa
+					</Button>
+				}
 			/>
-
-			<Tabs defaultValue="accounts">
-				<TabsList>
-					<TabsTrigger value="accounts">Contas ({users.data?.data.length ?? 0})</TabsTrigger>
-					<TabsTrigger value="invites">
-						Convites pendentes {pendingCount > 0 && `(${pendingCount})`}
-					</TabsTrigger>
-				</TabsList>
-
-				{/* ── Registered accounts ── */}
-				<TabsContent value="accounts" className="mt-4">
-					<Section
-						flush
-						action={
-							<Toolbar>
-								<SearchField
-									value={search}
-									onChange={setSearch}
-									placeholder="Buscar por nome ou email…"
-									className="w-56"
+			<Guard loading={users.loading} error={users.error} onRetry={users.refetch}>
+				<Tabs defaultValue="accounts">
+					<TabsList aria-label="Contas e convites">
+						<TabsTrigger value="accounts">Contas ({userList.length})</TabsTrigger>
+						<TabsTrigger value="invites">
+							Convites{' '}
+							{inviteList.filter((i) => !i.claimedAt).length > 0 &&
+								`(${inviteList.filter((i) => !i.claimedAt).length})`}
+						</TabsTrigger>
+					</TabsList>
+					<TabsContent value="accounts">
+						{/* Rolagem horizontal no mobile: wrapper permite o scroll e o
+						    min-width interno evita que as colunas sejam espremidas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Pessoas"
+									rows={userList.map((x) => ({ ...x }))}
+									onOpenRow={(r) => setDetail(String(r.id))}
+									fields={[
+										{ id: 'companyCount', label: 'Empresas', options: ['0', '1', '2', '3+'] },
+										{ id: 'isSuperAdmin', label: 'Acesso', options: ['true', 'false'] },
+									]}
+									columns={[
+										{
+											key: 'name',
+											label: 'Pessoa',
+											render: (_, r) => (
+												<button type="button" className={s.link} onClick={() => setDetail(r.id)}>
+													{r.name || r.email}
+													<span className={s.cellSub}>{r.email}</span>
+												</button>
+											),
+										},
+										{ key: 'companyCount', label: 'Empresas' },
+										{
+											key: 'isSuperAdmin',
+											label: 'Acesso',
+											render: (v) =>
+												v ? <Status value="active" /> : <span className={s.muted}>Empresa</span>,
+										},
+										{ key: 'createdAt', label: 'Criada em', render: (v) => stamp(String(v)) },
+									]}
 								/>
-								<Select value={group} onValueChange={(v) => setGroup(v as GroupFilter)}>
-									<SelectTrigger className="h-8 w-40">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(Object.keys(GROUP_LABELS) as GroupFilter[]).map((g) => (
-											<SelectItem key={g} value={g}>
-												{GROUP_LABELS[g]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</Toolbar>
-						}
-					>
-						<UserTable
-							users={filtered}
-							loading={users.loading}
-							error={users.error}
-							onRetry={users.refetch}
-							search={{
-								value: search,
-								onChange: setSearch,
-								placeholder: 'Buscar por nome ou email…',
-							}}
-						/>
-					</Section>
-				</TabsContent>
+							</div>
+						</div>
+					</TabsContent>
+					<TabsContent value="invites">
+						{/* Rolagem horizontal no mobile — mesmo padrão da aba Contas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Convites"
+									rows={inviteList.map((i) => ({ ...i, role: i.role }))}
+									onOpenRow={(r) => setInvite(String(r.id))}
+									dateKey="createdAt"
+									fields={[
+										{ id: 'companyName', label: 'Empresa', options: companyList.map((c) => c.name) },
+										{ id: 'role', label: 'Papel', options: roleOptions.map((r) => r.value) },
+									]}
+									columns={[
+										{
+											key: 'email',
+											label: 'E-mail',
+											render: (_, r) => (
+												<button type="button" className={s.link} onClick={() => setInvite(r.id)}>
+													{r.email}
+												</button>
+											),
+										},
+										{ key: 'companyName', label: 'Empresa' },
+										{ key: 'role', label: 'Papel', render: (v) => roleLabel(String(v)) },
+										{
+											key: 'claimedAt',
+											label: 'Estado',
+											render: (v) => <Status value={v ? 'accepted' : 'pending'} />,
+										},
+										{ key: 'createdAt', label: 'Registrado em', render: (v) => stamp(String(v)) },
+									]}
+								/>
+							</div>
+						</div>
+					</TabsContent>
+				</Tabs>
+			</Guard>
 
-				{/* ── Pending invitations (activate on sign-up) ── */}
-				<TabsContent value="invites" className="mt-4">
-					<Section
-						title="Convites pendentes"
-						description="Emails designados que ativam o acesso ao se cadastrar na plataforma."
-						flush
-					>
-						<DesignationTable />
-					</Section>
-				</TabsContent>
-			</Tabs>
+			<Surface
+				open={!!detail}
+				onClose={() => {
+					setDetail(null);
+					if (search.get('detail')) router.replace('/users');
+				}}
+				title={user?.name || user?.email || 'Pessoa'}
+				description={user?.email ?? ''}
+			>
+				{user && <UserDetails user={user} />}
+			</Surface>
+
+			<Surface
+				open={!!invite}
+				onClose={() => {
+					setInvite(null);
+					if (search.get('invite')) router.replace('/users');
+				}}
+				title="Detalhes do convite"
+			>
+				{invitation && (
+					<InviteDetails invite={invitation} companies={companyList} done={() => setInvite(null)} />
+				)}
+			</Surface>
+
+			<Surface
+				open={form}
+				onClose={() => setForm(false)}
+				title="Adicionar pessoa ou convite"
+				description="O vínculo é criado imediatamente para contas existentes; caso contrário fica pendente até o cadastro."
+			>
+				<MemberForm companies={companyList} done={() => setForm(false)} />
+			</Surface>
 		</>
 	);
 }

@@ -1,20 +1,14 @@
 import type { ReactNode } from 'react';
-import { AppShell } from '@/components/layout/app-shell';
+import { ArcShell } from '@/components/arc-app/shell';
 import { requireAdmin } from '@/lib/auth/session';
 
 /**
- * Admin layout — wraps every /admin/* page.
- * Enforces the super-admin guard server-side (requireAdmin redirects to login
- * or a forbidden page if the visitor is not a platform admin), then mounts the
- * client <AppShell> (responsive rail + topbar + ⌘K + theme toggle).
- *
- * force-dynamic: the session check must run on EVERY request — otherwise
- * Next.js may serve a cached render holding a STALE session, causing the
- * "Sua conta não tem permissão de acesso" message after logout/account switch.
+ * Admin layout — Arc shell over the server-side super-admin guard.
+ * Every /console page renders inside <ArcShell> (sidebar + topbar + ⌘K).
  */
 export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
 	const user = await requireAdmin();
-	return <AppShell userEmail={user.email}>{children}</AppShell>;
+	return <ArcShell userEmail={user.email}>{children}</ArcShell>;
 }

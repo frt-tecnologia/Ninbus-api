@@ -52,7 +52,11 @@ Auth · Admin (factory) · Companies (+ designations) · Categories (+ membros) 
 
 1. **`auth: true`** — qualquer usuário logado
 2. **`superAdmin: true`** — emails em `SUPER_ADMIN_EMAILS` env var (não DB)
-3. **`companyRole: 'viewer'`** — RBAC: owner(4) > admin(3) > operator(2) > viewer(1)
+3. **`companyRole: 'manager'`** — hierarquia: owner(4) > manager(3) > operator(2) > observer(1)
+4. **`requireCapability: 'members.manage'`** — por capability, com override por empresa
+   (`company_role_policies`, editável só por super admin; docs/rbac-roles-and-permissions.md)
+
+Nomes legados `admin`/`viewer` são normalizados para `manager`/`observer` na entrada.
 
 Rotas sem `:companyId` NUNCA usam `companyRole`. Rotas `/api/admin/*` e `/api/devices/*`
 (factory provisioning) usam `superAdmin: true`.
@@ -194,6 +198,31 @@ catch (error) {
 | hybrid | active companies | single device (cache 60s) | **produção 50k+** |
 
 GET /devices faz ZERO chamadas hawkBit — tudo do DB local.
+
+**Polling global editável em runtime:** `GET/PUT /api/admin/polling`
+(superAdmin, plataforma). O domínio vive em `system-config.ts`: resolução
+`platform_settings['hawkbit_polling_time']` (segundos) ?? `HAWKBIT_POLLING_TIME`
+(.env = default de bootstrap apenas); escrita empurra ao hawkBit ANTES de
+persistir (hawkBit fora = 503, nada gravado); restart re-empurra o override.
+hawkBit 1.0.3 NÃO tem polling por target (verificado nos binários). O budget
+do Connection Pass usa o polling EFETIVO (`getEffectivePollingSec`). Detecção
+de offline = deadline (lastPoll+pollingTime) + `pollingOverdueTime` do tenant
+(00:05:00) + 1 tick; `occurredAt` sempre backdated ao deadline. Plano:
+`docs/polling-management-and-security-fixes-plan.md`.
+
+**Connection Pass (Single Observer, Single Voice):** observador rotativo
+always-on da conexão (`connection-pass.ts` + núcleo puro em
+`connection-pass-core.ts`), independente de modo e de atividade de usuário.
+A cada tick (intervalo = `HAWKBIT_SYNC_INTERVAL_SEC`) lê K páginas de targets
+(orçamento derivado de `HAWKBIT_POLLING_TIME` — rotação completa ≤ ½ polling
+interval em qualquer escala), faz diff-before-write e transições pelo
+chokepoint único de telemetria. Órfãos (target deletado no hawkBit) só são
+julgados offline após uma rotação COMPLETA bem-sucedida. O antigo sweep de
+deadline (segundo juiz local + grace) foi DELETADO junto com
+`HAWKBIT_STALE_SWEEP_SEC`. Escrita serializada com o enrichment via
+`withConnectionWriteLock` + CAS (re-leitura de status dentro do lock) — nunca
+há eventos duplicados entre pass e enrichment. Plano:
+`docs/online-offline-root-fix-plan.md`.
 
 **GET /companies/:companyId/devices/firmware/status (50k-scale):** PAGINADO
 (`?limit` default 1000/max 5000 + `?offset`, `hasMore`; `summary` cobre a frota
@@ -383,3 +412,26 @@ bun test --env-file=.env.test
 Ver `.env.example` para lista completa. Fonte única: `src/common/config/env.ts` (TypeBox validated).
 
 Novas variáveis devem ser adicionadas em: (1) `env.ts` schema, (2) `.env.example`, (3) `.env.test` simultaneamente.
+
+## Docker Local (dev)
+
+```bash
+bash scripts/gen-local-certs.sh                                                    # 1× — sem isso o nginx crash-loopa (cert Let's Encrypt só existe no EC2)
+docker compose up -d --build                                                       # COMPOSE_FILE no .env dev faz o merge
+```
+
+| Acesso | URL |
+|---|---|
+| API (TLS via nginx) | `https://localhost` |
+| Dashboard | `http://localhost:3001` (direto) · `https://localhost/console` (via nginx) |
+| DDI (devices) | `http://localhost:8080/<tenant>/controller/v1/<id>` (vhost hb escuta :80 E :8080) |
+
+**Regras:**
+- Compose BASE é prod-safe — publica só nginx 80/443/8080; NUNCA adicionar portas de api/dashboard nele (só no `docker-compose.dev.yml`).
+- Dev: `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml` + `COMPOSE_PATH_SEPARATOR=:` no `.env` LOCAL (gitignored) — `docker compose up` puro mergeia o override. `.env` de prod NÃO define (ausência = postura prod).
+- Certs locais: `certbot/conf/live/ninbus.frt.com.br/` (autoassinado, gitignored, mesmo path do servidor real).
+- Hosts entries p/ fidelidade total: `127.0.0.1 ninbus.frt.com.br api.ninbus.frt.com.br hb.ninbus.frt.com.br`.
+- Healthcheck do nginx: `:80/health` responde 200 DIRETO (não redirecionar — quebra o probe → container unhealthy).
+- Aviso do navegador: `certutil -addstore -f Root certbot/conf/live/ninbus.frt.com.br/fullchain.pem`.
+
+Detalhes: `docs/nginx-reverse-proxy-plan.md` §14.

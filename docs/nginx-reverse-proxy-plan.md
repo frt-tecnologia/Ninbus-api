@@ -528,3 +528,30 @@ mudar o firmware** (Opção C — mesma porta).
 Após sua aprovação, executo fase a fase começando pela **Fase 1 + 3**, validando em
 `:80` com `curl` **antes** de qualquer cutover de device (Opção C — zero dispositivo
 tocado). A **Fase 0 (TI)** é bloqueante e precisa ser alinhada primeiro.
+
+---
+
+## 14. TLS local (docker de dev)
+
+O nginx crash-loopa fora do servidor: os certificados Let's Encrypt só existem
+no EC2 (`./certbot/conf` vazio localmente → `cannot load certificate`). Solução
+com fidelidade total — cert autoassinado NO MESMO PATH que o nginx espera:
+
+```bash
+bash scripts/gen-local-certs.sh   # gera certbot/conf/live/ninbus.frt.com.br/{fullchain,privkey}.pem
+                                  # SANs: ninbus/api/hb + localhost + 127.0.0.1 — idempotente, gitignored
+# .env local precisa de: COMPOSE_PATH_SEPARATOR=: e COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+docker compose up -d
+```
+
+- **Sem hosts file**: `https://localhost` (API, default_server) e
+  `https://localhost/console` (dashboard, com `-Host: ninbus.frt.com.br`)
+  já funcionam; dashboard direto em `http://localhost:3001` (dev override).
+- **Fidelidade máxima** (opcional): adicionar a `C:\Windows\System32\Drivers\etc\hosts`
+  `127.0.0.1 ninbus.frt.com.br api.ninbus.frt.com.br hb.ninbus.frt.com.br` —
+  os 3 vhosts + DDI (`http://hb.ninbus.frt.com.br` ou `:8080`) como em produção.
+- **Aviso do navegador**: autoassinado → aceitar, ou silenciar importando na
+  raiz confiável: `certutil -addstore -f Root certbot/conf/live/ninbus.frt.com.br/fullchain.pem`.
+- **Produção intocada**: o script nunca roda lá (certs reais já existem no path).
+- O vhost hb escuta `:80` **e** `:8080` (Opção C — firmware legado por IP:porta;
+  restaurado em 2026-11-04 após a Fase 6 tê-lo removido por engano).

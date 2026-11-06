@@ -51,7 +51,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deploymentParams,
 			detail: { tags: ['Deployments'], summary: 'Get deployment statistics' },
 			response: {
@@ -87,7 +87,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deploymentParams,
 			query: t.Object({
 				offset: t.Optional(t.Number()),
@@ -131,7 +131,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit DS ID' }),
@@ -174,7 +174,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deploymentParams,
 			query: t.Object({
 				offset: t.Optional(t.Number()),
@@ -214,7 +214,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deploymentActionParams,
 			detail: { tags: ['Deployments'], summary: 'Get raw action status history' },
 			response: {
@@ -305,7 +305,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit DS ID' }),
@@ -355,7 +355,7 @@ export const deploymentDeviceRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: deviceParams,
 			query: t.Object({ limit: t.Optional(t.Number({ maximum: 100 })) }),
 			detail: { tags: ['Deployments'], summary: 'Get device deployment actions' },

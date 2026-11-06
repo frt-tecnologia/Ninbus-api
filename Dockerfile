@@ -14,7 +14,7 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build ──────────────────────────────────────────────────
-FROM oven/bun:1.3-alpine AS build
+FROM oven/bun:1.3.14-alpine AS build
 WORKDIR /app
 
 # Cache layer: only reinstall when package.json / bun.lock changes
@@ -26,7 +26,7 @@ COPY . .
 RUN bun run build
 
 # ── Stage 2: Production (minimal footprint) ────────────────────────
-FROM oven/bun:1.3-alpine AS production
+FROM oven/bun:1.3.14-alpine AS production
 
 # Security: non-root user (already provided by bun:alpine)
 USER bun

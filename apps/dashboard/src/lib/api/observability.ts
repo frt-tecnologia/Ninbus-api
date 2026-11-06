@@ -125,6 +125,18 @@ export const observabilityService = {
 		});
 	},
 
+	/** Per-day activity counts (server-side GROUP BY) for the year heat map. */
+	async activityHeat(opts?: { from?: Date; to?: Date }): Promise<{
+		from: string;
+		to: string;
+		data: { bucket: string; count: number }[];
+	}> {
+		return http.get('/admin/activity/heat', {
+			from: opts?.from ? iso(opts.from) : undefined,
+			to: opts?.to ? iso(opts.to) : undefined,
+		});
+	},
+
 	/** Device connection timeline (session bands or aggregate buckets). */
 	async connections(opts: {
 		from: Date;
@@ -160,4 +172,26 @@ export const observabilityService = {
 			to: opts?.to ? iso(opts.to) : undefined,
 		});
 	},
+
+	/** Deployment activity series (assigned events + terminal outcomes per bucket). */
+	async deploymentTimeline(opts: {
+		from: Date;
+		to: Date;
+		buckets?: number;
+	}): Promise<{ from: string; to: string; bucketMs: number; data: TimelineBucket[] }> {
+		return http.get('/admin/deployments/timeline', {
+			from: iso(opts.from),
+			to: iso(opts.to),
+			buckets: opts.buckets,
+		});
+	},
 };
+
+export interface TimelineBucket {
+	start: string;
+	end: string;
+	assigned: number;
+	installed: number;
+	failed: number;
+	canceled: number;
+}

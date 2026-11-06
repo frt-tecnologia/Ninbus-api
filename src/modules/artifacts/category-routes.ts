@@ -52,7 +52,7 @@ export const artifactCategoryRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: artifactParams,
 			detail: { tags: ['Artifacts'], summary: 'List artifact groups (categories)' },
 			response: {

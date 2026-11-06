@@ -35,7 +35,7 @@ export const categoriesModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			detail: { tags: ['Categories'], summary: 'List company categories' },
 			response: {
@@ -103,7 +103,7 @@ export const categoriesModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),
@@ -179,7 +179,7 @@ export const categoriesModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				categoryId: t.String({ format: 'uuid' }),
@@ -187,7 +187,7 @@ export const categoriesModule = withAuth(
 			detail: {
 				tags: ['Categories'],
 				summary: 'Delete category',
-				description: 'Deletes a category. Requires admin role or above.',
+				description: 'Deletes a category. Requires manager role or above.',
 			},
 			response: {
 				200: CategoryDeleteResponseSchema,

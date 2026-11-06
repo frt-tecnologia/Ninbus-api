@@ -7,7 +7,9 @@
 #
 # Build:  docker compose build nginx
 # ═══════════════════════════════════════════════════════════════════════
-FROM nginx:1.27-alpine
+# Pinned to the exact patch of the current STABLE line (even minor = stable).
+# The previous 1.27 mainline is frozen at 1.27.4 — no more security updates.
+FROM nginx:1.30.6-alpine3.24
 
 # Bake in the global nginx.conf (vhosts come from the bind mount).
 COPY nginx.conf /etc/nginx/nginx.conf

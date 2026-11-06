@@ -176,6 +176,20 @@
       "when": 1790602041880,
       "tag": "0024_normalize_connection_status",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792686346233,
+      "tag": "0025_rbac_v2_roles_and_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793000000000,
+      "tag": "0026_platform_settings",
+      "breakpoints": true
     }
   ]
 }

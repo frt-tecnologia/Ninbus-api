@@ -42,7 +42,7 @@ export const deploymentsModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			detail: {
 				tags: ['Deployments'],
@@ -208,7 +208,7 @@ export const deploymentsModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
 				offset: t.Optional(t.Number()),
@@ -247,7 +247,7 @@ export const deploymentsModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit Distribution Set ID' }),
@@ -296,7 +296,7 @@ export const deploymentsModule = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				deploymentId: t.String({ description: 'hawkBit Distribution Set ID' }),

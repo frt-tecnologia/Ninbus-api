@@ -1,192 +1,414 @@
 'use client';
-
-import { CircuitBoard, Cpu, Package, Settings2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
-import { CompanyPicker } from '@/components/domain/deployments/company-picker';
-import { DeploymentTable } from '@/components/domain/deployments/deployment-table';
-import { PageHeader } from '@/components/layout/page-header';
-import { Section } from '@/components/system';
-import { DeploymentDonut, type DonutSegment } from '@/components/system/charts';
-import { useAllDeployments } from '@/hooks/use-all-deployments';
-import { useFetch } from '@/hooks/useFetch';
-import { companyService } from '@/lib/api';
-import { ROUTES } from '@/lib/routes';
-import { cn } from '@/lib/utils';
-
 /**
- * Deployments — observability of OTA rollouts.
- *
- * The funnel is a full-ring donut (recharts <DeploymentDonut>) conveying the
- * four outcomes (Pendente · Em andamento · Concluído · Falha) with the total
- * device count in the center. Beside it:
- *  - <CompanyPicker> — aggregate (all) or a single company
- *  - Type filter — Firmware Ninbus / Configuração NFX / Todos, so the two
- *    rollout kinds (high-risk reboot firmware vs low-risk CAN config) can be
- *    inspected in isolation.
- * The table mirrors both selections. No redundant stat cards — the donut +
- * legend already carry the counts.
+ * Deployments — one screen, two tabs: Atualizações (charts + collection + the
+ * per-device detail Surface, deep-linked by ?detail=&company=) and Firmware
+ * (release catalog + publish drawer). Merging keeps a single domain context
+ * (Eixo D) and lets both tabs share the cached companies/devices/releases
+ * reads. Old routes `/deployments/…` and `/deployments/firmware` redirect
+ * here with the same params.
  */
 
-/** funnel stages → donut segments.
- *  Color separation matters: Pendente vs Concluído must be visually distinct.
- *  Pendente → violet (waiting), Em andamento → lime (active),
- *  Concluído → signal-ok GREEN (success — a different HUE from lime so it
- *  never reads as "also pending"), Falha → red.
- */
-const SEGMENTS: Array<{
-	key: keyof Funnel;
-	tone: DonutSegment['tone'];
-	brand?: DonutSegment['brand'];
-	label: string;
-}> = [
-	{ key: 'pending', tone: 'idle', brand: 'violet', label: 'Pendente' },
-	{ key: 'inProgress', tone: 'busy', brand: 'lime', label: 'Em andamento' },
-	{ key: 'finished', tone: 'ok', label: 'Concluído' },
-	{ key: 'failed', tone: 'fault', label: 'Falha' },
-];
+import { Plus, Upload } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import * as React from 'react';
+import { BarChart } from '@/components/arc/bar-chart/bar-chart';
+import { DonutChart } from '@/components/arc/donut-chart/donut-chart';
+import { Progress } from '@/components/arc/progress/progress';
+import type { DataColumn } from '@/components/arc/sortable-data-table/sortable-data-table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/arc/tabs/tabs';
+import s from '@/components/arc-app/app.module.css';
+import { ReleaseDetails, RolloutDetails } from '@/components/arc-app/details';
+import { ReleaseForm, RolloutForm } from '@/components/arc-app/forms';
+import { Guard, PageHead } from '@/components/arc-app/page-head';
+import {
+	type AnyRow,
+	Button,
+	Collection,
+	kindOptions,
+	Panel,
+	type Period,
+	Status,
+	Surface,
+	stamp,
+} from '@/components/arc-app/primitives';
+import { useAllDeployments } from '@/hooks/use-all-deployments';
+import { companyService, deviceService, firmwareService } from '@/lib/api';
+import { qk } from '@/lib/cache/keys';
+import { useQuery } from '@/lib/cache/use-query';
+import { resolvePeriod } from '@/lib/time/period';
 
-/** Rollout-type filters. `type` on a deployment maps to the DS module type. */
-type TypeFilter = 'all' | 'firmware-ninbus' | 'configuration-nfx';
-const TYPE_OPTIONS: { value: TypeFilter; label: string; icon: typeof Cpu }[] = [
-	{ value: 'all', label: 'Todos os tipos', icon: Package },
-	{ value: 'firmware-ninbus', label: 'Firmware Ninbus', icon: Cpu },
-	{ value: 'configuration-nfx', label: 'Configuração NFX', icon: Settings2 },
-];
-
-interface Funnel {
-	pending: number;
-	inProgress: number;
-	finished: number;
-	failed: number;
-}
+const STATES = ['completed', 'in_progress', 'pending', 'failed', 'canceled'] as const;
+const STATE_LABEL: Record<string, string> = {
+	completed: 'Concluído',
+	in_progress: 'Em andamento',
+	pending: 'Pendente',
+	failed: 'Falha',
+	canceled: 'Cancelado',
+};
 
 export default function DeploymentsPage() {
-	const companies = useFetch(useCallback(() => companyService.list(), []));
-	const companyList = useMemo(() => companies.data?.data ?? [], [companies.data]);
-	const companyNameById = useMemo(
-		() => Object.fromEntries(companyList.map((c) => [c.id, c.name])),
-		[companyList],
+	const router = useRouter();
+	const search = useSearchParams();
+	const tab = search.get('tab') === 'firmware' ? 'firmware' : 'atualizações';
+
+	const companies = useQuery(
+		qk.adminCompanies,
+		React.useCallback(() => companyService.list(), []),
+	);
+	const devices = useQuery(
+		qk.adminDevices,
+		React.useCallback(() => deviceService.listAll(), []),
+		{ sync: false },
+	);
+	const releases = useQuery(
+		qk.firmwareReleases,
+		React.useCallback(() => firmwareService.list(), []),
+	);
+	const companyList = companies.data?.data ?? [];
+	const { deployments, loading, error } = useAllDeployments(companyList);
+
+	// Detail surfaces — deep-linked (?detail= + ?company= for atualizações).
+	const [rolloutForm, setRolloutForm] = React.useState(false);
+	const [upload, setUpload] = React.useState(search.get('upload') === '1');
+	const [releaseDetail, setReleaseDetail] = React.useState<string | null>(search.get('detail'));
+	const [deployFor, setDeployFor] = React.useState<string | null>(null);
+	const [rolloutDetail, setRolloutDetail] = React.useState<{
+		companyId: string;
+		id: string;
+	} | null>(
+		search.get('detail') && search.get('company') && tab === 'atualizações'
+			? { companyId: search.get('company') as string, id: search.get('detail') as string }
+			: null,
 	);
 
-	const all = useAllDeployments(companyList);
+	const openRollout = (companyId: string | undefined, id: string) =>
+		setRolloutDetail({ companyId: companyId ?? '', id: String(id) });
+	const deployment = rolloutDetail
+		? (deployments.find(
+				(d) => String(d.id) === rolloutDetail.id && d.companyId === rolloutDetail.companyId,
+			) ?? null)
+		: null;
+	const releaseList = releases.data?.data ?? [];
+	const release = releaseList.find((r) => r.id === releaseDetail) ?? null;
 
-	const [companyId, setCompanyId] = useState<string>(''); // '' = all (grouped)
-	const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-	const isAll = companyId === '';
-	const router = useRouter();
+	// ── Atualizações tab ───────────────────────────────────────────────────
 
-	// Apply company + type filters.
-	const filtered = useMemo(() => {
-		let rows = isAll ? all.deployments : all.deployments.filter((d) => d.companyId === companyId);
-		if (typeFilter !== 'all') {
-			rows = rows.filter((d) => d.type === typeFilter);
-		}
-		return rows;
-	}, [all.deployments, companyId, isAll, typeFilter]);
+	const [chartStatus, setChartStatus] = React.useState<string | null>(null);
+	const [period, setPeriod] = React.useState<Period | null>(null);
 
-	const funnel = useMemo<Funnel>(() => {
-		const f: Funnel = { pending: 0, inProgress: 0, finished: 0, failed: 0 };
-		for (const d of filtered) {
-			const s = d.statistics;
-			f.pending += s?.pending ?? 0;
-			f.inProgress += s?.inProgress ?? 0;
-			f.finished += s?.finished ?? 0;
-			f.failed += s?.failed ?? 0;
-		}
-		return f;
-	}, [filtered]);
-
-	const segments: DonutSegment[] = SEGMENTS.map((g) => ({
-		value: funnel[g.key],
-		tone: g.tone,
-		brand: g.brand,
-		label: g.label,
+	const rows: AnyRow[] = deployments.map((r) => ({
+		...r,
+		id: String(r.id),
+		company: companyList.find((c) => c.id === r.companyId)?.name ?? '',
+		done: r.statistics?.finished ?? 0,
+		targets: r.statistics?.totalTargets ?? 0,
+		failed: r.statistics?.failed ?? 0,
 	}));
 
-	const description = isAll
-		? 'Soma de dispositivos por estágio em todas as empresas.'
-		: `Soma de dispositivos por estágio — ${companyNameById[companyId] ?? ''}.`;
+	const anchor = Math.max(
+		Date.now(),
+		...deployments.map((r) => new Date(r.createdAt ?? 0).getTime() || 0),
+	);
+	const resolved = period ? resolvePeriod(period) : null;
+	const start = resolved ? resolved.from.getTime() : anchor - 30 * 24 * 3600_000;
+	const end = resolved ? resolved.to.getTime() : anchor;
+	const inWindow = rows.filter((r) => {
+		const t = new Date((r as { createdAt?: number }).createdAt ?? 0).getTime() || 0;
+		return t >= start && t <= end;
+	});
+	const chart = Array.from({ length: 12 }, (_, i) => {
+		const lo = start + (end - start) * (i / 12);
+		const hi = start + (end - start) * ((i + 1) / 12);
+		return {
+			key: `bucket${i}`,
+			label: new Date(lo).toLocaleString('pt-BR', {
+				timeZone: 'America/Recife',
+				month: 'short',
+				day: '2-digit',
+				hour: '2-digit',
+			}),
+			value: inWindow.filter((r) => {
+				const t = new Date((r as { createdAt?: number }).createdAt ?? 0).getTime() || 0;
+				return t >= lo && (i === 11 ? t <= hi : t < hi);
+			}).length,
+		};
+	});
+
+	const columns: DataColumn<AnyRow>[] = [
+		{
+			key: 'name',
+			label: 'Atualização',
+			render: (_, r) => (
+				<button
+					type="button"
+					className={s.link}
+					onClick={() => openRollout(r.companyId, String(r.id))}
+				>
+					{String(r.displayName ?? r.name)}
+					<span className={s.cellSub}>{String(r.typeName ?? r.type ?? '')}</span>
+				</button>
+			),
+		},
+		{ key: 'company', label: 'Empresa' },
+		{ key: 'status', label: 'Estado', render: (v) => <Status value={String(v)} /> },
+		{
+			key: 'done',
+			label: 'Progresso',
+			render: (_, r) => (
+				<div className={s.progressCell}>
+					<span>
+						{String(r.done)} / {String(r.targets)}
+					</span>
+					<Progress
+						value={Number(r.done)}
+						max={Number(r.targets)}
+						aria-label="Progresso da atualização"
+					/>
+				</div>
+			),
+		},
+		{
+			key: 'failed',
+			label: 'Falhas',
+			render: (v) => <span className={Number(v) ? s.bad : s.muted}>{String(v)}</span>,
+		},
+	];
+
+	// ── Firmware tab ───────────────────────────────────────────────────
+
+	const releaseColumns: DataColumn<AnyRow>[] = [
+		{
+			key: 'name',
+			label: 'Release',
+			render: (_, r) => (
+				<button type="button" className={s.link} onClick={() => setReleaseDetail(String(r.id))}>
+					{String(r.name)} · {String(r.version)}
+					<span className={s.cellSub}>{String(r.originalFilename ?? '')}</span>
+				</button>
+			),
+		},
+		{
+			key: 'artifactType',
+			label: 'Tipo',
+			render: (v) => kindOptions.find((k) => k.value === v)?.label ?? String(v),
+		},
+		{ key: 'status', label: 'Estado', render: (v) => <Status value={String(v)} /> },
+		{
+			key: 'payloadSize',
+			label: 'Tamanho',
+			render: (v) => (v ? `${(Number(v) / 1024).toFixed(1)} KB` : '—'),
+		},
+		{ key: 'createdAt', label: 'Publicada em', render: (v) => stamp(String(v)) },
+	];
 
 	return (
 		<>
-			<PageHeader
-				title="Deployments"
-				description="Observabilidade das atualizações OTA por empresa."
-				action={
-					<button
-						type="button"
-						onClick={() => router.push(ROUTES.firmware)}
-						title="Catálogo de releases de firmware da fábrica"
-						className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-					>
-						<CircuitBoard className="h-4 w-4" />
-						Firmware
-					</button>
+			<PageHead
+				title="Atualizações"
+				description="Atualizações, firmware e arquivos NFX — o ciclo completo de atualização."
+				actions={
+					<>
+						<Button onClick={() => setRolloutForm(true)}>
+							<Plus size={17} />
+							Nova atualização
+						</Button>
+						<Button variant="secondary" onClick={() => setUpload(true)}>
+							<Upload size={17} />
+							Publicar release
+						</Button>
+					</>
 				}
 			/>
+			<Tabs defaultValue={tab}>
+				<TabsList aria-label="Domínio de deployments">
+					<TabsTrigger value="atualizações">Atualizações</TabsTrigger>
+					<TabsTrigger value="firmware">Firmware</TabsTrigger>
+				</TabsList>
 
-			<Section title="Funil de atualização" description={description} className="mb-4">
-				<div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem] md:items-center">
-					<DeploymentDonut
-						segments={segments}
-						loading={all.loading}
-						centerLabel="dispositivos"
-						size={240}
-					/>
-
-					<aside className="flex flex-col gap-4">
-						<div>
-							<span className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-								Empresa
-							</span>
-							<CompanyPicker
-								companies={companyList}
-								value={companyId}
-								onChange={setCompanyId}
-								loading={companies.loading}
-							/>
+				<TabsContent value="atualizações">
+					<Guard loading={loading || companies.loading} error={companies.error ?? error}>
+						<div className={s.rolloutSummary}>
+							<Panel
+								title="Estados das atualizações"
+								description="Selecione uma categoria para filtrar a lista"
+							>
+								<DonutChart
+									label="Estados dos atualizações"
+									size={176}
+									totalLabel="Atualizações"
+									legendAction="select"
+									activeKey={chartStatus}
+									onActiveChange={setChartStatus}
+									data={STATES.map((status, i) => ({
+										key: status,
+										label: STATE_LABEL[status],
+										value: deployments.filter((r) => r.status === status).length,
+										color: [
+											'var(--success)',
+											'var(--accent)',
+											'var(--text-muted)',
+											'var(--danger)',
+											'var(--text-secondary)',
+										][i],
+									}))}
+								/>
+							</Panel>
+							<Panel
+								title="Atualizações criadas"
+								description={period ? 'Período personalizado' : 'Últimos 30 dias'}
+							>
+								<BarChart
+									label="Atualizações por intervalo"
+									data={chart}
+									period="30d"
+									averageLabel="Média por intervalo"
+									categoryLabel="Intervalo"
+									valueLabel="Atualizações"
+								/>
+							</Panel>
 						</div>
-						<div>
-							<span className="mb-1.5 block text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-								Tipo de atualização
-							</span>
-							<div className="flex flex-col gap-1.5">
-								{TYPE_OPTIONS.map((opt) => {
-									const active = typeFilter === opt.value;
-									const Icon = opt.icon;
-									return (
-										<button
-											key={opt.value}
-											type="button"
-											onClick={() => setTypeFilter(opt.value)}
-											className={cn(
-												'flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors',
-												active
-													? 'border-primary/40 bg-primary/10 text-foreground'
-													: 'border-border bg-background/40 text-muted-foreground hover:bg-muted/40',
-											)}
-										>
-											<Icon className="h-4 w-4 shrink-0" />
-											{opt.label}
-										</button>
-									);
-								})}
+						{chartStatus && (
+							<div className={s.inline}>
+								<Status value={chartStatus} />
+								<Button variant="ghost" onClick={() => setChartStatus(null)}>
+									Mostrar todos os estados
+								</Button>
+							</div>
+						)}
+						{/* Rolagem horizontal no mobile: wrapper permite o scroll e o
+						    min-width interno evita que as colunas sejam espremidas. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Atualizações"
+									rows={rows.filter((r) => !chartStatus || r.status === chartStatus)}
+									columns={columns}
+									onOpenRow={(r) => openRollout(String(r.companyId ?? ''), String(r.id))}
+									dateKey="createdAt"
+									dateMeaning="Período aplica-se à criação da atualização"
+									period={period}
+									onPeriodChange={setPeriod}
+									fields={[
+										{ id: 'company', label: 'Empresa', options: companyList.map((c) => c.name) },
+										{
+											id: 'status',
+											label: 'Estado',
+											options: STATES.map((v) => ({ value: v, label: STATE_LABEL[v] })),
+										},
+									]}
+								/>
 							</div>
 						</div>
-					</aside>
-				</div>
-			</Section>
+					</Guard>
+				</TabsContent>
 
-			<DeploymentTable
-				deployments={filtered}
-				companyId={isAll ? undefined : companyId}
-				showCompany={isAll}
-				companyNameById={companyNameById}
-				loading={all.loading}
-				error={all.error}
-				onRetry={all.refetch}
-			/>
+				<TabsContent value="firmware">
+					<Guard loading={releases.loading} error={releases.error} onRetry={releases.refetch}>
+						{/* Rolagem horizontal no mobile — mesmo padrão da aba Atualizações. */}
+						<div className="w-full overflow-x-auto">
+							<div className="min-w-[900px]">
+								<Collection
+									label="Releases e arquivos NFX"
+									rows={releaseList.map((r) => ({ ...r }))}
+									columns={releaseColumns}
+									onOpenRow={(r) => setReleaseDetail(String(r.id))}
+									dateKey="createdAt"
+									fields={[
+										{
+											id: 'artifactType',
+											label: 'Tipo',
+											options: kindOptions.map((k) => ({ value: k.value, label: k.label })),
+										},
+										{ id: 'status', label: 'Estado', options: ['published', 'draft'] },
+									]}
+								/>
+							</div>
+						</div>
+					</Guard>
+				</TabsContent>
+			</Tabs>
+
+			{/* Atualização detail — in place, no navigation */}
+			<Surface
+				open={!!rolloutDetail && !!deployment}
+				onClose={() => {
+					setRolloutDetail(null);
+					if (search.get('detail') && search.get('company')) router.replace('/deployments');
+				}}
+				title={deployment?.displayName ?? deployment?.name ?? 'Atualização'}
+				description={deployment?.typeName ?? undefined}
+			>
+				{deployment && rolloutDetail && (
+					<RolloutDetails
+						companyId={rolloutDetail.companyId}
+						deployment={deployment}
+						openDevice={(id) => router.push(`/devices?detail=${id}`)}
+						onDone={() => {
+							setRolloutDetail(null);
+							if (search.get('detail')) router.replace('/deployments');
+						}}
+					/>
+				)}
+			</Surface>
+
+			{/* New atualização */}
+			<Surface
+				open={rolloutForm}
+				onClose={() => setRolloutForm(false)}
+				title="Preparar deploy"
+				description="A atualização é criada no serviço de distribuição e entregue no próximo contato de cada dispositivo."
+			>
+				<RolloutForm
+					companies={companyList}
+					releases={releaseList}
+					devices={devices.data?.data ?? []}
+					done={() => setRolloutForm(false)}
+				/>
+			</Surface>
+
+			{/* Publish release */}
+			<Surface
+				open={upload}
+				onClose={() => {
+					setUpload(false);
+					if (search.get('upload')) router.replace('/deployments?tab=firmware');
+				}}
+				title="Publicar release"
+				description="O upload começa ao selecionar o arquivo; a publicação exige confirmação do servidor."
+			>
+				<ReleaseForm done={() => setUpload(false)} />
+			</Surface>
+
+			{/* Release detail */}
+			<Surface
+				open={!!releaseDetail && tab === 'firmware'}
+				onClose={() => {
+					setReleaseDetail(null);
+					if (search.get('detail')) router.replace('/deployments?tab=firmware');
+				}}
+				title={release ? `${release.name} · ${release.version}` : 'Release'}
+				description="Revise antes de distribuir."
+			>
+				{release && <ReleaseDetails release={release} onDeploy={() => setDeployFor(release.id)} />}
+			</Surface>
+
+			{/* Deploy a specific release */}
+			<Surface
+				open={!!deployFor}
+				onClose={() => setDeployFor(null)}
+				title="Preparar deploy desta release"
+				description="A atualização é criada no serviço de distribuição e entregue no próximo contato de cada dispositivo."
+			>
+				{deployFor && (
+					<RolloutForm
+						companies={companyList}
+						releases={releaseList}
+						devices={devices.data?.data ?? []}
+						releaseId={deployFor}
+						done={() => setDeployFor(null)}
+					/>
+				)}
+			</Surface>
 		</>
 	);
 }

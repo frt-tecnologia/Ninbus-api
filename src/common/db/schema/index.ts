@@ -17,4 +17,5 @@ export * from './devices';
 export * from './firmware';
 export * from './observability';
 export * from './pending-members';
+export * from './platform-settings';
 export * from './posts';

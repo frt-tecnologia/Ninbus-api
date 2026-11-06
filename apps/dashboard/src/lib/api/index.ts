@@ -25,5 +25,7 @@ export type {
 	SessionBand,
 } from './observability';
 export { observabilityService } from './observability';
+export type { RolePolicy } from './roles';
+export { rolePolicyService } from './roles';
 export type { CreateDesignationInput } from './users';
 export { designationService, userService } from './users';

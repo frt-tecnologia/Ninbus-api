@@ -1279,6 +1279,46 @@
       "category": "testing",
       "learnedAt": "2026-09-28T14:36:36.297Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-poll-based-state-needs-always-on-observer",
+      "rule": "Estado inferido por amostragem (poll-based, ex.: hawkBit pollStatus) NÃO suporta detectores gated em atividade de usuário. Regra da simetria de writers de estado: se um writer (offline/sweep) roda always-on sobre dado LOCAL, todo writer do estado oposto (online/sync) precisa de observador igualmente sempre-on da FONTE — senão o writer local age sobre dado congelado e produz transições FALSAS backdated. Além disso, hawkBit Management API só expõe o ÚLTIMO poll (lastRequestAt): transições perdidas na janela de amostragem são irrecuperáveis para backdate de \"connected since\". Qualquer timeline de conexão deve: (1) limitar a rotação de observação a ~1 intervalo de poll, (2) validar frescor do dado local antes de agir sobre deadlines (updatedAt > deadline), (3) aceitar e documentar o erro máximo de 1 intervalo.",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-10-07T14:10:08.959Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-connection-writers-need-lock-plus-cas",
+      "rule": "Multiple writers updating the same connection/status facts (background pass × enrichment sync × on-demand) MUST be serialized in-process (promise-chain lock) AND re-read the current row INSIDE the lock before deciding a transition (CAS). A lock alone is not enough if the \"previous state\" snapshot was read before acquiring it — three concurrent readers all saw previous=disconnected and recorded the same transition 3x (proven by drill events.json).",
+      "origin": "learned",
+      "category": "architecture",
+      "learnedAt": "2026-10-20T10:30:49.073Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-reskin-via-token-layer-first",
+      "rule": "To re-skin a large shadcn/Tailwind app (100+ components): swap the token layer FIRST (globals.css CSS vars + tailwind.config color/radius/shadow maps + font), then normalize shared primitives (button/input/card/section), then restructure the target surface. Computed-style DOM audits via headless browser (puppeteer-core + system Edge, no downloads) give objective rendered verification — exact rhythm gaps, hex values, shadows, overflow, console errors — even when image inspection is unavailable.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-10-20T10:30:49.173Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-single-source-domain-maps",
+      "rule": "Constantes de domínio compartilhadas (mapas de hierarquia de papéis, enums duplicados em guards) devem ter UMA única fonte. Ao renomear valores de enum, grep por TODAS as cópias do mapa/constante — duplicatas divergem silenciosamente e comparações `undefined < nivel` retornam false, deixando TODOS passarem (furo de segurança). Testes de permissão precisam incluir casos NEGATIVOS (papel inferior → 403), não só positivos, senão o furo passa despercebido.",
+      "origin": "learned",
+      "category": "security",
+      "learnedAt": "2026-10-22T17:58:49.343Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-comments-self-explanatory-code",
+      "rule": "JavaScript/TypeScript code must contain ZERO comments. Code must be self-explanatory at a glance: descriptive names, no magic numbers (named constants), correct tab indentation, lean/no repetition, clean code + architecture principles. The 'why' lives in commit messages and docs/, never in code.",
+      "origin": "learned",
+      "category": "style",
+      "learnedAt": "2026-11-04T00:15:22.850Z",
+      "reinforcementCount": 1
     }
   ]
 }

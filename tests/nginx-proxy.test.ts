@@ -24,6 +24,7 @@ const VHOSTS = read('docker/nginx/conf.d/ninbus.conf');
 const NGINX_MAIN = read('docker/nginx/nginx.conf');
 const DOCKERFILE = read('docker/nginx/Dockerfile');
 const COMPOSE = read('docker-compose.yml');
+const COMPOSE_DEV = read('docker-compose.dev.yml');
 
 describe('nginx reverse proxy — security posture', () => {
 	describe('hawkBit Management API / UI are hard-blocked on the public vhost', () => {
@@ -45,6 +46,15 @@ describe('nginx reverse proxy — security posture', () => {
 			// Dynamic resolution: `set $backend_ddi; proxy_pass http://$backend_ddi;`
 			expect(VHOSTS).toContain('set $backend_ddi "hawkbit:8080";');
 			expect(VHOSTS).toContain('proxy_pass http://$backend_ddi;');
+		});
+
+		it('serves the DDI vhost on :80 AND :8080 (legacy firmware, Opção C)', () => {
+			// Fase 6 dropped `listen 8080` while the compose still publishes
+			// 8080:8080 "existing firmware keeps working" — legacy devices polling
+			// IP:8080 got connection refused. Both ports serve the same vhost.
+			const hbBlock = VHOSTS.split('server {').find((b) => b.includes('server_name hb.ninbus.frt.com.br')) ?? '';
+			expect(hbBlock).toContain('listen 80;');
+			expect(hbBlock).toContain('listen 8080;');
 		});
 
 		it('uses Docker service names (not localhost) for backends', () => {
@@ -116,6 +126,13 @@ describe('nginx reverse proxy — security posture', () => {
 	});
 
 	describe('TLS termination (cutover completed)', () => {
+		it('answers the Dockerfile health probe on :80 without redirecting it', () => {
+			// The healthcheck hits http://127.0.0.1/health — the 80→443 catch-all
+			// turned that into a 301 and the container sat permanently 'unhealthy'
+			// (masked by the restart policy). /health must answer 200 directly.
+			expect(VHOSTS).toMatch(/location = \/health \{[^}]*return 200/);
+		});
+
 		it('terminates TLS on :443 with Let\u2019s Encrypt certs', () => {
 			// The transitional phase is over: nginx now actively serves HTTPS with
 			// the certbot-issued certificates for the public host.
@@ -125,9 +142,12 @@ describe('nginx reverse proxy — security posture', () => {
 			expect(VHOSTS).toContain('/etc/letsencrypt/live/ninbus.frt.com.br/privkey.pem');
 		});
 
-		it('keeps the api port published (rollback safety until cutover)', () => {
-			// The api port is removed only in Fase 6 after the device cutover.
-			expect(COMPOSE).toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+		it('base compose does NOT publish the api port (nginx is the only ingress)', () => {
+			// Audit S2: the base compose publishes only the nginx edge (80/443/8080).
+			// Direct api/dashboard ports live in docker-compose.dev.yml (dev override).
+			expect(COMPOSE).not.toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+			expect(COMPOSE_DEV).toMatch(/"\$\{PORT:-8081\}:\$\{PORT:-8081\}"/);
+			expect(COMPOSE_DEV).toMatch(/3001:3001/);
 		});
 
 		it('removes the hawkBit public port (DDI now served by nginx)', () => {

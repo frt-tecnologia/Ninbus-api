@@ -16,7 +16,8 @@
 			"!**/.drizzle",
 			"!**/drizzle/meta",
 			"!**/*.config.js",
-			"!**/.harness"
+			"!**/.harness",
+			"!apps/dashboard/src/components/arc"
 		]
 	},
 	"formatter": {

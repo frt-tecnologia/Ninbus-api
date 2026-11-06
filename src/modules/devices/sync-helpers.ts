@@ -13,8 +13,8 @@ import {
 	recordConnectionTransition,
 	transitionOccurredAt,
 } from '@modules/observability/connections-service';
-import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
-import { extractTargetData, getProtectedStatus } from './sync-core';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { extractTargetData, getProtectedStatus, withConnectionWriteLock } from './sync-core';
 import { fetchTargetsByIds } from './sync-fetch';
 
 // Re-export everything from split files
@@ -51,7 +51,7 @@ export interface ChangedDevice {
 /** Update local device records from hawkBit target data.
  *  Returns Map<companyId, count> of updated devices per company for SSE emission.
  */
-export async function batchUpdateDevicesFromTargets(
+async function batchUpdateDevicesFromTargetsUnlocked(
 	devicesToUpdate: {
 		id: string;
 		hawkbitTargetId: string | null;
@@ -67,6 +67,21 @@ export async function batchUpdateDevicesFromTargets(
 	const changedDevices: ChangedDevice[] = [];
 	const now = new Date();
 
+	// CAS: re-read CURRENT statuses + names (this whole function runs inside
+	// the connection write lock). The previousConnectionStatus snapshots were read
+	// BEFORE the lock — the Connection Pass may have recorded the transition
+	// already, and a stale previous would double-record it. The fresh NAME keeps
+	// telemetry display consistent even when the caller didn't load it.
+	const fresh = new Map<string, { cs: string | null; name: string | null }>();
+	const allIds = devicesToUpdate.map((d) => d.id);
+	for (let i = 0; i < allIds.length; i += 500) {
+		const part = await db
+			.select({ id: devices.id, cs: devices.connectionStatus, nm: devices.name })
+			.from(devices)
+			.where(inArray(devices.id, allIds.slice(i, i + 500)));
+		for (const r of part) fresh.set(r.id, { cs: r.cs, name: r.nm });
+	}
+
 	// Batch updates in parallel (100 at a time to avoid DB overload)
 	const chunkSize = 100;
 	for (let i = 0; i < devicesToUpdate.length; i += chunkSize) {
@@ -74,6 +89,7 @@ export async function batchUpdateDevicesFromTargets(
 		const updates = chunk.map(async (device) => {
 			// A device without a hawkBit target id cannot be synced from a target map.
 			if (!device.hawkbitTargetId) return;
+			if (!fresh.has(device.id)) return; // row deleted mid-flight
 			const target = targetMap.get(device.hawkbitTargetId);
 			if (!target) return;
 
@@ -103,7 +119,9 @@ export async function batchUpdateDevicesFromTargets(
 
 					// Telemetry: capture ONLY real connection transitions (online↔offline).
 					// Steady-state polls produce ZERO writes. Fire-and-forget (best-effort).
-					const previous = device.previousConnectionStatus ?? null;
+					// `previous` is the FRESH in-lock status (CAS — no double records).
+					const snapshot = fresh.get(device.id);
+					const previous = snapshot?.cs ?? null;
 					const current = targetData.connectionStatus ?? null;
 					if (previous !== current) {
 						const onlineNow = isOnlineStatus(current);
@@ -111,7 +129,7 @@ export async function batchUpdateDevicesFromTargets(
 							deviceId: device.id,
 							companyId: device.companyId,
 							hawkbitTargetId: device.hawkbitTargetId,
-							deviceName: device.name ?? device.hawkbitTargetId,
+							deviceName: snapshot?.name ?? device.name ?? device.hawkbitTargetId,
 							previous,
 							current,
 							// Unified rule: online = lastPollAt; offline = missed deadline.
@@ -133,6 +151,17 @@ export async function batchUpdateDevicesFromTargets(
 	}
 
 	return { companyUpdates, changedDevices };
+}
+
+/** Serialized connection-fact writer (see withConnectionWriteLock) — keeps the
+ *  enrichment path from double-recording transitions against the Connection Pass. */
+export async function batchUpdateDevicesFromTargets(
+	devicesToUpdate: Parameters<typeof batchUpdateDevicesFromTargetsUnlocked>[0],
+	targetMap: Map<string, any>,
+): Promise<{ companyUpdates: Map<string, number>; changedDevices: ChangedDevice[] }> {
+	return withConnectionWriteLock(() =>
+		batchUpdateDevicesFromTargetsUnlocked(devicesToUpdate, targetMap),
+	);
 }
 
 /** Auto-provision: create local devices for hawkBit targets not yet in DB. */
@@ -259,93 +288,4 @@ export async function syncCompanyOnDemand(companyId: string): Promise<number> {
 	}
 
 	return count;
-}
-
-/**
- * Staleness sweep — marks devices as DISCONNECTED when they missed their
- * expected poll window (plus grace), independent of hawkBit availability.
- *
- * WHY: a device whose hawkBit target was deleted (orphan) stops appearing in
- * the sync's target map, so `batchUpdateDevicesFromTargets` skips it and its
- * `connection_status` freezes at `connected` forever. This time-based check
- * self-heals that: if `next_expected_poll_at` has passed, the device cannot be
- * connected. Cheap (1 indexed UPDATE), correct, and independent of hawkBit.
- *
- * GRACE: hawkBit's own overdue verdict carries a tolerance window — a device
- * polling a few seconds late is still `!overdue` there. Sweeping at the bare
- * deadline made the two writers disagree at the boundary, emitting spurious
- * offline(sweep)+online(hawkBit) event pairs. Sweeping only past
- * deadline + STALE_SWEEP_GRACE_SEC keeps ONE voice per boundary case.
- *
- * Returns the count of devices corrected (for logging / SSE).
- */
-export const STALE_SWEEP_GRACE_SEC = 60;
-
-export async function markOverdueDevicesOffline(): Promise<number> {
-	try {
-		const graceAgo = new Date(Date.now() - STALE_SWEEP_GRACE_SEC * 1000);
-		const corrected = await db
-			.update(devices)
-			.set({ connectionStatus: 'disconnected', updatedAt: new Date() })
-			.where(
-				and(
-					inArray(devices.connectionStatus, ['connected', 'online']),
-					isNotNull(devices.nextExpectedPollAt),
-					lt(devices.nextExpectedPollAt, graceAgo),
-				),
-			)
-			.returning({
-				id: devices.id,
-				companyId: devices.companyId,
-				hawkbitTargetId: devices.hawkbitTargetId,
-				name: devices.name,
-				nextExpectedPollAt: devices.nextExpectedPollAt,
-			});
-
-		if (corrected.length > 0) {
-			appLogger.info(
-				'[SYNC] Staleness sweep: marked %d overdue device(s) offline',
-				corrected.length,
-			);
-			// SSE: push the offline transition to connected clients via the coalescer.
-			// This closes the gap where staleness-sweep updates the DB but clients
-			// never learn about it until their next GET (the root cause of the
-			// online↔offline flicker reported by the Flutter team).
-			import('@common/sse').then(({ statusCoalescer }) => {
-				for (const d of corrected) {
-					if (!d.companyId) continue;
-					statusCoalescer.record(d.companyId, {
-						id: d.id,
-						s: 'disconnected',
-						t: new Date().toISOString(),
-					});
-				}
-			});
-			// Capture transition telemetry (connected→offline) for each.
-			// occurredAt = the MISSED DEADLINE (unified rule via transitionOccurredAt)
-			// — not detection time (biased offline bands late), not lastPollAt
-			// (biased them early by up to one polling interval).
-			for (const d of corrected) {
-				if (!d.companyId) continue; // telemetry row requires a company
-				void recordConnectionTransition({
-					deviceId: d.id,
-					companyId: d.companyId,
-					hawkbitTargetId: d.hawkbitTargetId,
-					deviceName: d.name ?? d.hawkbitTargetId ?? d.id,
-					previous: 'connected',
-					current: 'disconnected',
-					occurredAt: transitionOccurredAt('offline', {
-						lastPollAt: null,
-						nextExpectedPollAt: d.nextExpectedPollAt,
-					}),
-				}).catch(() => {
-					/* best-effort */
-				});
-			}
-		}
-		return corrected.length;
-	} catch (error: any) {
-		appLogger.debug('[SYNC] Staleness sweep failed: %s', error?.message);
-		return 0;
-	}
 }

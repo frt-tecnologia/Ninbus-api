@@ -1,0 +1,16 @@
+# Local development override — publishes the API and dashboard ports on the
+# host so `localhost:8081` / `localhost:3001` work without going through nginx.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# The BASE docker-compose.yml is production-safe: it publishes only the nginx
+# ingress (80/443/8080) and every service stays reachable inside the compose
+# network by its service name. Never ship this file's ports to the server.
+services:
+  api:
+    ports:
+      - "${PORT:-8081}:${PORT:-8081}"
+
+  dashboard:
+    ports:
+      - "3001:3001"

@@ -11,7 +11,7 @@
  *   GET /categories             — cross-company categories with device counts
  */
 import { withAuth } from '@common/middleware/auth-guard';
-import { listActivity } from '@modules/observability/activity-service';
+import { heatActivity, listActivity } from '@modules/observability/activity-service';
 import { listAggregatedCategories } from '@modules/observability/category-aggregate-service';
 import {
 	aggregateOnlineEvents,
@@ -19,6 +19,8 @@ import {
 	listSessions,
 } from '@modules/observability/connections-service';
 import {
+	ActivityHeatQuerySchema,
+	ActivityHeatResponseSchema,
 	ActivityListResponseSchema,
 	ActivityQuerySchema,
 	AggregatedCategoryListResponseSchema,
@@ -71,6 +73,32 @@ export const observabilityModule = withAuth(new Elysia({ prefix: '/api/admin' })
 		},
 	)
 
+	// GET /activity/heat — Per-day activity counts for the year heat map
+	.get(
+		'/activity/heat',
+		async ({ query }) => {
+			const to = query.to ?? new Date();
+			const from = query.from ?? new Date(to.getTime() - 365 * 86_400_000);
+			const data = await heatActivity({ from, to });
+			return { from, to, data };
+		},
+		{
+			auth: true,
+			superAdmin: true,
+			query: ActivityHeatQuerySchema,
+			detail: {
+				tags: ['Observability'],
+				summary: 'Activity heat map (super admin)',
+				description:
+					'Activity event count per calendar day (America/Sao_Paulo) via server-side ' +
+					'GROUP BY. Feeds the year heat map without shipping raw events to the client.',
+			},
+			response: {
+				200: ActivityHeatResponseSchema,
+				403: ErrorResponseSchema,
+			},
+		},
+	)
 	// GET /devices/connections — Session bands or aggregate buckets
 	.get(
 		'/devices/connections',

@@ -13,7 +13,9 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build S3 extension against hawkBit 1.0.3 ────────────
-FROM maven:3.9-eclipse-temurin-21 AS builder
+# Maven pinned to the latest 3.9.x patch — the line this extension's POM
+# is validated against (3.10/4.x remain untested).
+FROM maven:3.9.16-eclipse-temurin-21 AS builder
 
 WORKDIR /build
 COPY docker/hawkbit/s3-extension/ .
@@ -35,6 +37,9 @@ RUN echo "=== Extension JAR ===" && \
     ls /build/deps/
 
 # ── Stage 2: Add only S3 extension + AWS SDK to base image ──────
+# LOCKED at 1.0.3: the S3 extension above is compiled against the 1.0.3
+# APIs (ArtifactStorage/StoredArtifactInfo). Newer hawkBit (1.1.0) rewrites
+# those APIs and would require porting the extension first.
 FROM hawkbit/hawkbit-update-server:1.0.3
 
 USER root

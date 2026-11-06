@@ -3,6 +3,9 @@
 	"style": "new-york",
 	"rsc": true,
 	"tsx": true,
+	"registries": {
+		"@uiarc": "https://uiarc.dev/r/{name}.json"
+	},
 	"tailwind": {
 		"config": "tailwind.config.ts",
 		"css": "src/app/globals.css",

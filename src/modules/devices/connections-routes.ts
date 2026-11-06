@@ -88,7 +88,7 @@ export const deviceConnectionsRoutes = withAuth(
 	},
 	{
 		auth: true,
-		companyRole: 'viewer',
+		companyRole: 'observer',
 		params,
 		query: CompanyConnectionsQuerySchema,
 		detail: {

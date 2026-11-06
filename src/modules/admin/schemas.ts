@@ -95,3 +95,25 @@ export const AdminPendingDesignationListResponseSchema = t.Object({
 });
 
 export { ErrorResponseSchema, GenericActionResponseSchema };
+
+export const PollingTimeStateSchema = t.Object({
+	effectiveSec: t.Integer({ description: 'Effective DDI polling interval in seconds' }),
+	source: t.Union([t.Literal('override'), t.Literal('env-default')], {
+		description:
+			"'override' = runtime value set by a super admin; 'env-default' = HAWKBIT_POLLING_TIME",
+	}),
+	updatedBy: t.Union([t.String(), t.Null()]),
+	updatedAt: t.Union([dateTimeString, t.Null()]),
+});
+
+export const PollingTimeResponseSchema = t.Object({
+	data: PollingTimeStateSchema,
+});
+
+export const UpdatePollingTimeBodySchema = t.Object({
+	pollingSec: t.Integer({
+		minimum: 5,
+		maximum: 86400,
+		description: 'New global polling interval in seconds (must match the firmware poll cadence)',
+	}),
+});

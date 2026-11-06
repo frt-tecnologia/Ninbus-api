@@ -50,7 +50,7 @@ export const artifactManageRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({ companyId: t.String({ format: 'uuid' }) }),
 			query: t.Object({
 				offset: t.Optional(t.Number()),
@@ -99,7 +99,7 @@ export const artifactManageRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
@@ -159,7 +159,7 @@ export const artifactManageRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'admin',
+			companyRole: 'manager',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				artifactId: t.String({ description: 'hawkBit Software Module ID' }),
@@ -167,7 +167,7 @@ export const artifactManageRoutes = withAuth(
 			detail: {
 				tags: ['Artifacts'],
 				summary: 'Delete artifact (Software Module)',
-				description: 'Deletes an artifact from hawkBit. Requires admin role or above.',
+				description: 'Deletes an artifact from hawkBit. Requires manager role or above.',
 			},
 			response: {
 				200: ArtifactDeleteResponseSchema,
@@ -323,7 +323,7 @@ export const artifactManageRoutes = withAuth(
 		},
 		{
 			auth: true,
-			companyRole: 'viewer',
+			companyRole: 'observer',
 			params: t.Object({
 				companyId: t.String({ format: 'uuid' }),
 				artifactId: t.String({ description: 'hawkBit Software Module ID' }),

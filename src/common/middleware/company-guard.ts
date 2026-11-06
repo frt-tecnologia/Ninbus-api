@@ -8,13 +8,13 @@ import type { Elysia } from 'elysia';
  * Verifies that the authenticated user is a member of the specified company
  * and has sufficient role for the requested action.
  *
- * Role hierarchy: owner > admin > operator > viewer
+ * Role hierarchy: owner > manager > operator > observer (RBAC v2).
  */
 const ROLE_HIERARCHY: Record<string, number> = {
 	owner: 4,
-	admin: 3,
+	manager: 3,
 	operator: 2,
-	viewer: 1,
+	observer: 1,
 };
 
 export function hasCompanyRole(minimumRole: string) {

@@ -1,5 +1,4 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { db } from '../src/common/db';
 import { companies, deviceConnections } from '../src/common/db/schema';

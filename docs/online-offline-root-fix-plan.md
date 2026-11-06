@@ -1,6 +1,6 @@
 # Plano — Correção na RAIZ da inferência Online/Offline (Single Observer, Single Voice)
 
-> **Iteração 56 · Plano para APROVAÇÃO (nada implementado ainda).**
+> **Iteração 56 · EXECUTADO — resultado do drill vivo abaixo (§8-B).**
 > Continuação de `docs/online-offline-inconsistency-diagnosis.md` (iteração 55).
 > Pergunta do usuário: *é possível corrigir diretamente na raiz, sem adicionar mais condições,
 > de forma limpa, atômica, como funcionamento base do processo?* **Resposta: sim — e a correção
@@ -167,13 +167,24 @@ os fatos que mudaram.
 **A — Estática**: `bun test --env-file=.env.test` (suíte existente + novos testes do pass),
 `bun build`, `tsc`, `biome`.
 
-**B — Drill vivo (docker, protocolo da it. 54)**: subir stack; simulador de device (curl DDI com
-TargetToken) pollando a cada 5 min:
-- **S1 (o bug)**: device conectado 30 min, ZERO uso de interface → `/connections` deve mostrar
-  exatamente **1 evento online** (±1 polling interval) e **0 offline**; banda contínua até `now()`;
-- **S2**: parar os polls → 1 evento offline com `occurredAt == deadline`, detectado ≤ ~ciclo;
-- **S3**: deletar o target no hawkBit → órfão marcado disconnected no ciclo seguinte;
-- logs do pass no docker (contagem de páginas, mudanças, transições).
+**B — Drill vivo (docker, protocolo da it. 54) — EXECUTADO 2026-11-06 (branch `fix/connection-pass`):**
+stack completa (api/hawkbit/dashboard/nginx), simulador de device real via DDI (curl
+`TargetToken`, polling 5s), frontend simulado por SSE conectado à company durante TODO o
+drill + GETs periódicos (enrichment híbrido ativo nas janelas de sessão). Device
+`0DA1110000000066`, frota 32 targets (rotação = 1 página/tick):
+
+| Cenário | Resultado (evidência: captura SSE + `docker logs` + endpoint `/connections`) |
+|---|---|
+| **S1 (o bug)** — polls 11 min, UI só via SSE | Exatamente **1 online** (occurredAt = poll observado, detecção ≤1 tick de 30s); **0 offline**; **sem flap** (20 batches `connected` consecutivos); estado inicial `unknown` NÃO fabricou desconexão |
+| **S2** — parar polls com sessão INATIVA (enrichment parado >5min) | **1 offline** com `occurredAt` = deadline EXATO (`lastPollAt+5s`, backdate perfeito); detecção pelo **PASS** às 11:28:59 (`tick: 1 update, 1 transition`), entregue ao SSE 1× às 11:29:01 — sem enrichment, o pass cobriu sozinho |
+| **S2′** — retomar polls (enrichment reativado) | online #2 detectado ≤1 tick; **pass × enrichment simultâneos → 0 duplicatas** |
+| **S3** — deletar target no hawkBit com device conectado | Veredito de órfão em **15s** (`Rotation complete: 1 orphan(s) marked offline`, 31 targets após delete); `occurredAt` backdated ao último deadline observado; SSE entregue 2s depois |
+| **Total** | **4 eventos (2 online + 2 offline), zero duplicatas**, entregues ao SSE ao vivo 1× cada |
+
+Latências observadas confirmam o modelo §7: detecção offline = deadline +
+`pollingOverdueTime` do tenant (~5min, knob do hawkBit — ver SKILL.md) + ≤1 tick;
+`occurredAt` sempre no deadline exato (cadência do pass compra latência de UI, nunca
+precisão de dado). Artefatos: `.drill/sse-capture.txt`, `.drill/ddi-polls*.log` (não versionados).
 
 **C — Fechamento**: skill + docs, conventional commits, sem push.
 

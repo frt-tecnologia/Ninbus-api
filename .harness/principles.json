@@ -1319,6 +1319,22 @@
       "category": "style",
       "learnedAt": "2026-11-04T00:15:22.850Z",
       "reinforcementCount": 1
+    },
+    {
+      "id": "p-no-blind-add-all-large-files",
+      "rule": "Antes de `git add -A`/commit de snapshot, verificar arquivos estranhos ou grandes na raiz (`ls -la`, `git status`): um redirecionamento como `docker export > -` criou um arquivo literalmente chamado '-' de 291MB que entrou no histórico e bloqueou o push (GH001). GitHub recusa blobs >100MB; para limpar histórico não publicado: stash → `git filter-branch --index-filter 'git rm --cached --ignore-unmatch -- <path>' -- <range>` → conferir `git rev-list --objects | git cat-file --batch-check` por blobs >50MB antes do push.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-11-05T15:52:47.163Z",
+      "reinforcementCount": 1
+    },
+    {
+      "id": "p-verify-committed-blobs-not-worktree",
+      "rule": "Neste repo (Windows + core.autocrlf=true + `* text=auto eol=lf`), operações git de troca de estado (stash/pop, checkout de branch) reescrevem arquivos pelo pipeline CRLF/LF e podem remover o \\n final de EOF. NUNCA confiar só no `bun run lint` local após ciclos de stash: (1) re-rodar `bunx biome check --write .` após qualquer stash/checkout, (2) antes de declarar \"CI vai passar\", verificar os BLOBS commitados com `git show HEAD:<path> | tail -c 2 | od -c` — o working tree limpo não garante blob limpo. O CI checa o blob, não o disco local.",
+      "origin": "learned",
+      "category": "process",
+      "learnedAt": "2026-11-06T03:47:44.372Z",
+      "reinforcementCount": 1
     }
   ]
 }

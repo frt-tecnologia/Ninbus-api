@@ -51,6 +51,30 @@ jobs:
       - name: Run linter
         run: bun run lint
 
+      # The EC2 deploy rebuilds the nginx image and force-recreates it: a config
+      # syntax error would crash-loop the ONLY public entry point (full DDI
+      # outage, worse than the partial 503s we are fixing). Validate the baked
+      # nginx.conf + the bind-mounted vhosts (conf.d) before any deploy can run.
+      # The vhosts reference host-mounted secrets that don't exist in CI (TLS
+      # certs under /etc/letsencrypt, /docs basic-auth htpasswd) — provide
+      # throwaway stand-ins so `nginx -t` parses the REAL vhost files. No
+      # upstream DNS is needed either: proxy_pass uses variables +
+      # `resolver 127.0.0.11` (runtime resolution).
+      - name: Validate nginx config (prod reverse proxy)
+        run: |
+          docker build -t ninbus-nginx-ci ./docker/nginx
+          mkdir -p .nginx-ci/live/ninbus.frt.com.br
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -keyout .nginx-ci/live/ninbus.frt.com.br/privkey.pem \
+            -out .nginx-ci/live/ninbus.frt.com.br/fullchain.pem \
+            -subj "/CN=ninbus.frt.com.br" 2>/dev/null
+          printf 'ci:%s\n' "$(openssl passwd -apr1 ci)" > .nginx-ci/htpasswd
+          docker run --rm \
+            -v "${{ github.workspace }}/docker/nginx/conf.d:/etc/nginx/conf.d:ro" \
+            -v "${{ github.workspace }}/.nginx-ci/live:/etc/letsencrypt/live:ro" \
+            -v "${{ github.workspace }}/.nginx-ci/htpasswd:/etc/nginx/.htpasswd:ro" \
+            --entrypoint nginx ninbus-nginx-ci -t
+
       - name: Wait for Postgres
         run: |
           for i in {1..10}; do

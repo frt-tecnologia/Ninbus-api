@@ -22,6 +22,7 @@ import {
 	Button,
 	Collection,
 	Status,
+	statusInfo,
 	Surface,
 	stamp,
 	Tooltip,
@@ -123,6 +124,14 @@ export default function DevicesPage() {
 			label: 'Última comunicação',
 			render: (v) => <span className={s.cellSub}>{v ? stamp(String(v)) : 'sem contato'}</span>,
 		},
+		{
+			// createdAt é ISO string (Device) — valor cru para o stamp
+			// (função total: '—' se inválido, nunca lança).
+			key: 'createdAt',
+			label: 'Cadastrado em',
+			clearable: true,
+			render: (v) => stamp(v as string | number | null | undefined),
+		},
 	];
 
 	return (
@@ -166,7 +175,7 @@ export default function DevicesPage() {
 							}
 							dateKey="lastSeenAt"
 							dateMeaning="Período aplica-se à última comunicação (poll)"
-							defaultSortKey="lastSeenAt"
+							defaultSortKey="createdAt"
 							defaultSortDir="desc"
 							fields={[
 								{
@@ -177,12 +186,20 @@ export default function DevicesPage() {
 								{
 									id: 'connectionStatus',
 									label: 'Conexão',
-									options: ['connected', 'disconnected', 'unknown'],
+									// Labels derivadas do statusInfo — sempre idênticas ao badge da tabela
+									// (value cru = o que a linha contém e o filtro compara).
+									options: (['connected', 'disconnected', 'unknown'] as const).map((v) => ({
+										value: v,
+										label: statusInfo(v).label,
+									})),
 								},
 								{
 									id: 'status',
 									label: 'Cadastro',
-									options: ['accepted', 'pending', 'rejected', 'disabled'],
+									options: (['accepted', 'pending', 'rejected', 'disabled'] as const).map((v) => ({
+										value: v,
+										label: statusInfo(v).label,
+									})),
 								},
 								{
 									id: 'firmwareVersion',

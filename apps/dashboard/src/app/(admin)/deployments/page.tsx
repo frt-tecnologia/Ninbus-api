@@ -28,6 +28,7 @@ import {
 	Panel,
 	type Period,
 	Status,
+	statusInfo,
 	Surface,
 	stamp,
 } from '@/components/arc-app/primitives';
@@ -330,7 +331,7 @@ export default function DeploymentsPage() {
 											label: 'Tipo',
 											options: kindOptions.map((k) => ({ value: k.value, label: k.label })),
 										},
-										{ id: 'status', label: 'Estado', options: ['published', 'draft'] },
+										{ id: 'status', label: 'Estado', options: (['published', 'draft'] as const).map((v) => ({ value: v, label: statusInfo(v).label })) },
 									]}
 								/>
 							</div>

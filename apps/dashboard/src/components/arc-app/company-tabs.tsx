@@ -200,7 +200,7 @@ function DevicesTab({
 					]}
 					dateKey="lastSeenAt"
 					dateMeaning="Período aplica-se à última comunicação (poll)"
-					defaultSortKey="lastSeenAt"
+					defaultSortKey="createdAt"
 					defaultSortDir="desc"
 					columns={[
 						{
@@ -226,6 +226,14 @@ function DevicesTab({
 							key: 'lastSeenAt',
 							label: 'Última comunicação',
 							render: (v) => (v ? stamp(String(v)) : 'sem contato'),
+						},
+						{
+							// createdAt é ISO string (Device) — valor cru para o stamp
+							// (função total: '—' se inválido, nunca lança).
+							key: 'createdAt',
+							label: 'Cadastrado em',
+							clearable: true,
+							render: (v) => stamp(v as string | number | null | undefined),
 						},
 					]}
 				/>

@@ -27,6 +27,7 @@ import {
 	roleLabel,
 	SafeAction,
 	Status,
+	statusInfo,
 	stamp,
 } from '@/components/arc-app/primitives';
 import { rowActionsColumn } from '@/components/arc-app/row-actions';
@@ -190,12 +191,19 @@ function DevicesTab({
 						{
 							id: 'connectionStatus',
 							label: 'Conexão',
-							options: ['connected', 'disconnected', 'unknown'],
+							// Labels derivadas do statusInfo — idênticas ao badge da tabela.
+							options: (['connected', 'disconnected', 'unknown'] as const).map((v) => ({
+								value: v,
+								label: statusInfo(v).label,
+							})),
 						},
 						{
 							id: 'status',
 							label: 'Cadastro',
-							options: ['accepted', 'pending', 'rejected', 'disabled'],
+							options: (['accepted', 'pending', 'rejected', 'disabled'] as const).map((v) => ({
+								value: v,
+								label: statusInfo(v).label,
+							})),
 						},
 					]}
 					dateKey="lastSeenAt"

@@ -22,6 +22,7 @@ import {
 	Button,
 	Collection,
 	Status,
+	statusInfo,
 	Surface,
 	stamp,
 	Tooltip,
@@ -185,12 +186,20 @@ export default function DevicesPage() {
 								{
 									id: 'connectionStatus',
 									label: 'Conexão',
-									options: ['connected', 'disconnected', 'unknown'],
+									// Labels derivadas do statusInfo — sempre idênticas ao badge da tabela
+									// (value cru = o que a linha contém e o filtro compara).
+									options: (['connected', 'disconnected', 'unknown'] as const).map((v) => ({
+										value: v,
+										label: statusInfo(v).label,
+									})),
 								},
 								{
 									id: 'status',
 									label: 'Cadastro',
-									options: ['accepted', 'pending', 'rejected', 'disabled'],
+									options: (['accepted', 'pending', 'rejected', 'disabled'] as const).map((v) => ({
+										value: v,
+										label: statusInfo(v).label,
+									})),
 								},
 								{
 									id: 'firmwareVersion',

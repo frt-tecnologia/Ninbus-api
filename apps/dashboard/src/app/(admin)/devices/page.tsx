@@ -22,9 +22,9 @@ import {
 	Button,
 	Collection,
 	Status,
-	statusInfo,
 	Surface,
 	stamp,
+	statusInfo,
 	Tooltip,
 } from '@/components/arc-app/primitives';
 import { useAllDeployments } from '@/hooks/use-all-deployments';

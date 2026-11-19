@@ -27,8 +27,8 @@ import {
 	roleLabel,
 	SafeAction,
 	Status,
-	statusInfo,
 	stamp,
+	statusInfo,
 } from '@/components/arc-app/primitives';
 import { rowActionsColumn } from '@/components/arc-app/row-actions';
 import type { AggregateBucket, RolePolicy } from '@/lib/api';

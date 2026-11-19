@@ -205,7 +205,11 @@ Resultado: `_links` saem como `http://hb.ninbus.frt.com.br/DEFAULT/controller/v1
 ### 5.3 Considerações especiais
 - **SSE** (`/api/.../sse`, vhost `api.`): `proxy_buffering off` + `proxy_read_timeout` alto.
 - **Upload de firmware do admin** (multipart, vhost `api.`): `client_max_body_size 100m`.
-- **Rate limiting de perímetro:** `limit_req` para o DDI (30r/m por IP é farto).
+- **Rate limiting de perímetro:** `limit_req` para o DDI **por controllerId** (zona fina
+  de 30 r/min por device + guarda-chuva por IP de 1200 r/min — ver `docker/nginx/nginx.conf`).
+  ⚠️ O dimensionamento original (30 r/m por IP) assumia poll de 5 min; o polling real do
+  tenant é ~5s e TODA a frota sai do mesmo NAT → colapso com múltiplos devices simultâneos
+  (incidente 2026-11-18, corrigido em `fix/nginx-ddi-rate-limit`).
 
 ---
 
@@ -286,7 +290,19 @@ http {
     keepalive_timeout 65;
     access_log /dev/stdout;
     error_log  /dev/stderr warn;
-    limit_req_zone $binary_remote_addr zone=ddi:10m rate=30r/m;
+    # Rate limit DDI: zona fina por controllerId (map) + guarda-chuva por IP
+    # — dimensionamento e justificativa no arquivo real (docker/nginx/nginx.conf)
+    map $uri $ddi_dev_key {
+        ~^/[^/]+/controller/v1/(?<ctrl>[^/]+)  $ctrl;
+        default                                 $binary_remote_addr;
+    }
+    limit_req_zone $ddi_dev_key zone=ddi:10m rate=30r/m;
+    limit_req_zone $binary_remote_addr zone=ddi_ip:10m rate=1200r/m;
+    map $limit_req_status $ddi_retry_after {
+        default          "";
+        rejected         "30";
+        rejected_delayed "30";
+    }
     include /etc/nginx/conf.d/*.conf;
 }
 ```
@@ -360,7 +376,10 @@ server {
         proxy_set_header X-Forwarded-Port  $server_port;
         proxy_connect_timeout 10s;
         proxy_read_timeout    300s;
-        limit_req zone=ddi burst=10 nodelay;
+        limit_req zone=ddi burst=10 nodelay;      # por controllerId
+        limit_req zone=ddi_ip burst=200 nodelay;  # guarda-chuva por IP
+        limit_req_status 429;
+        add_header Retry-After $ddi_retry_after always;  # só em rejeição
     }
     location /rest/v1/ { return 404; }
     location = /login  { return 404; }

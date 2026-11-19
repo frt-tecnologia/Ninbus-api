@@ -292,12 +292,19 @@ export const normalize = (v: unknown) =>
 export const matches = (query: string, ...values: unknown[]) =>
 	normalize(values.join(' ')).includes(normalize(query));
 
-export const stamp = (iso: string | number | null | undefined) =>
-	new Intl.DateTimeFormat('pt-BR', {
-		dateStyle: 'short',
-		timeStyle: 'short',
-		timeZone: 'America/Recife',
-	}).format(new Date(iso ?? 0));
+/** Formats a timestamp (ISO string or epoch ms). NEVER throws: unparseable
+ *  or missing values render as '—' — a bad value must not crash the page
+ *  render (RangeError: Invalid time value). */
+export const stamp = (iso: string | number | null | undefined) => {
+	const date = new Date(iso ?? Number.NaN);
+	return Number.isNaN(date.getTime())
+		? '—'
+		: new Intl.DateTimeFormat('pt-BR', {
+				dateStyle: 'short',
+				timeStyle: 'short',
+				timeZone: 'America/Recife',
+			}).format(date);
+};
 
 // ── Shared domain options ──────────────────────────────────────────────
 

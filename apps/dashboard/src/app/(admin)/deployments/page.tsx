@@ -173,10 +173,13 @@ export default function DeploymentsPage() {
 			render: (v) => <span className={Number(v) ? s.bad : s.muted}>{String(v)}</span>,
 		},
 		{
+			// createdAt é epoch ms opcional (EnrichedDeployment): passe o valor CRU —
+			// String(1731942347000) não é parseável pelo Date (Invalid time value).
+			// stamp() agora é total: null/undefined → '—'.
 			key: 'createdAt',
 			label: 'Quando',
 			clearable: true,
-			render: (v) => stamp(String(v)),
+			render: (v) => stamp(v as string | number | null | undefined),
 		},
 	];
 

@@ -22,6 +22,8 @@ export type DataColumn<T> = {
 	key: string;
 	label: string;
 	sortable?: boolean;
+	/** Tri-state sort: clicking the active desc sort clears it (none → asc → desc → none). */
+	clearable?: boolean;
 	render?: (value: unknown, row: T) => ReactNode;
 	/** Right-aligns the column with tabular numerals. Detected when every value is a number. */
 	numeric?: boolean;
@@ -37,7 +39,8 @@ export type SortableDataTableProps<T extends Record<string, unknown>> = {
 	emptyMessage?: string;
 	/** Sort applied on the first render. */
 	defaultSort?: SortState;
-	onSortChange?: (sort: SortState) => void;
+	/** Reports every change, including clearing (null) a clearable column's sort. */
+	onSortChange?: (sort: SortState | null) => void;
 	/** Adds a checkbox column, row click selection, and a count line with a clear action. */
 	selectable?: boolean;
 	/** Opt-in column resizing via header separators (pointer drag + arrow keys). */
@@ -466,14 +469,22 @@ export function SortableDataTable<T extends Record<string, unknown>>({
 	}
 
 	function sortBy(column: DataColumn<T>) {
-		const next: SortState = {
-			key: column.key,
-			direction: sort?.key === column.key && sort.direction === 'asc' ? 'desc' : 'asc',
-		};
+		// Clearable columns cycle none → asc → desc → none; the click on the
+		// active desc sort returns the table to its natural (source) row order.
+		const next: SortState | null =
+			column.clearable && sort?.key === column.key && sort?.direction === 'desc'
+				? null
+				: {
+						key: column.key,
+						direction:
+							sort?.key === column.key && sort.direction === 'asc' ? 'desc' : 'asc',
+					};
 		setSort(next);
 		onSortChange?.(next);
 		setAnnouncement(
-			`Sorted by ${column.label}, ${next.direction === 'asc' ? 'ascending' : 'descending'}`,
+			next
+				? `Sorted by ${column.label}, ${next.direction === 'asc' ? 'ascending' : 'descending'}`
+				: `Sorting by ${column.label} cleared`,
 		);
 	}
 

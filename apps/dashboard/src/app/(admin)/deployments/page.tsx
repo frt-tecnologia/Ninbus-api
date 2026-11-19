@@ -172,6 +172,12 @@ export default function DeploymentsPage() {
 			label: 'Falhas',
 			render: (v) => <span className={Number(v) ? s.bad : s.muted}>{String(v)}</span>,
 		},
+		{
+			key: 'createdAt',
+			label: 'Quando',
+			clearable: true,
+			render: (v) => stamp(String(v)),
+		},
 	];
 
 	// ── Firmware tab ───────────────────────────────────────────────────
@@ -288,6 +294,8 @@ export default function DeploymentsPage() {
 									dateMeaning="Período aplica-se à criação da atualização"
 									period={period}
 									onPeriodChange={setPeriod}
+									defaultSortKey="createdAt"
+									defaultSortDir="desc"
 									fields={[
 										{ id: 'company', label: 'Empresa', options: companyList.map((c) => c.name) },
 										{

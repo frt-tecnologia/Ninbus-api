@@ -101,7 +101,9 @@ export function Collection<Row extends AnyRow>({
 	const [q, setQ] = React.useState('');
 	const [filters, setFilters] = React.useState<FilterChip[]>(initialFilters);
 	const [page, setPage] = React.useState(1);
-	const [sort, setSort] = React.useState<SortState>(
+	// Sorting may be cleared (null) by clicking a clearable column's active
+	// desc sort — rows then keep the source order.
+	const [sort, setSort] = React.useState<SortState | null>(
 		defaultSortKey
 			? { key: defaultSortKey, direction: defaultSortDir }
 			: { key: 'name', direction: 'asc' },
@@ -129,7 +131,12 @@ export function Collection<Row extends AnyRow>({
 		if (!serverMode || !source?.loadPaged) return;
 		let active = true;
 		source
-			.loadPaged({ page, limit: source.pageSize ?? initialPageSize, search: q || undefined, sort })
+			.loadPaged({
+				page,
+				limit: source.pageSize ?? initialPageSize,
+				search: q || undefined,
+				sort: sort ?? undefined,
+			})
 			.then((result) => active && setPaged(result));
 		return () => {
 			active = false;
@@ -157,6 +164,7 @@ export function Collection<Row extends AnyRow>({
 						(!dateKey || inPeriod(r[dateKey], period)),
 				)
 				.sort((a, b) => {
+					if (!sort) return 0; // cleared: keep the source order (stable sort)
 					const dir = sort.direction === 'asc' ? 1 : -1;
 					const av = a[sort.key];
 					const bv = b[sort.key];
@@ -283,12 +291,10 @@ export function Collection<Row extends AnyRow>({
 							rowKey="id"
 							caption={label}
 							resizable
-							defaultSort={sort}
+							defaultSort={sort ?? undefined}
 							onSortChange={(next) => {
-								if (next) {
-									setSort(next as SortState);
-									setPage(1);
-								}
+								setSort(next);
+								setPage(1);
 							}}
 							selectable={selectable}
 							selectedKeys={selected}

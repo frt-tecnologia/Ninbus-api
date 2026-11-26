@@ -229,7 +229,18 @@ export default function DeploymentsPage() {
 					</>
 				}
 			/>
-			<Tabs defaultValue={tab}>
+			{/* Uncontrolled Tabs: sync the active tab to the URL so `tab` (read from
+			    search params above) follows the UI. Without this, clicking the Firmware
+			    tab leaves the URL on 'atualizações' and the release detail drawer
+			    (open={!!releaseDetail && tab === 'firmware'}) never opens. */}
+			<Tabs
+				defaultValue={tab}
+				onValueChange={(value) => {
+					const params = new URLSearchParams(search.toString());
+					params.set('tab', value);
+					router.replace(`/deployments?${params.toString()}`);
+				}}
+			>
 				<TabsList aria-label="Domínio de deployments">
 					<TabsTrigger value="atualizações">Atualizações</TabsTrigger>
 					<TabsTrigger value="firmware">Firmware</TabsTrigger>

@@ -22,7 +22,6 @@ import {
 	Button,
 	Collection,
 	Status,
-	statusInfo,
 	Surface,
 	stamp,
 	statusInfo,

@@ -479,8 +479,8 @@ export function ReleaseDetails({
 			{release.originalFilename && (
 				<CopyButton value={release.originalFilename} label="Copiar nome do arquivo" />
 			)}
-			<Button disabled={release.status !== 'published'} onClick={() => onDeploy?.(release.id)}>
-				Preparar deploy
+			<Button onClick={() => onDeploy?.(release.id)}>
+				{release.status === 'draft' ? 'Testar em dispositivo (piloto)' : 'Preparar deploy'}
 			</Button>
 			{release.status === 'draft' && (
 				<SafeAction

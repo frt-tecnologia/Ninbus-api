@@ -636,6 +636,20 @@ export function RolloutForm({
 	const [selected, setSelected] = useState<string[]>([]);
 	const r = releases.find((x) => x.id === release);
 
+	/**
+	 * Pilot channel: when the form opens preset to a DRAFT releaseId (from the
+	 * release detail), include that draft in the picker — the generic path stays
+	 * published-only so drafts are never deployed by accident. The backend
+	 * treats draft + releaseId as the pilot channel (deploy-trigger: "PILOT:
+	 * draft ... NOT published; companies will not see it").
+	 */
+	const pilotDraft = initialRelease
+		? releases.find((x) => x.id === initialRelease && x.status === 'draft')
+		: undefined;
+	const pickableReleases = pilotDraft
+		? [pilotDraft, ...releases.filter((x) => x.status === 'published')]
+		: releases.filter((x) => x.status === 'published');
+
 	const targets = devices
 		.filter((d) => d.companyId === company && d.status === 'accepted')
 		.map((d) => ({
@@ -666,13 +680,11 @@ export function RolloutForm({
 				value={release || null}
 				onValueChange={setRelease}
 				searchable
-				items={releases
-					.filter((x) => x.status === 'published')
-					.map((x) => ({
-						value: x.id,
-						label: `${x.name} · ${x.version}`,
-						meta: kindOptions.find((k) => k.value === x.artifactType)?.label,
-					}))}
+				items={pickableReleases.map((x) => ({
+					value: x.id,
+					label: `${x.name} · ${x.version}${x.status === 'draft' ? ' · rascunho (piloto)' : ''}`,
+					meta: kindOptions.find((k) => k.value === x.artifactType)?.label,
+				}))}
 			/>
 			<Collection
 				label="Dispositivos alvo"
@@ -696,7 +708,7 @@ export function RolloutForm({
 			<SafeAction
 				label="criar deploy"
 				disabled={!r || !company || !selected.length}
-				description={`${selected.length} dispositivo(s) receberão ${r?.name ?? 'a release selecionada'}. ${r?.artifactType === 'firmware-ninbus' ? 'Firmware Ninbus reinicia o equipamento. ' : ''}A atualização é criada no serviço de distribuição e entregue no próximo contato do dispositivo.`}
+				description={`${selected.length} dispositivo(s) receberão ${r?.name ?? 'a release selecionada'}.${r?.status === 'draft' ? ' PILOTO: rascunho — empresas não veem até publicar.' : ''} ${r?.artifactType === 'firmware-ninbus' ? 'Firmware Ninbus reinicia o equipamento. ' : ''}A atualização é criada no serviço de distribuição e entregue no próximo contato do dispositivo.`}
 				onConfirm={deploy}
 			/>
 			<Button variant="ghost" onClick={done}>

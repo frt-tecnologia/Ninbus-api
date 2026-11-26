@@ -27,6 +27,7 @@ import {
 	roleLabel,
 	SafeAction,
 	Status,
+	statusInfo,
 	stamp,
 	statusInfo,
 } from '@/components/arc-app/primitives';

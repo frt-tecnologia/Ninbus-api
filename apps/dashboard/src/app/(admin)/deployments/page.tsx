@@ -28,6 +28,7 @@ import {
 	Panel,
 	type Period,
 	Status,
+	statusInfo,
 	Surface,
 	stamp,
 	statusInfo,

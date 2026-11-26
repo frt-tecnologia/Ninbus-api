@@ -8,16 +8,13 @@
  * - RegisterForm     → provision (+ claim + group when chosen)
  * - AssignForm       → claim by serial (cross-company) + assignCategories
  * - MemberForm       → memberService.add {email, role}
- * - ReleaseForm      → POST /admin/firmware (multipart, XHR real progress)
+ * - ReleaseForm      → POST /admin/firmware (single multipart upload on publish)
  * - RolloutForm      → firmwareService.deploy(deviceIds, type, releaseId)
  */
 import { Send } from 'lucide-react';
-import { type FormEvent, useCallback, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { toast } from 'sonner';
-import {
-	FileDropzone,
-	type FileDropzoneUpload,
-} from '@/components/arc/file-dropzone/file-dropzone';
+import { FileDropzone } from '@/components/arc/file-dropzone/file-dropzone';
 import { Input } from '@/components/arc/input/input';
 import { MorphSelect } from '@/components/arc/morph-select/morph-select';
 import { PasswordField } from '@/components/arc/password-field/password-field';
@@ -29,7 +26,7 @@ import {
 	firmwareService,
 	memberService,
 } from '@/lib/api';
-import type { Company, Device, FirmwareRelease } from '@/types/domain';
+import type { Company, Device, FirmwareArtifactType, FirmwareRelease } from '@/types/domain';
 import s from './app.module.css';
 import {
 	Alert,
@@ -506,100 +503,48 @@ export function MemberForm({
 	);
 }
 
-// ── release upload (real multipart + progress) ─────────────────────────
+// ── release upload (single multipart POST on publish) ──────────────────
+
+/**
+ * Release types the factory endpoint accepts (POST /admin/firmware).
+ * configuration-nfx is company-scoped operational data — the API's
+ * UploadFirmwareBodySchema rejects it, so this radio must not offer it.
+ */
+const releaseKindOptions = kindOptions.filter(
+	(option) => option.value === 'firmware-ninbus' || option.value === 'firmware-controller',
+);
+
+/**
+ * Accepted file extensions per release type — mirrors the API contract:
+ * firmware-ninbus takes ONLY the canonical v4 .tar (signed NPM manifest from
+ * ota_pack.py; the server validates structure, counter and version);
+ * firmware-controller also accepts a raw .fir (packaged server-side).
+ */
+const RELEASE_ACCEPT: Record<FirmwareArtifactType, string> = {
+	'firmware-ninbus': '.tar',
+	'firmware-controller': '.tar,.fir',
+};
 
 export function ReleaseForm({ done }: { done: () => void }) {
 	const [name, setName] = useState('');
 	const [version, setVersion] = useState('');
 	const [description, setDescription] = useState('');
-	const [type, setType] = useState(kindOptions[0]!.value);
-	const [receipt, setReceipt] = useState<{ name: string; size: number } | null>(null);
-	const [phase, setPhase] = useState('');
+	const [type, setType] = useState<FirmwareArtifactType>('firmware-ninbus');
 	const [selection, setSelection] = useState<File[]>([]);
 
-	const upload: FileDropzoneUpload = useCallback(
-		(item, { onProgress, signal }) =>
-			new Promise<void>((resolve, reject) => {
-				const file = item.file;
-				if (!file) {
-					reject(new Error('Arquivo indisponível. Selecione novamente.'));
-					return;
-				}
-				setReceipt(null);
-				setPhase('Enviando arquivo...');
-				const xhr = new XMLHttpRequest();
-				xhr.open('POST', '/console/api/admin/firmware');
-				xhr.timeout = 120000;
-				xhr.upload.onprogress = (e) => {
-					if (e.lengthComputable) {
-						onProgress(Math.min(99, (e.loaded / e.total) * 100));
-						if (e.loaded === e.total) setPhase('Aguardando confirmação do servidor...');
-					}
-				};
-				const abort = () => xhr.abort();
-				signal.addEventListener('abort', abort, { once: true });
-				const cleanup = () => signal.removeEventListener('abort', abort);
-				xhr.onload = () => {
-					cleanup();
-					let result: { message?: string; error?: string };
-					try {
-						result = JSON.parse(xhr.responseText);
-					} catch {
-						setPhase('Falha na resposta do servidor.');
-						reject(new Error('Resposta inválida. Tente novamente.'));
-						return;
-					}
-					if (xhr.status < 200 || xhr.status >= 300) {
-						setPhase('Upload não concluído.');
-						reject(new Error(result.error || 'Falha no upload.'));
-						return;
-					}
-					setReceipt({ name: file.name, size: file.size });
-					setPhase('Arquivo recebido e confirmado pelo servidor.');
-					onProgress(100);
-					resolve();
-				};
-				xhr.onerror = () => {
-					cleanup();
-					setPhase('Falha de conexão. Use tentar novamente.');
-					reject(new Error('Conexão interrompida. Tente novamente.'));
-				};
-				xhr.ontimeout = () => {
-					cleanup();
-					setPhase('Tempo de upload excedido.');
-					reject(new Error('O upload excedeu 2 minutos. Tente novamente.'));
-				};
-				xhr.onabort = () => {
-					cleanup();
-					setReceipt(null);
-					setPhase('Upload cancelado.');
-					reject(new DOMException('Upload cancelado', 'AbortError'));
-				};
-				const body = new FormData();
-				body.append('file', file);
-				if (signal.aborted) {
-					cleanup();
-					reject(new DOMException('Cancelado', 'AbortError'));
-					return;
-				}
-				xhr.send(body);
-			}),
-		[],
-	);
-
-	const valid =
-		!!receipt &&
-		selection.length === 1 &&
-		!!name.trim() &&
-		/^\d+\.\d+\.\d+([-.][\w.]+)?$/.test(version);
+	const accept = RELEASE_ACCEPT[type];
+	const file = selection[0];
+	const fileMatchesType =
+		!!file && accept.split(',').some((ext) => file.name.toLowerCase().endsWith(ext.trim()));
+	const valid = fileMatchesType && !!name.trim() && /^\d+\.\d+\.\d+([-.][\w.]+)?$/.test(version);
 
 	async function publish() {
-		if (!selection[0]) throw new Error('Aguarde a confirmação do upload.');
+		if (!file) throw new Error('Selecione o arquivo da release.');
 		await firmwareService.upload({
-			file: selection[0],
+			file,
 			name: name.trim(),
 			version: version.trim(),
-			artifactType: type as never,
+			artifactType: type,
 			...(description.trim() ? { description: description.trim() } : {}),
 		});
 		emitDataChanged();
@@ -618,7 +563,11 @@ export function ReleaseForm({ done }: { done: () => void }) {
 				value={version}
 				onChange={(e) => setVersion(e.target.value)}
 				placeholder="4.0.1"
-				description="Use major.minor.patch, por exemplo 4.0.1."
+				description={
+					type === 'firmware-ninbus'
+						? 'Use major.minor.patch, igual à versão assinada no manifesto do .tar (ex.: 4.0.1).'
+						: 'Use major.minor.patch, por exemplo 4.0.1.'
+				}
 			/>
 			<Input
 				label="Descrição (opcional)"
@@ -627,31 +576,30 @@ export function ReleaseForm({ done }: { done: () => void }) {
 			/>
 			<RadioGroup
 				label="Tipo de arquivo"
-				options={kindOptions}
+				options={releaseKindOptions}
 				value={type}
-				onValueChange={setType}
+				onValueChange={(value) => setType(value as FirmwareArtifactType)}
 			/>
 			<FileDropzone
 				label="Arquivo da release"
 				description="Arraste um arquivo ou escolha no dispositivo"
-				accept=".fir,.frz,.nfx"
+				accept={accept}
 				multiple={false}
 				maxFiles={1}
 				maxSize={50 * 1024 * 1024}
-				onUpload={upload}
-				onFilesChange={(files) => {
-					setSelection(files);
-					if (!files.length) {
-						setReceipt(null);
-						setPhase('');
-					}
-				}}
+				onFilesChange={setSelection}
 				listPlacement="inside"
-				note=".fir, .frz ou .nfx · até 50 MB · upload com confirmação do servidor"
+				note={
+					type === 'firmware-ninbus'
+						? '.tar canônico v4 (ota_pack.py) · até 50 MB · manifesto assinado validado pelo servidor'
+						: '.tar canônico ou .fir cru · até 50 MB · empacotado pelo servidor'
+				}
 				dropLabel="Solte para enviar"
 			/>
 			<p role="status" className={s.footnote}>
-				{phase || 'O upload começa ao selecionar o arquivo. Remova a linha para cancelar.'}
+				{file && !fileMatchesType
+					? `${file.name} não é aceito para este tipo — use ${accept}.`
+					: 'O upload acontece ao publicar a release. Remova a linha para trocar o arquivo.'}
 			</p>
 			<SafeAction
 				label="publicar release"
